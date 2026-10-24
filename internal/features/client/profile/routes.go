@@ -4,7 +4,7 @@ package profile
 import (
 	"github.com/gin-gonic/gin"
 
-	"bgin/internal/middleware"
+	"cgin/internal/middleware"
 )
 
 // RegisterRoutes 注册前端用户个人档案端点 (/v1/users)。

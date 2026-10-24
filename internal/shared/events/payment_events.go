@@ -3,8 +3,8 @@ package events
 import (
 	"time"
 
-	platformPayment "bgin/internal/platform/payment"
-	"bgin/internal/platform/payment/enums"
+	platformPayment "cgin/internal/platform/payment"
+	"cgin/internal/platform/payment/enums"
 )
 
 // PaymentSucceededEvent 在支付渠道异步通知验签通过且确认收款成功后广播。

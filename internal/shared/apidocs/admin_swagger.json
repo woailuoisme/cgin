@@ -2,7 +2,7 @@
     "swagger": "2.0",
     "info": {
         "description": "取值为 \"Bearer \u003caccess_token\u003e\"，含 Bearer 前缀与一个空格（要求具有管理员角色）。",
-        "title": "bgin Admin API",
+        "title": "cgin Admin API",
         "contact": {},
         "version": "1.0"
     },
@@ -474,7 +474,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "物理删除指定用户及其关联账号数据，并级联清理权限策略。",
+                "description": "软删除指定用户，保留数据以支持审计与恢复；其关联凭据随账号状态一同失效。",
                 "consumes": [
                     "application/json"
                 ],

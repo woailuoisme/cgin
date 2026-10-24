@@ -7,10 +7,10 @@ import (
 
 // AuthConfig 描述认证策略开关与一次性凭据寿命（对齐 Laravel config/auth.php）。
 type AuthConfig struct {
-	RequireEmailVerification bool          `mapstructure:"require_email_verification"`
-	OTPTTL                   time.Duration `mapstructure:"otp_ttl"`
-	OTPMaxAttempts           int           `mapstructure:"otp_max_attempts"`
-	PasswordResetTTL         time.Duration `mapstructure:"password_reset_ttl"`
+	RequireEmailVerification bool          `env:"REQUIRE_EMAIL_VERIFICATION"`
+	OTPTTL                   time.Duration `env:"OTP_TTL" envDefault:"10m"`
+	OTPMaxAttempts           int           `env:"OTP_MAX_ATTEMPTS" envDefault:"5"`
+	PasswordResetTTL         time.Duration `env:"PASSWORD_RESET_TTL" envDefault:"30m"`
 }
 
 // validateAuth 检查认证相关寿命参数与限制次数合法性。

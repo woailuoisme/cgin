@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/storage"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/storage"
 )
 
 // newLocalDisk 在临时目录上构造本地驱动，回传根目录便于直接检查落盘结果。

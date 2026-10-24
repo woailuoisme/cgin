@@ -12,8 +12,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/logger"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/logger"
 )
 
 // headerRequestID 是全链路追踪请求头。
@@ -139,9 +139,6 @@ func (m *Middleware) Recovery() gin.HandlerFunc {
 			logger.FromContext(c.Request.Context()).Error("request panic recovered",
 				zap.Any("panic", recovered),
 				zap.String("stack", string(debug.Stack())))
-
-			// 标记当前请求的 panic 异常已由 Zap/Sentry Core 捕获，防止全局 ErrorHandler 二次重复上报
-			MarkSentryReported(c)
 
 			if c.Writer.Written() {
 				c.Abort()

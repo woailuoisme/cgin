@@ -8,10 +8,10 @@ import (
 
 // JWTConfig 描述双令牌签名与有效时长（对齐 Laravel config/jwt.php）。
 type JWTConfig struct {
-	Secret     string        `mapstructure:"jwt_secret"`
-	Issuer     string        `mapstructure:"jwt_issuer"`
-	AccessTTL  time.Duration `mapstructure:"jwt_ttl"`
-	RefreshTTL time.Duration `mapstructure:"jwt_refresh_ttl"`
+	Secret     string        `env:"JWT_SECRET,required,notEmpty"`
+	Issuer     string        `env:"JWT_ISSUER" envDefault:"cgin"`
+	AccessTTL  time.Duration `env:"JWT_TTL" envDefault:"15m"`
+	RefreshTTL time.Duration `env:"JWT_REFRESH_TTL" envDefault:"720h"`
 }
 
 // validateJWT 检查令牌密钥长度与有效时长合理性。

@@ -5,30 +5,20 @@ import (
 	"context"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/samber/lo"
-	"github.com/uptrace/bun"
 )
-
-// Searchable 定义具备全文检索能力的实体模型契约。
-type Searchable interface {
-	// SearchableAs 返回该实体对应的全文搜索基础索引名称。
-	SearchableAs() string
-	// SearchableKey 返回该实体的唯一主键标识值。
-	SearchableKey() string
-	// ToSearchableArray 将模型属性转换为结构化的搜索文档字典。
-	ToSearchableArray() map[string]any
-}
 
 // ChunkHandler 接收分批搜索文档切片的回调函数。
 type ChunkHandler func(docs []map[string]any) error
 
-// BatchImporter 定义从持久化数据源流式分批读取模型数据的函数契约。
-type BatchImporter func(ctx context.Context, db bun.IDB, batchSize int, handler ChunkHandler) (int64, error)
+// BatchImporter 定义分批读取模型数据并投递文档的函数契约。
+//
+// 数据源（连接池、仓储等）由装配方在构造闭包时捕获，平台层不感知具体存储实现。
+type BatchImporter func(ctx context.Context, batchSize int, handler ChunkHandler) (int64, error)
 
-// RecordCounter 定义统计模型数据总量的函数契约。
-type RecordCounter func(ctx context.Context, db bun.IDB) (int64, error)
+// RecordCounter 定义统计模型文档总量的函数契约。
+type RecordCounter func(ctx context.Context) (int64, error)
 
 // ModelDescriptor 记录可搜索模型的元数据与导入器。
 type ModelDescriptor struct {
@@ -38,48 +28,48 @@ type ModelDescriptor struct {
 	Counter   RecordCounter
 }
 
-var (
-	registryMu  sync.RWMutex
-	descriptors = make(map[string]ModelDescriptor)
-)
-
-// RegisterModel 注册一个可搜索模型的导入器与元数据（可附加可选的总量统计器）。
-func RegisterModel(name, indexName string, importer BatchImporter, counter ...RecordCounter) {
-	registryMu.Lock()
-	defer registryMu.Unlock()
-
-	desc := ModelDescriptor{
-		Name:      strings.ToLower(strings.TrimSpace(name)),
-		IndexName: strings.ToLower(strings.TrimSpace(indexName)),
-		Importer:  importer,
-		Counter:   lo.FirstOrEmpty(counter),
-	}
-
-	descriptors[desc.Name] = desc
-	descriptors[desc.IndexName] = desc
+// Catalog 是显式装配的可搜索模型集合，支持按模型名或索引名检索。
+//
+// 集合在装配期一次性构建，运行期只读，因此天然并发安全。
+type Catalog struct {
+	byKey map[string]ModelDescriptor
+	all   []ModelDescriptor
 }
 
-// GetModel 获取指定模型名称或索引名称对应的注册描述符。
-func GetModel(name string) (ModelDescriptor, bool) {
-	registryMu.RLock()
-	defer registryMu.RUnlock()
-
-	desc, ok := descriptors[strings.ToLower(strings.TrimSpace(name))]
-	return desc, ok
-}
-
-// RegisteredModels 返回所有已注册的唯一模型描述符列表（按索引名称排序）。
-func RegisteredModels() []ModelDescriptor {
-	registryMu.RLock()
-	defer registryMu.RUnlock()
-
-	list := lo.UniqBy(lo.Values(descriptors), func(d ModelDescriptor) string {
-		return d.IndexName
-	})
-
-	slices.SortFunc(list, func(a, b ModelDescriptor) int {
+// NewCatalog 构造模型集合：按索引名去重并按索引名排序。
+func NewCatalog(models ...ModelDescriptor) *Catalog {
+	unique := lo.UniqBy(
+		lo.Filter(models, func(m ModelDescriptor, _ int) bool {
+			return strings.TrimSpace(m.IndexName) != ""
+		}),
+		func(m ModelDescriptor) string { return strings.ToLower(m.IndexName) },
+	)
+	slices.SortFunc(unique, func(a, b ModelDescriptor) int {
 		return cmp.Compare(a.IndexName, b.IndexName)
 	})
 
-	return list
+	byKey := make(map[string]ModelDescriptor, len(unique)*2)
+	for _, model := range unique {
+		byKey[strings.ToLower(model.Name)] = model
+		byKey[strings.ToLower(model.IndexName)] = model
+	}
+
+	return &Catalog{byKey: byKey, all: unique}
+}
+
+// Lookup 按模型名或索引名查询；未注册时返回 false。
+func (c *Catalog) Lookup(name string) (ModelDescriptor, bool) {
+	if c == nil {
+		return ModelDescriptor{}, false
+	}
+	desc, ok := c.byKey[strings.ToLower(strings.TrimSpace(name))]
+	return desc, ok
+}
+
+// All 返回按索引名排序的全部模型（返回副本，调用方无法篡改集合）。
+func (c *Catalog) All() []ModelDescriptor {
+	if c == nil {
+		return nil
+	}
+	return slices.Clone(c.all)
 }

@@ -16,7 +16,7 @@ import (
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 
-	"bgin/internal/config"
+	"cgin/internal/config"
 )
 
 const (

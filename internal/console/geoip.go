@@ -14,8 +14,8 @@ import (
 	"github.com/lionsoul2014/ip2region/binding/golang/xdb"
 	"github.com/spf13/cobra"
 
-	"bgin/internal/console/core"
-	"bgin/internal/platform/resilience"
+	"cgin/internal/console/core"
+	"cgin/internal/platform/resilience"
 )
 
 // 预设官方源与国内高可用加速镜像源列表。
@@ -140,7 +140,7 @@ func (o *GeoIPUpdateOptions) downloadFile(ctx context.Context, client *http.Clie
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "bgin-cli/geoip-updater")
+	req.Header.Set("User-Agent", "cgin-cli/geoip-updater")
 	req.Header.Set("Accept-Encoding", "identity")
 
 	resp, err := client.Do(req)
@@ -237,15 +237,7 @@ func newGeoIPUpdateCmd(f Factory) *cobra.Command {
 		Use:   "geoip:update",
 		Short: "Download or update the offline ip2region IP database (ip2region_v4.xdb)",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := opts.Complete(cmd, args); err != nil {
-				return err
-			}
-			if err := opts.Validate(); err != nil {
-				return err
-			}
-			return opts.Run(cmd.Context())
-		},
+		RunE:  runCommand(opts),
 	}
 
 	cmd.Flags().StringVar(&opts.Path, "path", "", "Destination file path (default from GEOIP_DB_PATH or storage/app/geoip/ip2region_v4.xdb)")

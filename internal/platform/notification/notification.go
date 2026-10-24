@@ -3,43 +3,22 @@ package notification
 
 import (
 	"cmp"
-	"context"
-	"sync"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/mailer"
-	chatChannel "bgin/internal/platform/notification/channel/chat"
-	telegramDriver "bgin/internal/platform/notification/channel/chat/telegram"
-	gotifyChannel "bgin/internal/platform/notification/channel/gotify"
-	gotifyHTTP "bgin/internal/platform/notification/channel/gotify/http"
-	mailChannel "bgin/internal/platform/notification/channel/mail"
-	rtChannel "bgin/internal/platform/notification/channel/realtime"
-	smsChannel "bgin/internal/platform/notification/channel/sms"
-	aliyunSMS "bgin/internal/platform/notification/channel/sms/aliyun"
-	logSMS "bgin/internal/platform/notification/channel/sms/log"
-	smsbaoSMS "bgin/internal/platform/notification/channel/sms/smsbao"
-	tencentSMS "bgin/internal/platform/notification/channel/sms/tencent"
-	"bgin/internal/platform/realtime"
+	"cgin/internal/config"
+	"cgin/internal/platform/mailer"
+	chatChannel "cgin/internal/platform/notification/channel/chat"
+	telegramDriver "cgin/internal/platform/notification/channel/chat/telegram"
+	gotifyChannel "cgin/internal/platform/notification/channel/gotify"
+	gotifyHTTP "cgin/internal/platform/notification/channel/gotify/http"
+	mailChannel "cgin/internal/platform/notification/channel/mail"
+	rtChannel "cgin/internal/platform/notification/channel/realtime"
+	smsChannel "cgin/internal/platform/notification/channel/sms"
+	aliyunSMS "cgin/internal/platform/notification/channel/sms/aliyun"
+	logSMS "cgin/internal/platform/notification/channel/sms/log"
+	smsbaoSMS "cgin/internal/platform/notification/channel/sms/smsbao"
+	tencentSMS "cgin/internal/platform/notification/channel/sms/tencent"
+	"cgin/internal/platform/realtime"
 )
-
-var (
-	defaultNotifier *Notifier
-	notifierMu      sync.RWMutex
-)
-
-// SetDefaultManager 设置全局默认通知管理器。
-func SetDefaultManager(n *Notifier) {
-	notifierMu.Lock()
-	defer notifierMu.Unlock()
-	defaultNotifier = n
-}
-
-// DefaultManager 返回全局默认通知管理器。
-func DefaultManager() *Notifier {
-	notifierMu.RLock()
-	defer notifierMu.RUnlock()
-	return defaultNotifier
-}
 
 // New 根据配置与基础依赖构建统一多渠道通知引擎实例。
 //
@@ -102,31 +81,7 @@ func New(cfg config.NotificationConfig, m mailer.Mailer, rt realtime.Manager, ex
 	}
 	n.Extend("gotify", gotifyCh)
 
-	SetDefaultManager(n)
 	return n, nil
-}
-
-// Send 使用默认管理器向指定接收者发送通知。
-func Send(ctx context.Context, notifiables any, notif Notification, opts ...SendOption) error {
-	if mgr := DefaultManager(); mgr != nil {
-		return mgr.Send(ctx, notifiables, notif, opts...)
-	}
-	return nil
-}
-
-// SendParallel 使用默认管理器并发发送通知。
-func SendParallel(ctx context.Context, notifiables any, notif Notification, opts ...SendOption) error {
-	if mgr := DefaultManager(); mgr != nil {
-		return mgr.SendParallel(ctx, notifiables, notif, opts...)
-	}
-	return nil
-}
-
-// Use 为全局默认管理器注册管道中间件。
-func Use(mw ...Middleware) {
-	if mgr := DefaultManager(); mgr != nil {
-		mgr.Use(mw...)
-	}
 }
 
 // 类型别名以保持与现有业务领域的无缝兼容。

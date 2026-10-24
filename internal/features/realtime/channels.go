@@ -5,10 +5,10 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/uptrace/bun"
-
-	"bgin/internal/database/models"
-	platformRealtime "bgin/internal/platform/realtime"
+	"cgin/internal/database"
+	"cgin/internal/database/sqlc"
+	platformRealtime "cgin/internal/platform/realtime"
+	"cgin/internal/shared/enums"
 )
 
 // UserChannel 构建受订阅代理保护的个人用户私有频道名称（private:users.userID）。
@@ -28,7 +28,7 @@ func AdminNotificationChannel() string {
 }
 
 // RegisterChannels 集中向实时通信注册中心登记所有业务频道的订阅授权策略。
-func RegisterChannels(r *platformRealtime.Registry, db bun.IDB) {
+func RegisterChannels(r *platformRealtime.Registry, db *database.DB) {
 	if r == nil {
 		return
 	}
@@ -76,10 +76,10 @@ func RegisterChannels(r *platformRealtime.Registry, db bun.IDB) {
 }
 
 // isAdmin 检查指定用户是否具备系统管理员角色。
-func isAdmin(ctx context.Context, db bun.IDB, userID string) bool {
+func isAdmin(ctx context.Context, db *database.DB, userID string) bool {
 	if db == nil || userID == "" {
 		return false
 	}
-	user, err := models.FindUserByID(ctx, db, userID)
-	return err == nil && user != nil && user.Role == models.RoleAdmin
+	user, err := db.Queries(ctx).GetUserByID(ctx, sqlc.GetUserByIDParams{ID: userID})
+	return err == nil && user.Role == enums.RoleAdmin
 }

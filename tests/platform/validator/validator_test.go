@@ -18,10 +18,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/i18n"
-	"bgin/internal/platform/validator"
+	"cgin/internal/config"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/i18n"
+	"cgin/internal/platform/validator"
 )
 
 func init() { gin.SetMode(gin.TestMode) }

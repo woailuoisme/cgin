@@ -14,15 +14,15 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/logger"
-	"bgin/internal/platform/notification/async"
-	"bgin/internal/platform/notification/channel/chat"
-	"bgin/internal/platform/notification/channel/mail"
-	"bgin/internal/platform/notification/channel/realtime"
-	"bgin/internal/platform/notification/channel/sms"
-	"bgin/internal/platform/notification/contract"
-	"bgin/internal/platform/queue"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/logger"
+	"cgin/internal/platform/notification/async"
+	"cgin/internal/platform/notification/channel/chat"
+	"cgin/internal/platform/notification/channel/mail"
+	"cgin/internal/platform/notification/channel/realtime"
+	"cgin/internal/platform/notification/channel/sms"
+	"cgin/internal/platform/notification/contract"
+	"cgin/internal/platform/queue"
 )
 
 // defaultParallelTargets 是并行投递单个通知时的最大并发接收者数。
@@ -345,16 +345,4 @@ func (n *Notifier) sendParallelSync(ctx context.Context, targets []any, notif No
 	}
 
 	return g.Wait()
-}
-
-// SendTyped 强类型接收者顺序投递。
-func SendTyped[T any](ctx context.Context, notifiables []T, notif Notification, opts ...SendOption) error {
-	anySlice := lo.Map(notifiables, func(item T, _ int) any { return item })
-	return Send(ctx, anySlice, notif, opts...)
-}
-
-// SendParallelTyped 强类型接收者并发投递。
-func SendParallelTyped[T any](ctx context.Context, notifiables []T, notif Notification, opts ...SendOption) error {
-	anySlice := lo.Map(notifiables, func(item T, _ int) any { return item })
-	return SendParallel(ctx, anySlice, notif, opts...)
 }

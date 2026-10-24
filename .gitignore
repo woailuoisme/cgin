@@ -1,5 +1,5 @@
 # ==========================================
-# Go bgin Project - .gitignore
+# Go cgin Project - .gitignore
 # ==========================================
 
 # ------------------------------------------
@@ -16,8 +16,8 @@ debug
 debug.test
 __debug_bin
 /bin/
-/bgin
-/bgin-cli
+/cgin
+/cgin-cli
 
 # ------------------------------------------
 # OS Generated Files

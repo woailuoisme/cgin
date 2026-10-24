@@ -3,7 +3,7 @@ package seeders
 import (
 	"context"
 
-	"github.com/uptrace/bun"
+	"cgin/internal/database"
 )
 
 func init() {
@@ -19,7 +19,7 @@ func (s *DatabaseSeeder) Name() string {
 }
 
 // Seed 按序调度 AdminSeeder 与 UserSeeder。
-func (s *DatabaseSeeder) Seed(ctx context.Context, db *bun.DB) error {
+func (s *DatabaseSeeder) Seed(ctx context.Context, db *database.DB) error {
 	runner := NewRunner(db)
 
 	return runner.Call(ctx,

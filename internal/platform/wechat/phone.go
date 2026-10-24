@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"bgin/internal/platform/errs"
+	"cgin/internal/platform/errs"
 )
 
 // phoneNumberPath 是手机号快速验证端点，用小程序端 getPhoneNumber 回调的 code 换取手机号。

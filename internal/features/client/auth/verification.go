@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -14,14 +13,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/uptrace/bun"
+	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 
-	"bgin/internal/config"
-	"bgin/internal/database/models"
-	"bgin/internal/platform/cache"
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/logger"
+	"cgin/internal/config"
+	"cgin/internal/database"
+	"cgin/internal/database/sqlc"
+	"cgin/internal/platform/cache"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/logger"
 )
 
 // 一次性凭据的底层存储用途前缀（写入 verification.identifier），使同一邮箱的不同用途在库中互不干扰。
@@ -42,14 +42,14 @@ const (
 // verifier 负责一次性凭据的签发与核销。
 // 明文只出现在邮件里，库里存的是 HMAC-SHA256 摘要，因此拿到库也还原不出可用凭据。
 type verifier struct {
-	db          bun.IDB
+	db          *database.DB
 	cache       cache.Store
 	key         []byte
 	maxAttempts int
 }
 
 // newVerifier 构造 verifier，密钥由 JWT 密钥派生并做用途域分离。
-func newVerifier(db bun.IDB, cacheClient cache.Store, cfg *config.Config) *verifier {
+func newVerifier(db *database.DB, cacheClient cache.Store, cfg *config.Config) *verifier {
 	return &verifier{
 		db:          db,
 		cache:       cacheClient,
@@ -82,11 +82,15 @@ func (v *verifier) issueToken(ctx context.Context, purpose, email string, ttl ti
 	return token, nil
 }
 
-// store 写入凭据摘要。
+// store 写入凭据摘要；同一 identifier 由单条 CTE 语句原子覆盖。
 func (v *verifier) store(ctx context.Context, purpose, email, code string, ttl time.Duration) error {
 	identifier := verificationIdentifier(purpose, email)
 	expiresAt := time.Now().UTC().Add(ttl)
-	if err := models.SaveVerification(ctx, v.db, identifier, v.digest(identifier, code), expiresAt); err != nil {
+	if _, err := v.db.Queries(ctx).UpsertVerification(ctx, sqlc.UpsertVerificationParams{
+		Identifier: identifier,
+		Value:      v.digest(identifier, code),
+		ExpiresAt:  expiresAt,
+	}); err != nil {
 		return errs.Internal(fmt.Errorf("save verification failed: %w", err))
 	}
 	return nil
@@ -105,16 +109,18 @@ func (v *verifier) consume(ctx context.Context, purpose, email, code string) err
 		return err
 	}
 
-	record, err := models.FindVerification(ctx, v.db, identifier)
+	record, err := v.db.Queries(ctx).GetVerificationByIdentifier(ctx, sqlc.GetVerificationByIdentifierParams{
+		Identifier: identifier,
+	})
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return errOTPExpired
 		}
 		return errs.Internal(err)
 	}
 
 	if !time.Now().UTC().Before(record.ExpiresAt) {
-		if err := models.DeleteVerification(ctx, v.db, record.ID); err != nil {
+		if _, err := v.db.Queries(ctx).DeleteVerificationByID(ctx, sqlc.DeleteVerificationByIDParams{ID: record.ID}); err != nil {
 			logger.FromContext(ctx).Warn("failed to clean up expired credential", zap.Error(err))
 		}
 		return errOTPExpired
@@ -126,11 +132,14 @@ func (v *verifier) consume(ctx context.Context, purpose, email, code string) err
 
 	// 核销是原子的：WHERE 里带上刚读到的摘要，只有真正删掉那一行的调用算成功。
 	// 并发提交同一枚凭据时另一路会拿到 0 行，按"已失效"处理而不是也判成功。
-	consumed, err := models.ConsumeVerification(ctx, v.db, identifier, record.Value)
+	consumed, err := v.db.Queries(ctx).ConsumeVerification(ctx, sqlc.ConsumeVerificationParams{
+		Identifier: identifier,
+		Value:      record.Value,
+	})
 	if err != nil {
 		return errs.Internal(err)
 	}
-	if !consumed {
+	if consumed == 0 {
 		return errOTPExpired
 	}
 

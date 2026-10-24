@@ -14,10 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/money"
-	"bgin/internal/platform/payment"
-	"bgin/internal/platform/payment/enums"
+	"cgin/internal/config"
+	"cgin/internal/platform/money"
+	"cgin/internal/platform/payment"
+	"cgin/internal/platform/payment/enums"
 )
 
 func TestPaymentManagerDisabledWhenEmpty(t *testing.T) {

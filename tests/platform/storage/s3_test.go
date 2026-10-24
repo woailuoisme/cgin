@@ -14,15 +14,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/storage"
+	"cgin/internal/config"
+	"cgin/internal/platform/storage"
 )
 
 // s3Config 返回一份最小可用的 S3 配置，指向本机共享栈里的 garage（明文）。
 func s3Config() config.S3StorageConfig {
 	return config.S3StorageConfig{
 		Endpoint:        "127.0.0.1:3900",
-		Bucket:          "bgin",
+		Bucket:          "cgin",
 		Region:          "us-east-1",
 		AccessKeyID:     "access-key",
 		SecretAccessKey: "secret-key",
@@ -63,7 +63,7 @@ func TestS3URL(t *testing.T) {
 
 		address, err := disk.URL("users/1/a.png")
 		require.NoError(t, err)
-		assert.Equal(t, "http://127.0.0.1:3900/bgin/users/1/a.png", address)
+		assert.Equal(t, "http://127.0.0.1:3900/cgin/users/1/a.png", address)
 	})
 
 	t.Run("配置前缀后以它为准", func(t *testing.T) {
@@ -96,7 +96,7 @@ func TestS3Presign(t *testing.T) {
 	signed, err := url.Parse(raw)
 	require.NoError(t, err)
 	assert.Equal(t, "127.0.0.1:3900", signed.Host)
-	assert.Equal(t, "/bgin/users/1/avatar.png", signed.Path)
+	assert.Equal(t, "/cgin/users/1/avatar.png", signed.Path)
 	assert.NotEmpty(t, signed.Query().Get("X-Amz-Signature"), "预签名必须真的带签名")
 	assert.Equal(t, "600", signed.Query().Get("X-Amz-Expires"))
 
@@ -125,5 +125,5 @@ func TestS3HealthCheckReportsFailure(t *testing.T) {
 
 	err = disk.HealthCheck(ctx)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "S3 bucket bgin")
+	assert.Contains(t, err.Error(), "S3 bucket cgin")
 }

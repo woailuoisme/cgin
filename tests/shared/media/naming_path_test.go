@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"bgin/internal/shared/media"
+	"cgin/internal/shared/media"
 )
 
 func TestNaming_Strategies(t *testing.T) {

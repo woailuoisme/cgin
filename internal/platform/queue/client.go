@@ -16,8 +16,8 @@ import (
 	"github.com/samber/oops"
 	"go.uber.org/zap"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/errs"
+	"cgin/internal/config"
+	"cgin/internal/platform/errs"
 )
 
 // Client 是队列基础设施的唯一实现类型：同一实例同时满足 Dispatcher、Inspector 与 Worker 三个 seam。

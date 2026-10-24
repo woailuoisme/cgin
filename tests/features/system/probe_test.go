@@ -16,8 +16,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/features/system"
-	"bgin/internal/platform/logger"
+	"cgin/internal/features/system"
+	"cgin/internal/platform/logger"
 )
 
 // errInternal 模拟底层驱动的真实报错：它带着目标地址与凭据，这类内容绝不能出现在响应体里。
@@ -228,7 +228,6 @@ func TestReadinessWithExtendedComponents(t *testing.T) {
 		Realtime: stubComponent{driver: "centrifugo", enabled: false},
 		Imgproxy: stubComponent{driver: "imgproxy", enabled: false},
 		Mailer:   stubComponent{driver: "mailpit", enabled: true},
-		Temporal: stubComponent{driver: "temporal", enabled: false},
 	})
 	system.RegisterRoutes(engine, system.NewHandler(svc, l))
 
@@ -273,13 +272,6 @@ func TestReadinessWithExtendedComponents(t *testing.T) {
 	assert.Equal(t, system.CheckHealthy, mailerCheck.Status)
 	assert.Equal(t, "mailpit", mailerCheck.Driver)
 	assert.False(t, mailerCheck.Critical)
-
-	// temporal (disabled)
-	temporalCheck, ok := got.Checks[system.ComponentTemporal]
-	require.True(t, ok)
-	assert.Equal(t, system.CheckDisabled, temporalCheck.Status)
-	assert.Equal(t, "temporal", temporalCheck.Driver)
-	assert.False(t, temporalCheck.Critical)
 }
 
 // TestReadinessDegradedWhenExtendedComponentFails 验证启用的扩展组件故障时优雅降级为 degraded。
@@ -312,35 +304,4 @@ func TestReadinessDegradedWhenExtendedComponentFails(t *testing.T) {
 	assert.Equal(t, system.CheckDegraded, imgCheck.Status)
 	assert.Equal(t, "imgproxy", imgCheck.Driver)
 	assert.Contains(t, logs.String(), "imgproxy connection refused")
-}
-
-// TestReadinessDegradedWhenTemporalFails 验证启用的 Temporal 组件故障时优雅降级为 degraded。
-func TestReadinessDegradedWhenTemporalFails(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	logs := &bytes.Buffer{}
-	l := logger.NewWithOptions(
-		logger.WithLevel("debug"),
-		logger.WithChannel("json"),
-		logger.WithWriter(logs),
-	)
-
-	engine := gin.New()
-	svc := system.NewService(system.Deps{
-		Database: stubPinger{},
-		Cache:    stubPinger{},
-		Temporal: stubComponent{driver: "temporal", enabled: true, err: errors.New("temporal connection refused")},
-	})
-	system.RegisterRoutes(engine, system.NewHandler(svc, l))
-
-	status, body := get(t, engine, "/readyz")
-	require.Equal(t, http.StatusOK, status)
-
-	var got system.ReadinessResponse
-	require.NoError(t, json.Unmarshal([]byte(body), &got))
-	assert.Equal(t, system.StatusDegraded, got.Status)
-
-	temporalCheck := got.Checks[system.ComponentTemporal]
-	assert.Equal(t, system.CheckDegraded, temporalCheck.Status)
-	assert.Equal(t, "temporal", temporalCheck.Driver)
-	assert.Contains(t, logs.String(), "temporal connection refused")
 }

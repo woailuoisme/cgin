@@ -3,7 +3,7 @@ package realtime
 import (
 	"github.com/gin-gonic/gin"
 
-	"bgin/internal/middleware"
+	"cgin/internal/middleware"
 )
 
 // RegisterRoutes 注册实时通信客户端端点与 Centrifugo 代理回调端点。

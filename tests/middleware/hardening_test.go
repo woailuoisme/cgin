@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/middleware/global"
+	"cgin/internal/middleware/global"
 )
 
 // TestSecurityHeaders 锁定安全响应头这道防线，以及 HSTS 只在生产下发的边界。

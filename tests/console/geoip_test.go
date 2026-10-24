@@ -17,8 +17,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/console"
-	"bgin/internal/console/core"
+	"cgin/internal/console"
+	"cgin/internal/console/core"
 )
 
 // makeMockXDBData 构造一个符合 XDB Header 结构且体积超过 512KB 的合法测试数据流。
@@ -102,7 +102,7 @@ func TestGeoIPUpdateOptions_Run_CancelWhenExists(t *testing.T) {
 func TestGeoIPUpdateOptions_Run_SuccessWithMockServer(t *testing.T) {
 	mockData := makeMockXDBData()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "bgin-cli/geoip-updater", r.Header.Get("User-Agent"))
+		assert.Equal(t, "cgin-cli/geoip-updater", r.Header.Get("User-Agent"))
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Length", strconv.Itoa(len(mockData)))
 		w.WriteHeader(http.StatusOK)

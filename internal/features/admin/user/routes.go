@@ -4,8 +4,8 @@ package admin
 import (
 	"github.com/gin-gonic/gin"
 
-	"bgin/internal/middleware"
-	"bgin/internal/platform/authorization"
+	"cgin/internal/middleware"
+	"cgin/internal/platform/authorization"
 )
 
 // RegisterAdminRoutes 注册管理端点（/v1/admin/users）。

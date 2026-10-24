@@ -4,7 +4,7 @@ package eventbus
 import (
 	"go.uber.org/zap"
 
-	"bgin/internal/config"
+	"cgin/internal/config"
 )
 
 // RegisterEventBus 依据全局配置与日志器实例化事件总线管理器。
@@ -12,7 +12,7 @@ func RegisterEventBus(cfg *config.Config, log *zap.Logger, opts ...Option) (*Man
 	if cfg == nil {
 		return NewManager(config.EventBusConfig{
 			Driver:      DriverGoChannel,
-			TopicPrefix: "bgin",
+			TopicPrefix: "cgin",
 			LogLevel:    "warn",
 			BufferSize:  2048,
 		}, log, opts...)

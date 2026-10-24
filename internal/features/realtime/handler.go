@@ -6,10 +6,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"bgin/internal/platform/authentication"
-	"bgin/internal/platform/errs"
-	platformRealtime "bgin/internal/platform/realtime"
-	"bgin/internal/platform/response"
+	"cgin/internal/platform/authentication"
+	"cgin/internal/platform/errs"
+	platformRealtime "cgin/internal/platform/realtime"
+	"cgin/internal/platform/response"
 )
 
 // Handler 是实时通信端点的 HTTP 适配层。
@@ -35,13 +35,13 @@ func NewHandler(service *Service) *Handler {
 // @x-order      1
 // @Router       /realtime/token [get]
 func (h *Handler) GetToken(c *gin.Context) {
-	id, ok := authentication.FromContext(c.Request.Context())
-	if !ok {
-		_ = c.Error(errs.Unauthorized(errs.CodeAuthTokenInvalid, "Authentication is required"))
+	identity, err := authentication.RequireIdentity(c.Request.Context())
+	if err != nil {
+		_ = c.Error(err)
 		return
 	}
 
-	res, err := h.service.IssueToken(c.Request.Context(), id.UserID, id.Role)
+	res, err := h.service.IssueToken(c.Request.Context(), identity.UserID, identity.Role)
 	if err != nil {
 		_ = c.Error(err)
 		return

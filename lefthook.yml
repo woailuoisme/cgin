@@ -1,4 +1,4 @@
-# bgin - Git Hooks 配置 (Lefthook)
+# cgin - Git Hooks 配置 (Lefthook)
 # 参考文档: https://lefthook.dev/configuration/
 
 # 提交前检查 (Pre-commit)

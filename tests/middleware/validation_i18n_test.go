@@ -10,11 +10,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
-	"bgin/internal/middleware/global"
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/i18n"
-	shareduser "bgin/internal/shared/user"
+	"cgin/internal/config"
+	"cgin/internal/middleware/global"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/i18n"
+	shareduser "cgin/internal/shared/user"
 )
 
 // TestValidationMessageTranslation 验证以语言包键表达的字段级校验文案，

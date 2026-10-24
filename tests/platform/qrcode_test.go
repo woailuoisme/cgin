@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/platform/qrcode"
+	"cgin/internal/platform/qrcode"
 )
 
 // PNG 图像头部固定魔数。
@@ -35,7 +35,7 @@ func createTestLogo(t *testing.T, w, h int) []byte {
 
 // TestQRCode_BasicPNG 验证基础黑白二维码的生成与标准 PNG 头解析。
 func TestQRCode_BasicPNG(t *testing.T) {
-	content := "https://github.com/ailuoga/gin-bun"
+	content := "https://github.com/ailuoga/gin-sqlc"
 
 	data, err := qrcode.New(content).
 		WithSize(200).
@@ -91,7 +91,7 @@ func TestQRCode_EmptyContent(t *testing.T) {
 
 // TestQRCode_WriteTo 验证流式写出与空写入器保护。
 func TestQRCode_WriteTo(t *testing.T) {
-	b := qrcode.New("otpauth://totp/bgin:alice@example.com?secret=JBSWY3DPEHPK3PXP")
+	b := qrcode.New("otpauth://totp/cgin:alice@example.com?secret=JBSWY3DPEHPK3PXP")
 
 	// 验证空写入器错误保护
 	n, err := b.WriteTo(nil)
@@ -108,7 +108,7 @@ func TestQRCode_WriteTo(t *testing.T) {
 
 // TestQRCode_CustomStyling 验证圆角、前景色、透明背景与边缘设置。
 func TestQRCode_CustomStyling(t *testing.T) {
-	content := "bgin-custom-style-test"
+	content := "cgin-custom-style-test"
 
 	data, err := qrcode.New(content).
 		WithCircleShape().

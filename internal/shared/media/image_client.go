@@ -26,8 +26,8 @@ import (
 	"github.com/samber/oops"
 	_ "golang.org/x/image/webp"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/errs"
+	"cgin/internal/config"
+	"cgin/internal/platform/errs"
 )
 
 // Format 指定输出图像格式。
@@ -184,7 +184,6 @@ func WithSharpen(sigma float64) ProcessOption {
 // Client 定义现代化 imgproxy 客户端与图像元数据处理契约。
 type Client interface {
 	URL(sourceURI string, opts ...ProcessOption) (string, error)
-	Build(sourceURI string) *Builder
 	Thumbnail(sourceURI string, width, height int) (string, error)
 	Avatar(sourceURI string, size int) (string, error)
 	Inspect(input []byte) (*ImageMeta, error)
@@ -200,13 +199,14 @@ type Client interface {
 
 // client 结构体实现 Client 接口。
 type client struct {
-	baseURL    string
-	key        []byte
-	salt       []byte
-	insecure   bool
-	config     config.ImgproxyConfig
-	storageCfg config.StorageConfig
-	httpClient *resty.Client
+	baseURL     string
+	internalURL string
+	key         []byte
+	salt        []byte
+	insecure    bool
+	config      config.ImgproxyConfig
+	storageCfg  config.StorageConfig
+	httpClient  *resty.Client
 }
 
 // NewImageClient 创建并初始化基于 imgproxy 的图像服务客户端。
@@ -229,19 +229,22 @@ func NewWithStorage(imgCfg config.ImgproxyConfig, storageCfg config.StorageConfi
 	}
 
 	trimmedURL := cmp.Or(strings.TrimRight(strings.TrimSpace(baseURL), "/"), "http://localhost:8088")
+	// 探测地址可独立于对外地址：容器内用服务名，浏览器用公网域名。
+	internalURL := cmp.Or(strings.TrimRight(strings.TrimSpace(mergedCfg.InternalURL), "/"), trimmedURL)
 
 	restyClient := resty.New().
 		SetTimeout(2*time.Second).
-		SetHeader("User-Agent", "bgin-imgproxy-client")
+		SetHeader("User-Agent", "cgin-imgproxy-client")
 
 	return &client{
-		baseURL:    trimmedURL,
-		key:        keyBytes,
-		salt:       saltBytes,
-		insecure:   mergedCfg.Insecure || len(keyBytes) == 0 || len(saltBytes) == 0,
-		config:     mergedCfg,
-		storageCfg: storageCfg,
-		httpClient: restyClient,
+		baseURL:     trimmedURL,
+		internalURL: internalURL,
+		key:         keyBytes,
+		salt:        saltBytes,
+		insecure:    mergedCfg.Insecure || len(keyBytes) == 0 || len(saltBytes) == 0,
+		config:      mergedCfg,
+		storageCfg:  storageCfg,
+		httpClient:  restyClient,
 	}
 }
 
@@ -272,12 +275,6 @@ func (s *client) URL(sourceURI string, opts ...ProcessOption) (string, error) {
 	}
 
 	return s.generateURL(resolvedURI, cfg)
-}
-
-// Build 返回链式 URL 构建器实例。
-func (s *client) Build(sourceURI string) *Builder {
-	resolvedURI := s.ResolveSourceURI(sourceURI)
-	return newBuilder(s, resolvedURI)
 }
 
 // Thumbnail 快捷构建等比自适应缩略图 URL。
@@ -338,12 +335,13 @@ func (s *client) ResolveSourceURI(sourcePath string) string {
 }
 
 // CheckHealth 检查 imgproxy 服务的连通性与健康状态。
+// 使用内部探测地址：容器内可用服务名，而对外签名 URL 仍使用 BaseURL。
 func (s *client) CheckHealth(ctx context.Context) error {
-	if s.baseURL == "" {
-		return errors.New("imgproxy base url is not configured")
+	if s.internalURL == "" {
+		return errors.New("imgproxy internal url is not configured")
 	}
 
-	healthURL := s.baseURL + "/health"
+	healthURL := s.internalURL + "/health"
 	resp, err := s.httpClient.R().SetContext(ctx).Get(healthURL)
 	if err != nil {
 		return fmt.Errorf("imgproxy unreachable: %w", err)

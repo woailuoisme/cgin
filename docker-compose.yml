@@ -1,6 +1,6 @@
 x-app: &app
   build: .
-  image: bgin:local
+  image: cgin:local
   pull_policy: build
   restart: unless-stopped
   env_file:
@@ -11,14 +11,14 @@ x-app: &app
 services:
   api:
     <<: *app
-    container_name: bgin-api
+    container_name: cgin-api
     command: ["serve"]
     ports:
       - "${APP_PORT:-3300}:3300"
 
   worker:
     <<: *app
-    container_name: bgin-worker
+    container_name: cgin-worker
     command: ["queue:work"]
     depends_on:
       - api

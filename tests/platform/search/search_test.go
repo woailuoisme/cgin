@@ -7,11 +7,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/uptrace/bun"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/search"
-	"bgin/tests/testutil"
+	"cgin/internal/config"
+	"cgin/internal/platform/search"
 )
 
 func TestNoopClientContract(t *testing.T) {
@@ -99,54 +97,28 @@ func TestSearchOptions(t *testing.T) {
 	assert.Equal(t, []string{"created_at:desc", "id:asc"}, req.Sort)
 }
 
-func TestModelDescriptorRegistry(t *testing.T) {
-	dummyImporter := func(_ context.Context, _ bun.IDB, _ int, _ search.ChunkHandler) (int64, error) {
+func TestModelCatalogLookup(t *testing.T) {
+	dummyImporter := func(_ context.Context, _ int, _ search.ChunkHandler) (int64, error) {
 		return 0, nil
 	}
 
-	search.RegisterModel("article", "articles", dummyImporter)
+	catalog := search.NewCatalog(search.ModelDescriptor{
+		Name:      "article",
+		IndexName: "articles",
+		Importer:  dummyImporter,
+	})
 
-	desc, ok := search.GetModel("article")
+	desc, ok := catalog.Lookup("article")
 	require.True(t, ok)
 	assert.Equal(t, "article", desc.Name)
 	assert.Equal(t, "articles", desc.IndexName)
 
-	descByIndex, ok := search.GetModel("articles")
+	descByIndex, ok := catalog.Lookup("articles")
 	require.True(t, ok)
 	assert.Equal(t, "article", descByIndex.Name)
 
-	models := search.RegisteredModels()
-	assert.NotEmpty(t, models)
-}
+	_, ok = catalog.Lookup("unknown")
+	assert.False(t, ok)
 
-func TestUserSearchableContract(t *testing.T) {
-	username := "alex_dev"
-	display := "Alex"
-	u := testutil.User().
-		WithID("usr_123").
-		WithName("Alex Doe").
-		WithEmail("alex@example.com").
-		WithPhone("+1234567890").
-		Build()
-	u.Username = &username
-	u.DisplayUsername = &display
-
-	// 静态类型断言：*models.User 满足 search.Searchable 接口
-	var _ search.Searchable = u
-
-	assert.Equal(t, "users", u.SearchableAs())
-	assert.Equal(t, "usr_123", u.SearchableKey())
-
-	doc := u.ToSearchableArray()
-	assert.Equal(t, "usr_123", doc["id"])
-	assert.Equal(t, "Alex Doe", doc["name"])
-	assert.Equal(t, "alex@example.com", doc["email"])
-	assert.Equal(t, "user", doc["role"])
-	assert.Equal(t, "active", doc["status"])
-	assert.Equal(t, true, doc["email_verified"])
-	assert.Equal(t, "alex_dev", doc["username"])
-	assert.Equal(t, "Alex", doc["display_username"])
-	assert.Equal(t, "+1234567890", doc["phone_number"])
-	assert.Equal(t, u.CreatedAt.Unix(), doc["created_at"])
-	assert.Equal(t, u.UpdatedAt.Unix(), doc["updated_at"])
+	assert.Len(t, catalog.All(), 1)
 }

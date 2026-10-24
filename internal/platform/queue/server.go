@@ -12,7 +12,7 @@ import (
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 
-	"bgin/internal/config"
+	"cgin/internal/config"
 )
 
 // RunWorker 启动后台工作协程服务，按队列权重消费任务。

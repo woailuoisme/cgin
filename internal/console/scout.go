@@ -7,13 +7,11 @@ import (
 	"strings"
 
 	"github.com/dustin/go-humanize"
-	"github.com/samber/lo"
 	"github.com/spf13/cobra"
-	"github.com/uptrace/bun"
 
-	"bgin/internal/console/core"
-	"bgin/internal/platform/search"
-	_ "bgin/internal/shared/indexes"
+	"cgin/internal/console/core"
+	"cgin/internal/platform/search"
+	"cgin/internal/shared/indexes"
 )
 
 // ScoutImportOptions 封装 scout:import 命令的参数与依赖容器 (SRP & DIP)。
@@ -43,14 +41,11 @@ func (o *ScoutImportOptions) Complete(_ *cobra.Command, args []string) error {
 const fieldModel = "model"
 
 // Validate 校验导入参数合法性。
+//
+// 模型名是否已注册需在 Run 中拿到数据库后确认，此处只做形态校验。
 func (o *ScoutImportOptions) Validate() error {
-	if !o.All {
-		if o.Model == "" {
-			return &ValidationError{Field: fieldModel, Message: "please specify a model name or use --all"}
-		}
-		if _, ok := search.GetModel(o.Model); !ok {
-			return &ValidationError{Field: fieldModel, Message: fmt.Sprintf("model [%s] is not registered as searchable", o.Model)}
-		}
+	if !o.All && o.Model == "" {
+		return &ValidationError{Field: fieldModel, Message: "please specify a model name or use --all"}
 	}
 	if o.ChunkSize <= 0 {
 		return &ValidationError{Field: "chunk", Message: "must be greater than 0"}
@@ -80,23 +75,25 @@ func (o *ScoutImportOptions) Run(ctx context.Context) error {
 	}
 
 	streams := o.Factory.IOStreams()
+	catalog := indexes.Catalog(db)
+
 	var targets []search.ModelDescriptor
 	if o.All {
-		targets = search.RegisteredModels()
+		targets = catalog.All()
 		if len(targets) == 0 {
 			core.InfoTo(streams.Out, "No searchable models registered.")
 			return nil
 		}
 	} else {
-		desc, ok := search.GetModel(o.Model)
+		desc, ok := catalog.Lookup(o.Model)
 		if !ok {
-			return fmt.Errorf("model [%s] is not registered as searchable", o.Model)
+			return fmt.Errorf("model [%s] is not registered as searchable (available: %s)", o.Model, strings.Join(indexes.Names(), ", "))
 		}
 		targets = []search.ModelDescriptor{desc}
 	}
 
 	for _, target := range targets {
-		if err := importSearchTarget(ctx, streams, db, searchClient, target, o.ChunkSize); err != nil {
+		if err := importSearchTarget(ctx, streams, searchClient, target, o.ChunkSize); err != nil {
 			return err
 		}
 	}
@@ -118,17 +115,9 @@ func newScoutImportCmd(f Factory) *cobra.Command {
 			return nil
 		},
 		ValidArgsFunction: func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-			return getSearchableModelNames(), cobra.ShellCompDirectiveNoFileComp
+			return indexes.Names(), cobra.ShellCompDirectiveNoFileComp
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := opts.Complete(cmd, args); err != nil {
-				return err
-			}
-			if err := opts.Validate(); err != nil {
-				return err
-			}
-			return opts.Run(cmd.Context())
-		},
+		RunE: runCommand(opts),
 	}
 
 	cmd.Flags().BoolVarP(&opts.All, "all", "a", false, "Import all registered searchable models")
@@ -158,12 +147,11 @@ func (o *ScoutFlushOptions) Complete(_ *cobra.Command, args []string) error {
 }
 
 // Validate 校验清空参数合法性。
+//
+// 模型名是否已注册需在 Run 中确认，此处只做形态校验。
 func (o *ScoutFlushOptions) Validate() error {
 	if o.Model == "" {
 		return &ValidationError{Field: fieldModel, Message: "please provide a model name to flush"}
-	}
-	if _, ok := search.GetModel(o.Model); !ok {
-		return &ValidationError{Field: fieldModel, Message: fmt.Sprintf("model [%s] is not registered as searchable", o.Model)}
 	}
 	return nil
 }
@@ -179,9 +167,9 @@ func (o *ScoutFlushOptions) Run(ctx context.Context) error {
 		return errors.New("search engine is disabled (check SCOUT_DRIVER and MEILISEARCH_HOST)")
 	}
 
-	desc, ok := search.GetModel(o.Model)
+	desc, ok := indexes.Catalog(nil).Lookup(o.Model)
 	if !ok {
-		return fmt.Errorf("model [%s] is not registered as searchable", o.Model)
+		return fmt.Errorf("model [%s] is not registered as searchable (available: %s)", o.Model, strings.Join(indexes.Names(), ", "))
 	}
 
 	streams := o.Factory.IOStreams()
@@ -228,17 +216,9 @@ func newScoutFlushCmd(f Factory) *cobra.Command {
 			return nil
 		},
 		ValidArgsFunction: func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-			return getSearchableModelNames(), cobra.ShellCompDirectiveNoFileComp
+			return indexes.Names(), cobra.ShellCompDirectiveNoFileComp
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := opts.Complete(cmd, args); err != nil {
-				return err
-			}
-			if err := opts.Validate(); err != nil {
-				return err
-			}
-			return opts.Run(cmd.Context())
-		},
+		RunE: runCommand(opts),
 	}
 
 	cmd.Flags().BoolVarP(&opts.Force, core.FlagForce, "f", false, core.UsageForceFlag)
@@ -246,26 +226,19 @@ func newScoutFlushCmd(f Factory) *cobra.Command {
 	return cmd
 }
 
-// getSearchableModelNames 获取所有已注册的唯一可搜索模型名称列表。
-func getSearchableModelNames() []string {
-	return lo.Map(search.RegisteredModels(), func(d search.ModelDescriptor, _ int) string {
-		return d.Name
-	})
-}
-
 // importSearchTarget 导入单个可搜索模型的全量数据并驱动进度条展示。
-func importSearchTarget(ctx context.Context, streams *core.IOStreams, db *bun.DB, searchClient search.Client, target search.ModelDescriptor, chunkSize int) error {
+func importSearchTarget(ctx context.Context, streams *core.IOStreams, searchClient search.Client, target search.ModelDescriptor, chunkSize int) error {
 	core.TitleTo(streams.Out, fmt.Sprintf("Importing [%s] records into search index [%s]...", target.Name, target.IndexName))
 	idx := searchClient.Index(target.IndexName)
 
 	var bar *core.ProgressBar
 	if target.Counter != nil {
-		if total, err := target.Counter(ctx, db); err == nil && total > 0 {
+		if total, err := target.Counter(ctx); err == nil && total > 0 {
 			bar = core.NewProgressBarTo(streams.Out, streams.CanPrompt(), total, target.Name)
 		}
 	}
 
-	count, err := target.Importer(ctx, db, chunkSize, func(docs []map[string]any) error {
+	count, err := target.Importer(ctx, chunkSize, func(docs []map[string]any) error {
 		if err := idx.AddDocuments(ctx, docs); err != nil {
 			return err
 		}

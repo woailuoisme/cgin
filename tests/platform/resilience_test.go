@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/platform/resilience"
+	"cgin/internal/platform/resilience"
 )
 
 func TestResilience_RetrySuccess(t *testing.T) {

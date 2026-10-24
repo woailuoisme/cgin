@@ -16,15 +16,15 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/singleflight"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/logger"
+	"cgin/internal/config"
+	"cgin/internal/platform/logger"
 )
 
 const (
 	// defaultPort REDIS_URL 未指定端口时的默认端口。
 	defaultPort = "6379"
 	// namespace 统一键命名空间前缀。
-	namespace = "bgin"
+	namespace = "cgin"
 	// opTimeout 单次 Redis 操作默认超时。
 	opTimeout = 500 * time.Millisecond
 )
@@ -38,7 +38,7 @@ type Client struct {
 	group singleflight.Group
 }
 
-// Key 拼接带应用命名空间的缓存键（例如 Key("jwt", "revoked", jti) -> bgin:jwt:revoked:<jti>）。
+// Key 拼接带应用命名空间的缓存键（例如 Key("jwt", "revoked", jti) -> cgin:jwt:revoked:<jti>）。
 func Key(parts ...string) string {
 	if len(parts) == 0 {
 		return namespace

@@ -1,6 +1,6 @@
-// Package console 是 bgin 的命令行界面：命令定义、参数解析与终端输出。
+// Package console 是 cgin 的命令行界面：命令定义、参数解析与终端输出。
 //
-// 应用的装配与运行在 bgin/internal/bootstrap，命令只做参数校验与编排，
+// 应用的装配与运行在 cgin/internal/bootstrap，命令只做参数校验与编排，
 // 依赖方向是 console → bootstrap（见 ADR-0002）。
 package console
 
@@ -14,8 +14,8 @@ import (
 	"github.com/dromara/carbon/v2"
 	"github.com/spf13/cobra"
 
-	"bgin/internal/config"
-	"bgin/internal/console/core"
+	"cgin/internal/config"
+	"cgin/internal/console/core"
 )
 
 // 构建元信息，由链接期 -X 注入。
@@ -43,7 +43,7 @@ func Execute(ctx context.Context, args []string) error {
 func ExecuteWithFactory(ctx context.Context, f Factory, args []string) error {
 	cmd := NewRootCommandWithFactory(f)
 	// 如果传入包含可执行程序名自身的 argv（如 os.Args），切掉程序名
-	if len(args) > 0 && (args[0] == "bgin" || filepath.Base(args[0]) == filepath.Base(os.Args[0])) {
+	if len(args) > 0 && (args[0] == "cgin" || filepath.Base(args[0]) == filepath.Base(os.Args[0])) {
 		args = args[1:]
 	}
 	cmd.SetArgs(args)
@@ -58,8 +58,8 @@ func NewRootCommand() *cobra.Command {
 // NewRootCommandWithFactory 注入依赖工厂并组装根命令与全部子命令 (IoC & DIP)。
 func NewRootCommandWithFactory(f Factory) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:           "bgin",
-		Short:         "bgin application console",
+		Use:           "cgin",
+		Short:         "cgin application console",
 		Version:       fmt.Sprintf("%s (commit %s, built %s)", version, commit, date),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -88,7 +88,7 @@ func NewRootCommandWithFactory(f Factory) *cobra.Command {
 	core.SetupColoredHelp(cmd)
 
 	// 注册以命名空间命名的业务命令分类组（Laravel Artisan 风格分组）
-	for _, id := range []string{"db", "geoip", "jwt", "make", "queue", "route", "scout", "sentry", "temporal"} {
+	for _, id := range []string{"db", "geoip", "jwt", "make", "queue", "route", "scout"} {
 		cmd.AddGroup(&cobra.Group{ID: id, Title: id})
 	}
 
@@ -108,8 +108,6 @@ func NewRootCommandWithFactory(f Factory) *cobra.Command {
 		newRouteListCmd(f),
 		newScoutImportCmd(f),
 		newScoutFlushCmd(f),
-		newSentryTestCmd(f),
-		newTemporalWorkCmd(f),
 	}
 
 	for _, subCmd := range commands {
@@ -121,4 +119,27 @@ func NewRootCommandWithFactory(f Factory) *cobra.Command {
 	cmd.AddCommand(commands...)
 
 	return cmd
+}
+
+// commandOptions 统一 CLI 命令的补全、校验与执行三段式生命周期。
+type commandOptions interface {
+	// Complete 解析命令行参数并补齐默认值。
+	Complete(*cobra.Command, []string) error
+	// Validate 校验参数语义。
+	Validate() error
+	// Run 执行命令主体。
+	Run(context.Context) error
+}
+
+// runCommand 将三段式生命周期收敛为统一的 cobra RunE。
+func runCommand(opts commandOptions) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		if err := opts.Complete(cmd, args); err != nil {
+			return err
+		}
+		if err := opts.Validate(); err != nil {
+			return err
+		}
+		return opts.Run(cmd.Context())
+	}
 }

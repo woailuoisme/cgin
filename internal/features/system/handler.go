@@ -7,8 +7,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"bgin/internal/platform/ready"
-	"bgin/internal/platform/response"
+	"cgin/internal/platform/ready"
+	"cgin/internal/platform/response"
 )
 
 // probeTimeout 是就绪探针调度的总超时时限。

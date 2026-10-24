@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"bgin/internal/bootstrap"
+	"cgin/internal/bootstrap"
 )
 
 // ServeOptions 持有 HTTP 服务启动命令的配置与依赖容器 (SRP & DIP)。
@@ -56,15 +56,7 @@ func newServeCmd(f Factory) *cobra.Command {
 		Use:   "serve",
 		Short: "Start the HTTP server",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := opts.Complete(cmd, args); err != nil {
-				return err
-			}
-			if err := opts.Validate(); err != nil {
-				return err
-			}
-			return opts.Run(cmd.Context())
-		},
+		RunE:  runCommand(opts),
 	}
 
 	cmd.Flags().IntVarP(&opts.Port, "port", "p", 0, "Override APP_PORT (0 to use configured value)")

@@ -6,14 +6,13 @@ import (
 
 	"github.com/google/uuid"
 
-	"bgin/internal/database"
-	"bgin/internal/database/models"
-	"bgin/internal/shared/enums"
+	"cgin/internal/database/sqlc"
+	"cgin/internal/shared/enums"
 )
 
 // UserFixtureBuilder 负责以链式 DSL 构造结构合法的 User 测试实体。
 type UserFixtureBuilder struct {
-	user *models.User
+	user *sqlc.User
 }
 
 // User 返回初始化好的用户测试数据构建器，拥有合法的默认活跃状态与随机唯一标识。
@@ -24,22 +23,17 @@ func User() *UserFixtureBuilder {
 	phone := "+8613800" + uid[:6]
 
 	return &UserFixtureBuilder{
-		user: &models.User{
-			Base: database.Base{
-				ID:        uid,
-				CreatedAt: now,
-				UpdatedAt: now,
-			},
+		user: &sqlc.User{
+			ID:                  uid,
 			Name:                "Test User",
 			Email:               email,
 			EmailVerified:       true,
 			Role:                enums.RoleUser,
 			Status:              enums.StatusActive,
-			Banned:              false,
-			TwoFactorEnabled:    false,
 			PhoneNumber:         &phone,
 			PhoneNumberVerified: true,
-			IsAnonymous:         false,
+			CreatedAt:           now,
+			UpdatedAt:           now,
 		},
 	}
 }
@@ -121,18 +115,18 @@ func (b *UserFixtureBuilder) Deleted(deletedAt ...time.Time) *UserFixtureBuilder
 }
 
 // Build 返回构造好的 User 实体指针。
-func (b *UserFixtureBuilder) Build() *models.User {
+func (b *UserFixtureBuilder) Build() *sqlc.User {
 	return b.user
 }
 
 // BuildValue 返回构造好的 User 实体值类型。
-func (b *UserFixtureBuilder) BuildValue() models.User {
+func (b *UserFixtureBuilder) BuildValue() sqlc.User {
 	return *b.user
 }
 
 // AccountFixtureBuilder 负责以链式 DSL 构造结构合法的 Account 测试实体。
 type AccountFixtureBuilder struct {
-	account *models.Account
+	account *sqlc.Account
 }
 
 // Account 返回初始化好的账号认证凭据测试构建器。
@@ -142,16 +136,14 @@ func Account() *AccountFixtureBuilder {
 	hashedPwd := "$argon2id$v=19$m=65536,t=3,p=4$mock_salt$mock_hash"
 
 	return &AccountFixtureBuilder{
-		account: &models.Account{
-			Base: database.Base{
-				ID:        aid,
-				CreatedAt: now,
-				UpdatedAt: now,
-			},
+		account: &sqlc.Account{
+			ID:         aid,
 			UserID:     uuid.New().String(),
 			AccountID:  "acc-" + aid[:8] + "@example.com",
-			ProviderID: models.ProviderCredential,
+			ProviderID: string(enums.ProviderCredential),
 			Password:   &hashedPwd,
+			CreatedAt:  now,
+			UpdatedAt:  now,
 		},
 	}
 }
@@ -187,11 +179,11 @@ func (b *AccountFixtureBuilder) WithPassword(hashedPwd string) *AccountFixtureBu
 }
 
 // Build 返回构造好的 Account 实体指针。
-func (b *AccountFixtureBuilder) Build() *models.Account {
+func (b *AccountFixtureBuilder) Build() *sqlc.Account {
 	return b.account
 }
 
 // BuildValue 返回构造好的 Account 实体值类型。
-func (b *AccountFixtureBuilder) BuildValue() models.Account {
+func (b *AccountFixtureBuilder) BuildValue() sqlc.Account {
 	return *b.account
 }

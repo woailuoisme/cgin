@@ -8,10 +8,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"bgin/internal/platform/authentication"
-	"bgin/internal/platform/cache"
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/logger"
+	"cgin/internal/platform/authentication"
+	"cgin/internal/platform/cache"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/logger"
 )
 
 // Tier 定义业务限流预设档位。
@@ -120,20 +120,8 @@ func ThrottleWithStore(store RateLimiterStore, limit int, window time.Duration, 
 		offset := now.Unix() % windowSeconds
 		resetAt := (bucket + 1) * windowSeconds
 
-		var scope string
-		switch {
-		case options.keyFunc != nil:
-			scope = options.keyFunc(c)
-		case options.tier != "":
-			scope = scopeKey(options.tier, c)
-		default:
-			scope = defaultScopeKey(c)
-		}
-
-		tierName := string(options.tier)
-		if tierName == "" {
-			tierName = "custom"
-		}
+		scope := resolveThrottleScope(c, options)
+		tierName := throttleTierLabel(options.tier)
 
 		key := cache.Key("ratelimit", tierName, scope, strconv.FormatInt(windowSeconds, 10), strconv.FormatInt(bucket, 10))
 		currCount, err := store.Increment(c.Request.Context(), key, 2*window)
@@ -146,49 +134,85 @@ func ThrottleWithStore(store RateLimiterStore, limit int, window time.Duration, 
 
 		// 平滑滑动窗口算法 (Sliding Window Counter)：结合前一窗口的加权余量，平滑消除窗口临界双倍突发流量。
 		prevKey := cache.Key("ratelimit", tierName, scope, strconv.FormatInt(windowSeconds, 10), strconv.FormatInt(bucket-1, 10))
-		var prevCount int64
-		if val, getErr := store.Get(c.Request.Context(), prevKey); getErr == nil {
-			prevCount, _ = strconv.ParseInt(val, 10, 64)
-		}
-
+		prevCount := previousWindowCount(c, store, prevKey)
 		weight := float64(windowSeconds-offset) / float64(windowSeconds)
 		estimatedCount := currCount + int64(float64(prevCount)*weight)
 
 		if estimatedCount > int64(limit) {
-			c.Header("X-RateLimit-Limit", strconv.Itoa(limit))
-			c.Header("X-RateLimit-Remaining", "0")
-			c.Header("X-RateLimit-Reset", strconv.FormatInt(resetAt, 10))
-			c.Header("Retry-After", strconv.FormatInt(max(resetAt-now.Unix(), 1), 10))
-
-			logger.FromContext(c.Request.Context()).Warn(
-				"rate limit exceeded",
-				zap.String("tier", tierName),
-				zap.String("scope", scope),
-				zap.Int("limit", limit),
-				zap.Int64("window_seconds", windowSeconds),
-				zap.Int64("current_count", currCount),
-				zap.Int64("estimated_count", estimatedCount),
-				zap.String("path", c.Request.URL.Path),
-				zap.String("method", c.Request.Method),
-				zap.String("ip", c.ClientIP()),
-			)
+			writeExceededHeaders(c, limit, resetAt, now.Unix())
+			logRateLimitExceeded(c, tierName, scope, limit, windowSeconds, currCount, estimatedCount)
 
 			if options.response != nil {
 				options.response(c)
-				c.Abort()
-				return
+			} else {
+				abortWithError(c, errs.RateLimited("Too many requests"))
 			}
-
-			abortWithError(c, errs.RateLimited("Too many requests"))
+			c.Abort()
 			return
 		}
 
-		c.Header("X-RateLimit-Limit", strconv.Itoa(limit))
-		c.Header("X-RateLimit-Remaining", strconv.FormatInt(max(int64(limit)-estimatedCount, 0), 10))
-		c.Header("X-RateLimit-Reset", strconv.FormatInt(resetAt, 10))
-
+		writeLimitHeaders(c, limit, int64(limit)-estimatedCount, resetAt)
 		c.Next()
 	}
+}
+
+// resolveThrottleScope 解析限流区分维度：自定义键优先，其次业务档位，最后默认维度。
+func resolveThrottleScope(c *gin.Context, options throttleOptions) string {
+	switch {
+	case options.keyFunc != nil:
+		return options.keyFunc(c)
+	case options.tier != "":
+		return scopeKey(options.tier, c)
+	default:
+		return defaultScopeKey(c)
+	}
+}
+
+// throttleTierLabel 返回日志用的档位名称，自定义限流记为 custom。
+func throttleTierLabel(tier Tier) string {
+	if tier == "" {
+		return "custom"
+	}
+	return string(tier)
+}
+
+// previousWindowCount 读取前一窗口的计数；缺失或解析失败时按 0 处理。
+func previousWindowCount(c *gin.Context, store RateLimiterStore, key string) int64 {
+	value, err := store.Get(c.Request.Context(), key)
+	if err != nil {
+		return 0
+	}
+	count, _ := strconv.ParseInt(value, 10, 64)
+	return count
+}
+
+// writeLimitHeaders 写入未超限时的配额响应头。
+func writeLimitHeaders(c *gin.Context, limit int, remaining, resetAt int64) {
+	c.Header("X-RateLimit-Limit", strconv.Itoa(limit))
+	c.Header("X-RateLimit-Remaining", strconv.FormatInt(max(remaining, 0), 10))
+	c.Header("X-RateLimit-Reset", strconv.FormatInt(resetAt, 10))
+}
+
+// writeExceededHeaders 写入超限时的配额与重试响应头。
+func writeExceededHeaders(c *gin.Context, limit int, resetAt, now int64) {
+	writeLimitHeaders(c, limit, 0, resetAt)
+	c.Header("Retry-After", strconv.FormatInt(max(resetAt-now, 1), 10))
+}
+
+// logRateLimitExceeded 记录限流拒绝的结构化审计日志。
+func logRateLimitExceeded(c *gin.Context, tier, scope string, limit int, windowSeconds, currentCount, estimatedCount int64) {
+	logger.FromContext(c.Request.Context()).Warn(
+		"rate limit exceeded",
+		zap.String("tier", tier),
+		zap.String("scope", scope),
+		zap.Int("limit", limit),
+		zap.Int64("window_seconds", windowSeconds),
+		zap.Int64("current_count", currentCount),
+		zap.Int64("estimated_count", estimatedCount),
+		zap.String("path", c.Request.URL.Path),
+		zap.String("method", c.Request.Method),
+		zap.String("ip", c.ClientIP()),
+	)
 }
 
 // limitFor 按档位读取配额，未知档位回退至未认证配额。

@@ -6,10 +6,10 @@ import (
 
 // EventBusConfig 描述事件总线与 CQRS 路由参数。
 type EventBusConfig struct {
-	Driver      string `mapstructure:"eventbus_driver"`
-	TopicPrefix string `mapstructure:"eventbus_topic_prefix"`
-	LogLevel    string `mapstructure:"eventbus_log_level"`
-	BufferSize  int    `mapstructure:"eventbus_buffer_size"`
+	Driver      string `env:"EVENTBUS_DRIVER" envDefault:"go_channel"`
+	TopicPrefix string `env:"EVENTBUS_TOPIC_PREFIX" envDefault:"cgin"`
+	LogLevel    string `env:"EVENTBUS_LOG_LEVEL" envDefault:"warn"`
+	BufferSize  int    `env:"EVENTBUS_BUFFER_SIZE" envDefault:"2048"`
 }
 
 // validateEventBus 校验事件总线配置并设置合理默认值。
@@ -18,7 +18,7 @@ func (c *Config) validateEventBus() error {
 		c.EventBus.Driver = "go_channel"
 	}
 	if strings.TrimSpace(c.EventBus.TopicPrefix) == "" {
-		c.EventBus.TopicPrefix = "bgin"
+		c.EventBus.TopicPrefix = "cgin"
 	}
 	if strings.TrimSpace(c.EventBus.LogLevel) == "" {
 		c.EventBus.LogLevel = "warn"

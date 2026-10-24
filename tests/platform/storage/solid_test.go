@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/storage"
+	"cgin/internal/config"
+	"cgin/internal/platform/storage"
 )
 
 // TestStorage_RoleInterfaces 验证 Disk 对原子角色契约的组合与满足。

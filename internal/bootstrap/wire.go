@@ -6,48 +6,45 @@ import (
 	"slices"
 
 	"github.com/dromara/carbon/v2"
-	"github.com/uptrace/bun"
-	"go.temporal.io/sdk/client"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 
-	"bgin/internal/config"
-	"bgin/internal/database"
-	adminauth "bgin/internal/features/admin/auth"
-	admin "bgin/internal/features/admin/user"
-	"bgin/internal/features/client/auth"
-	"bgin/internal/features/client/profile"
-	paymentFeature "bgin/internal/features/payment"
-	realtimeFeature "bgin/internal/features/realtime"
-	"bgin/internal/features/system"
-	"bgin/internal/middleware"
-	"bgin/internal/middleware/global"
-	platformauth "bgin/internal/platform/authentication"
-	"bgin/internal/platform/authorization"
-	"bgin/internal/platform/cache"
-	"bgin/internal/platform/eventbus"
-	"bgin/internal/platform/hasher"
-	"bgin/internal/platform/i18n"
-	"bgin/internal/platform/logger"
-	"bgin/internal/platform/mailer"
-	"bgin/internal/platform/notification"
-	"bgin/internal/platform/payment"
-	"bgin/internal/platform/pdf"
-	"bgin/internal/platform/queue"
-	"bgin/internal/platform/realtime"
-	"bgin/internal/platform/search"
-	platformsentry "bgin/internal/platform/sentry"
-	"bgin/internal/platform/storage"
-	"bgin/internal/platform/telemetry"
-	"bgin/internal/platform/temporal"
-	"bgin/internal/platform/wechat"
-	"bgin/internal/shared/media"
-	sharedDatabase "bgin/internal/shared/notification/database"
-	"bgin/internal/shared/user"
+	"cgin/internal/config"
+	"cgin/internal/database"
+	adminauth "cgin/internal/features/admin/auth"
+	admin "cgin/internal/features/admin/user"
+	"cgin/internal/features/client/auth"
+	"cgin/internal/features/client/profile"
+	paymentFeature "cgin/internal/features/payment"
+	realtimeFeature "cgin/internal/features/realtime"
+	"cgin/internal/features/system"
+	"cgin/internal/middleware"
+	"cgin/internal/middleware/global"
+	platformauth "cgin/internal/platform/authentication"
+	"cgin/internal/platform/authorization"
+	"cgin/internal/platform/cache"
+	"cgin/internal/platform/eventbus"
+	"cgin/internal/platform/hasher"
+	"cgin/internal/platform/i18n"
+	"cgin/internal/platform/logger"
+	"cgin/internal/platform/mailer"
+	"cgin/internal/platform/notification"
+	"cgin/internal/platform/payment"
+	"cgin/internal/platform/pdf"
+	"cgin/internal/platform/queue"
+	"cgin/internal/platform/realtime"
+	"cgin/internal/platform/search"
+	"cgin/internal/platform/storage"
+	"cgin/internal/platform/telemetry"
+	"cgin/internal/platform/wechat"
+	"cgin/internal/shared/media"
+	sharedDatabase "cgin/internal/shared/notification/database"
+	"cgin/internal/shared/user"
 )
 
 // NewApplication 按依赖顺序完成装配：配置 → 日志 → 基础设施 → 领域 → HTTP。
-func NewApplication(ctx context.Context, portOverride int) (*Application, error) {
+//
+// 装配中途失败时由 defer 逆序释放已登记资源，调用方无需逐处包装错误。
+func NewApplication(ctx context.Context, portOverride int) (_ *Application, err error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, err
@@ -61,45 +58,52 @@ func NewApplication(ctx context.Context, portOverride int) (*Application, error)
 
 	// 登记 teardown 资源清理链，装配中途失败时逆序释放
 	td := &teardown{}
-	log, err := initLoggingAndSentry(ctx, cfg, td)
+	defer func() {
+		if err != nil {
+			td.closeAll()
+		}
+	}()
+
+	log, err := initLogging(ctx, cfg, td)
 	if err != nil {
 		return nil, err
 	}
 
 	// 初始化 PostgreSQL 数据库连接池
-	db, err := database.Open(ctx, cfg.Database, cfg.App.Name)
+	pool, err := database.Open(ctx, cfg.Database, cfg.App.Name)
 	if err != nil {
 		return nil, err
 	}
+	db := database.NewDB(pool)
 	td.add(db.Close)
 
 	logDatabaseReady(ctx, log, db, cfg.Database)
 
 	cacheClient, locker, mailerClient, err := initInfraServices(ctx, cfg, log, td)
 	if err != nil {
-		return nil, td.fail(err)
+		return nil, err
 	}
 
 	eventBusManager, queueClient, err := initEventSubsystem(cfg, log, locker, td)
 	if err != nil {
-		return nil, td.fail(err)
+		return nil, err
 	}
 
 	// 探测并初始化文件/对象存储驱动
 	disk, err := storage.Open(ctx, cfg.Storage)
 	if err != nil {
-		return nil, td.fail(err)
+		return nil, err
 	}
 
 	translator, err := i18n.New(cfg)
 	if err != nil {
-		return nil, td.fail(err)
+		return nil, err
 	}
 	i18n.SetDefault(translator)
 
 	enforcer, err := authorization.New()
 	if err != nil {
-		return nil, td.fail(err)
+		return nil, err
 	}
 
 	tokens := platformauth.NewTokenIssuer(cfg.JWT, cacheClient)
@@ -107,15 +111,16 @@ func NewApplication(ctx context.Context, portOverride int) (*Application, error)
 
 	// 初始化用户认证提供器与用户领域服务
 	userProvider := user.NewProvider(db, hasherClient)
+	userService := user.NewService(db, hasherClient)
 
 	realtimeGateway, notifier, err := initNotificationSubsystem(cfg, db, mailerClient, queueClient, td)
 	if err != nil {
-		return nil, td.fail(err)
+		return nil, err
 	}
 
 	// 初始化客户端与管理端 Guard 及多守卫注册中心 (Multiple Guards)
-	clientGuard := platformauth.NewGuard(tokens, userProvider, user.ClientPolicy{})
-	adminGuard := platformauth.NewGuard(tokens, userProvider, user.AdminPolicy{})
+	clientGuard := platformauth.NewGuard(tokens, userProvider, user.ClientPolicy{}, userProvider.Identity)
+	adminGuard := platformauth.NewGuard(tokens, userProvider, user.AdminPolicy{}, userProvider.Identity)
 
 	authManager := platformauth.NewManager().
 		Register("client", clientGuard).
@@ -135,7 +140,6 @@ func NewApplication(ctx context.Context, portOverride int) (*Application, error)
 	})
 
 	routeMW := middleware.New(middleware.Deps{
-		Tokens:      tokens,
 		AuthManager: authManager,
 		Cache:       cacheClient,
 		Authz:       enforcer,
@@ -145,43 +149,31 @@ func NewApplication(ctx context.Context, portOverride int) (*Application, error)
 	})
 
 	authService := auth.NewService(auth.Deps{
-		DB:         db,
-		Guard:      clientGuard,
-		Tokens:     tokens,
-		Hasher:     hasherClient,
-		Cache:      cacheClient,
-		Mailer:     mailerClient,
-		Notifier:   notifier,
-		Translator: translator,
-		Config:     cfg,
-		Publisher:  eventBusManager,
+		DB:          db,
+		Users:       userService,
+		Credentials: userProvider,
+		Guard:       clientGuard,
+		Hasher:      hasherClient,
+		Cache:       cacheClient,
+		Mailer:      mailerClient,
+		Notifier:    notifier,
+		Translator:  translator,
+		Config:      cfg,
+		Publisher:   eventBusManager,
 	})
 
-	userService := user.NewService(db)
-	adminService := admin.NewService(admin.Deps{
-		DB:          db,
-		UserService: userService,
-		Hasher:      hasherClient,
-	})
+	adminService := admin.NewService(admin.Deps{UserService: userService})
 	adminAuthService := adminauth.NewService(adminauth.Deps{
-		DB:     db,
-		Guard:  adminGuard,
-		Tokens: tokens,
-		Hasher: hasherClient,
+		Guard:     adminGuard,
+		Passwords: userProvider,
 	})
 
 	searchClient, err := search.New(cfg.Search)
 	if err != nil {
-		return nil, td.fail(err)
+		return nil, err
 	}
 
 	mediaManager := media.New(cfg.Media, cfg.Storage, disk, db)
-
-	// 初始化 Temporal 工作流客户端与就绪探针适配器
-	temporalClient, temporalPinger, err := initTemporalSubsystem(cfg, log, td)
-	if err != nil {
-		return nil, td.fail(err)
-	}
 
 	// 初始化健康就绪探针 Handler
 	systemHandler := system.NewHandler(
@@ -193,7 +185,6 @@ func NewApplication(ctx context.Context, portOverride int) (*Application, error)
 			Realtime: realtimeGateway,
 			Imgproxy: mediaManager.Image(),
 			Mailer:   mailerClient,
-			Temporal: temporalPinger,
 		}),
 		log,
 	)
@@ -205,35 +196,36 @@ func NewApplication(ctx context.Context, portOverride int) (*Application, error)
 		DB:      db,
 	})
 	realtimeHandler := realtimeFeature.NewHandler(realtimeService)
-	wechatManager, err := wechat.NewManager(cfg.WeChat, cacheClient)
-	if err != nil {
-		return nil, td.fail(err)
+	if _, err := wechat.NewManager(cfg.WeChat, cacheClient); err != nil {
+		return nil, err
 	}
 
 	paymentManager, err := payment.NewManager(cfg, log)
 	if err != nil {
-		return nil, td.fail(err)
+		return nil, err
 	}
 
 	paymentService := paymentFeature.NewService(paymentManager, cacheClient, cfg, eventBusManager)
 	paymentHandler := paymentFeature.NewHandler(paymentService)
 
 	engine, err := buildEngine(
-		cfg, globalMW, routeMW, systemHandler,
-		auth.NewHandler(authService),
-		profile.NewHandler(userService, mediaManager),
-		admin.NewHandler(adminService),
-		adminauth.NewHandler(adminAuthService),
-		realtimeHandler,
-		paymentHandler,
+		cfg, globalMW, routeMW,
+		routeHandlers{
+			system:    systemHandler,
+			auth:      auth.NewHandler(authService),
+			profile:   profile.NewHandler(userService, mediaManager),
+			admin:     admin.NewHandler(adminService),
+			adminAuth: adminauth.NewHandler(adminAuthService),
+			realtime:  realtimeHandler,
+			payment:   paymentHandler,
+		},
 	)
 	if err != nil {
-		return nil, td.fail(err)
+		return nil, err
 	}
 
-	pdfService, err := pdf.RegisterPDF(cfg, disk, log)
-	if err != nil {
-		return nil, td.fail(err)
+	if _, err := pdf.RegisterPDF(cfg, disk, log); err != nil {
+		return nil, err
 	}
 
 	return &Application{
@@ -244,16 +236,8 @@ func NewApplication(ctx context.Context, portOverride int) (*Application, error)
 		locker:       locker,
 		mailer:       mailerClient,
 		notification: notifier,
-		storage:      disk,
-		media:        mediaManager,
-		pdf:          pdfService,
-		wechat:       wechatManager,
-		payment:      paymentManager,
-		realtime:     realtimeGateway,
-		search:       searchClient,
 		eventbus:     eventBusManager,
 		queue:        queueClient,
-		temporal:     temporalClient,
 		engine:       engine,
 	}, nil
 }
@@ -262,21 +246,20 @@ func NewApplication(ctx context.Context, portOverride int) (*Application, error)
 var (
 	_ system.Pinger = (*databasePinger)(nil)
 	_ system.Pinger = (*cache.Client)(nil)
-	_ system.Pinger = (mailer.Mailer)(nil)
-	_ system.Pinger = (*temporal.Pinger)(nil)
+	_ system.Pinger = mailer.Mailer(nil)
 )
 
-// databasePinger 将 *bun.DB 适配为 system.Pinger。
-type databasePinger struct{ db *bun.DB }
+// databasePinger 将 *database.DB 适配为 system.Pinger。
+type databasePinger struct{ db *database.DB }
 
 // Ping 实现 system.Pinger。
-func (p *databasePinger) Ping(ctx context.Context) error { return p.db.PingContext(ctx) }
+func (p *databasePinger) Ping(ctx context.Context) error { return p.db.Ping(ctx) }
 
 // Driver 返回底层驱动标识。
 func (*databasePinger) Driver() string { return "postgres" }
 
 // logDatabaseReady 打印数据库连接池就绪日志并进行连接池配额诊断。
-func logDatabaseReady(ctx context.Context, log *zap.Logger, db *bun.DB, cfg config.DatabaseConfig) {
+func logDatabaseReady(ctx context.Context, log *zap.Logger, db *database.DB, cfg config.DatabaseConfig) {
 	log.Info(
 		"database connection pool ready",
 		zap.Int("max_open_conns", cfg.MaxOpenConns),
@@ -290,7 +273,7 @@ func logDatabaseReady(ctx context.Context, log *zap.Logger, db *bun.DB, cfg conf
 		zap.Bool("debug", cfg.Debug),
 	)
 
-	if warning, err := database.BudgetWarning(ctx, db, cfg.MaxOpenConns); err != nil {
+	if warning, err := database.BudgetWarning(ctx, db.Pool(), cfg.MaxOpenConns); err != nil {
 		log.Debug("database connection budget check skipped", zap.Error(err))
 	} else if warning != "" {
 		log.Warn("database max open connections exceed configured budget", zap.String("detail", warning))
@@ -306,18 +289,17 @@ type teardown struct {
 // add 登记资源释放回调函数。
 func (t *teardown) add(closer func() error) { t.closers = append(t.closers, closer) }
 
-// fail 逆序释放已登记资源并返回原始错误。
-func (t *teardown) fail(cause error) error {
+// closeAll 逆序释放已登记资源；仅在装配失败时由 defer 调用。
+func (t *teardown) closeAll() {
 	for _, closer := range slices.Backward(t.closers) {
 		if err := closer(); err != nil && t.log != nil {
 			t.log.Warn("failed to close resource during teardown", zap.Error(err))
 		}
 	}
-	return cause
 }
 
-// initLoggingAndSentry 初始化 OpenTelemetry 遥测、Sentry / GlitchTip 监控客户端与挂载 Sentry 桥接的核心日志器。
-func initLoggingAndSentry(ctx context.Context, cfg *config.Config, td *teardown) (*zap.Logger, error) {
+// initLogging 初始化 OpenTelemetry 遥测与挂载遥测桥接的核心日志器。
+func initLogging(ctx context.Context, cfg *config.Config, td *teardown) (*zap.Logger, error) {
 	telemetryShutdown, err := telemetry.Init(ctx, cfg.Telemetry, cfg.App.Name, cfg.App.Env, "")
 	if err != nil {
 		return nil, fmt.Errorf("init telemetry failed: %w", err)
@@ -326,26 +308,13 @@ func initLoggingAndSentry(ctx context.Context, cfg *config.Config, td *teardown)
 		return telemetryShutdown(context.Background())
 	})
 
-	sentryFlush, err := platformsentry.Init(cfg.Sentry, cfg.App.Name, cfg.App.Env, "")
-	if err != nil {
-		return nil, fmt.Errorf("init sentry client failed: %w", err)
-	}
-
 	var loggerOpts []logger.Option
-	if cfg.Sentry.IsEnabled() {
-		loggerOpts = append(loggerOpts, logger.WithExtraCore(platformsentry.NewZapCore(zapcore.WarnLevel)))
-	}
 	if core := telemetry.NewZapCore(cfg.Telemetry.EffectiveServiceName(cfg.App.Name), logger.ParseLevel(cfg.Log.Level)); core != nil {
 		loggerOpts = append(loggerOpts, logger.WithExtraCore(core))
 	}
 
 	log := logger.New(cfg, loggerOpts...)
 	td.log = log
-	td.add(func() error {
-		sentryFlush()
-		return nil
-	})
-
 	return log, nil
 }
 
@@ -396,26 +365,10 @@ func initEventSubsystem(cfg *config.Config, log *zap.Logger, locker cache.Locker
 	return eventBusManager, queueClient, nil
 }
 
-// initTemporalSubsystem 按需装配 Temporal 分布式工作流客户端与就绪探针适配器。
-func initTemporalSubsystem(cfg *config.Config, log *zap.Logger, td *teardown) (client.Client, *temporal.Pinger, error) {
-	if !cfg.Temporal.Enabled {
-		return nil, temporal.NewPinger(nil, false), nil
-	}
-	temporalClient, err := temporal.NewClient(cfg.Temporal, log, cfg.Telemetry.Enabled)
-	if err != nil {
-		return nil, nil, err
-	}
-	td.add(func() error {
-		temporalClient.Close()
-		return nil
-	})
-	return temporalClient, temporal.NewPinger(temporalClient, true), nil
-}
-
 // initNotificationSubsystem 装配实时通知网关与统一通知引擎。
 func initNotificationSubsystem(
 	cfg *config.Config,
-	db *bun.DB,
+	db *database.DB,
 	mailerClient mailer.Mailer,
 	queueClient *queue.Client,
 	td *teardown,

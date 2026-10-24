@@ -25,7 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"bgin/internal/platform/errs"
+	"cgin/internal/platform/errs"
 )
 
 // api.md 5.2 明文规定的两条文案，不得随意改动。
@@ -261,7 +261,6 @@ func TestStatusCoversEveryDeclaredCode(t *testing.T) {
 		{errs.CodeExcelRowsError, http.StatusUnprocessableEntity},
 		{errs.CodeExcelReadRowError, http.StatusUnprocessableEntity},
 		{errs.CodeEmptySheets, http.StatusBadRequest},
-		{errs.CodeCSVReadError, http.StatusBadRequest},
 		{errs.CodeNotificationMissingRecipient, http.StatusBadRequest},
 		{errs.CodeNotificationMissingRecipientID, http.StatusBadRequest},
 		{errs.CodeNotificationUnsupportedSMS, http.StatusBadRequest},

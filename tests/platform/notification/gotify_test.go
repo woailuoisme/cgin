@@ -13,11 +13,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/notification"
-	"bgin/internal/platform/notification/channel/gotify"
-	gotifyHTTP "bgin/internal/platform/notification/channel/gotify/http"
-	gotifyMock "bgin/internal/platform/notification/channel/gotify/mock"
+	"cgin/internal/config"
+	"cgin/internal/platform/notification"
+	"cgin/internal/platform/notification/channel/gotify"
+	gotifyHTTP "cgin/internal/platform/notification/channel/gotify/http"
+	gotifyMock "cgin/internal/platform/notification/channel/gotify/mock"
 )
 
 // TestGotifyMessage_FluentAPIs 验证 Gotify 消息模型的链式构建与高级特性。
@@ -215,11 +215,11 @@ func TestGotifyHTTPDriver_Send(t *testing.T) {
 	assert.Equal(t, "http", driver.Name())
 
 	t.Run("正常推送发送", func(t *testing.T) {
-		msg := gotify.NewMessage("Hello from bgin!").
+		msg := gotify.NewMessage("Hello from cgin!").
 			WithTitle("Greeting").
 			HighPriority().
 			Markdown().
-			WithClickURL("https://bgin.dev")
+			WithClickURL("https://cgin.dev")
 
 		err := driver.Send(ctx, msg)
 		require.NoError(t, err)
@@ -227,7 +227,7 @@ func TestGotifyHTTPDriver_Send(t *testing.T) {
 		assert.Equal(t, "valid-token", receivedAuthToken)
 		assert.Equal(t, "/message", receivedPath)
 		assert.Equal(t, "Greeting", receivedBody["title"])
-		assert.Equal(t, "Hello from bgin!", receivedBody["message"])
+		assert.Equal(t, "Hello from cgin!", receivedBody["message"])
 		assert.InDelta(t, 8.0, receivedBody["priority"], 0.001)
 
 		extras, ok := receivedBody["extras"].(map[string]any)

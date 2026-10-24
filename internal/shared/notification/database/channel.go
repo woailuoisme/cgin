@@ -6,23 +6,22 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
-	"time"
 
 	"github.com/samber/oops"
-	"github.com/uptrace/bun"
 
-	"bgin/internal/database/models"
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/notification/contract"
+	"cgin/internal/database"
+	"cgin/internal/database/sqlc"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/notification/contract"
 )
 
 // Channel 数据库通知渠道实现。
 type Channel struct {
-	db *bun.DB
+	db *database.DB
 }
 
 // NewChannel 创建数据库通知渠道实例。
-func NewChannel(db *bun.DB) *Channel {
+func NewChannel(db *database.DB) *Channel {
 	return &Channel{db: db}
 }
 
@@ -31,8 +30,8 @@ func (c *Channel) Name() string {
 	return "database"
 }
 
-// DB 返回底层 Bun ORM 句柄。
-func (c *Channel) DB() *bun.DB {
+// DB 返回底层数据访问入口。
+func (c *Channel) DB() *database.DB {
 	return c.db
 }
 
@@ -110,15 +109,12 @@ func (c *Channel) Send(ctx context.Context, notifiable any, message any) error {
 		return oops.Code(errs.CodeDatabaseUnavailable).Errorf("database: connection is not available for notification")
 	}
 
-	notif := &models.Notification{
-		Type:           msg.Type,
+	if _, err := c.db.Queries(ctx).CreateNotification(ctx, sqlc.CreateNotificationParams{
 		NotifiableType: notifiableType,
 		NotifiableID:   notifiableID,
+		Type:           msg.Type,
 		Data:           string(dataBytes),
-	}
-
-	_, err = c.db.NewInsert().Model(notif).Exec(ctx)
-	if err != nil {
+	}); err != nil {
 		return oops.Code(errs.CodeInternal).In("DatabaseChannel.Send").Wrap(err)
 	}
 
@@ -130,13 +126,7 @@ func (c *Channel) MarkAsRead(ctx context.Context, id string) error {
 	if c.db == nil {
 		return oops.Code(errs.CodeDatabaseUnavailable).Errorf("database: connection is not available")
 	}
-	now := time.Now().UTC()
-	if _, err := c.db.NewUpdate().
-		Model((*models.Notification)(nil)).
-		Set("read_at = ?", now).
-		Set("updated_at = ?", now).
-		Where("id = ? AND read_at IS NULL", id).
-		Exec(ctx); err != nil {
+	if _, err := c.db.Queries(ctx).MarkNotificationRead(ctx, sqlc.MarkNotificationReadParams{ID: id}); err != nil {
 		return oops.Code(errs.CodeInternal).In("DatabaseChannel.MarkAsRead").Wrap(err)
 	}
 	return nil
@@ -161,14 +151,10 @@ func (c *Channel) MarkAllAsRead(ctx context.Context, notifiable any) error {
 		return err
 	}
 
-	now := time.Now().UTC()
-	_, err = c.db.NewUpdate().
-		Model((*models.Notification)(nil)).
-		Set("read_at = ?", now).
-		Set("updated_at = ?", now).
-		Where("notifiable_type = ? AND notifiable_id = ? AND read_at IS NULL", notifiableType, notifiableID).
-		Exec(ctx)
-	if err != nil {
+	if _, err := c.db.Queries(ctx).MarkAllNotificationsRead(ctx, sqlc.MarkAllNotificationsReadParams{
+		NotifiableType: notifiableType,
+		NotifiableID:   notifiableID,
+	}); err != nil {
 		return oops.Code(errs.CodeInternal).In("DatabaseChannel.MarkAllAsRead").Wrap(err)
 	}
 	return nil
@@ -184,18 +170,18 @@ func (c *Channel) UnreadCount(ctx context.Context, notifiable any) (int, error) 
 		return 0, err
 	}
 
-	count, err := c.db.NewSelect().
-		Model((*models.Notification)(nil)).
-		Where("notifiable_type = ? AND notifiable_id = ? AND read_at IS NULL", notifiableType, notifiableID).
-		Count(ctx)
+	count, err := c.db.Queries(ctx).CountUnreadNotifications(ctx, sqlc.CountUnreadNotificationsParams{
+		NotifiableType: notifiableType,
+		NotifiableID:   notifiableID,
+	})
 	if err != nil {
 		return 0, oops.Code(errs.CodeInternal).In("DatabaseChannel.UnreadCount").Wrap(err)
 	}
 	return int(count), nil
 }
 
-// Paginate 分页查询指定接收者的通知列表。
-func (c *Channel) Paginate(ctx context.Context, notifiable any, page, perPage int, unreadOnly bool) ([]models.Notification, int, error) {
+// Paginate 分页查询指定接收者的通知列表（单查询同时返回总数）。
+func (c *Channel) Paginate(ctx context.Context, notifiable any, page, perPage int, unreadOnly bool) ([]sqlc.Notification, int, error) {
 	if c.db == nil {
 		return nil, 0, oops.Code(errs.CodeDatabaseUnavailable).Errorf("database: connection is not available")
 	}
@@ -208,32 +194,32 @@ func (c *Channel) Paginate(ctx context.Context, notifiable any, page, perPage in
 	if perPage < 1 || perPage > 100 {
 		perPage = 20
 	}
-	offset := (page - 1) * perPage
 
-	q := c.db.NewSelect().
-		Model((*models.Notification)(nil)).
-		Where("notifiable_type = ? AND notifiable_id = ?", notifiableType, notifiableID)
-
-	if unreadOnly {
-		q = q.Where("read_at IS NULL")
-	}
-
-	count, err := q.Count(ctx)
-	if err != nil {
-		return nil, 0, oops.Code(errs.CodeInternal).In("DatabaseChannel.Paginate.Count").Wrap(err)
-	}
-
-	var items []models.Notification
-	err = q.Order("created_at DESC").Limit(int64(perPage)).Offset(int64(offset)).Scan(ctx, &items)
+	rows, err := c.db.Queries(ctx).ListNotifications(ctx, sqlc.ListNotificationsParams{
+		NotifiableType: notifiableType,
+		NotifiableID:   notifiableID,
+		UnreadOnly:     unreadOnly,
+		PageOffset:     int64((page - 1) * perPage),
+		PageLimit:      int64(perPage),
+	})
 	if err != nil {
 		return nil, 0, oops.Code(errs.CodeInternal).In("DatabaseChannel.Paginate.Scan").Wrap(err)
 	}
 
-	return items, int(count), nil
+	total := 0
+	if len(rows) > 0 {
+		total = int(rows[0].TotalCount)
+	}
+	items := make([]sqlc.Notification, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, row.Notification)
+	}
+
+	return items, total, nil
 }
 
 // PaginateUnread 仅分页查询指定接收者的未读通知列表。
-func (c *Channel) PaginateUnread(ctx context.Context, notifiable any, page, perPage int) ([]models.Notification, int, error) {
+func (c *Channel) PaginateUnread(ctx context.Context, notifiable any, page, perPage int) ([]sqlc.Notification, int, error) {
 	return c.Paginate(ctx, notifiable, page, perPage, true)
 }
 
@@ -242,11 +228,7 @@ func (c *Channel) Delete(ctx context.Context, id string) error {
 	if c.db == nil {
 		return oops.Code(errs.CodeDatabaseUnavailable).Errorf("database: connection is not available")
 	}
-	_, err := c.db.NewDelete().
-		Model((*models.Notification)(nil)).
-		Where("id = ?", id).
-		Exec(ctx)
-	if err != nil {
+	if _, err := c.db.Queries(ctx).SoftDeleteNotification(ctx, sqlc.SoftDeleteNotificationParams{ID: id}); err != nil {
 		return oops.Code(errs.CodeInternal).In("DatabaseChannel.Delete").Wrap(err)
 	}
 	return nil
@@ -262,11 +244,10 @@ func (c *Channel) ClearAll(ctx context.Context, notifiable any) error {
 		return err
 	}
 
-	_, err = c.db.NewDelete().
-		Model((*models.Notification)(nil)).
-		Where("notifiable_type = ? AND notifiable_id = ?", notifiableType, notifiableID).
-		Exec(ctx)
-	if err != nil {
+	if _, err := c.db.Queries(ctx).SoftDeleteNotificationsByRecipient(ctx, sqlc.SoftDeleteNotificationsByRecipientParams{
+		NotifiableType: notifiableType,
+		NotifiableID:   notifiableID,
+	}); err != nil {
 		return oops.Code(errs.CodeInternal).In("DatabaseChannel.ClearAll").Wrap(err)
 	}
 	return nil

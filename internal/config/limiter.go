@@ -4,10 +4,10 @@ import "fmt"
 
 // LimiterConfig 描述请求速率限制配额（每分钟最大请求数，0 为不限制）。
 type LimiterConfig struct {
-	Enabled       *bool `mapstructure:"ratelimit_enabled"`
-	Anonymous     int   `mapstructure:"ratelimit_anonymous"`
-	Authenticated int   `mapstructure:"ratelimit_authenticated"`
-	Sensitive     int   `mapstructure:"ratelimit_sensitive"`
+	Enabled       *bool `env:"RATELIMIT_ENABLED" envDefault:"true"`
+	Anonymous     int   `env:"RATELIMIT_ANONYMOUS" envDefault:"60"`
+	Authenticated int   `env:"RATELIMIT_AUTHENTICATED" envDefault:"300"`
+	Sensitive     int   `env:"RATELIMIT_SENSITIVE" envDefault:"10"`
 }
 
 // IsEnabled 报告是否全局激活请求速率限制保护。

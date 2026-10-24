@@ -9,15 +9,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/logger"
+	"cgin/internal/config"
+	"cgin/internal/platform/logger"
 )
 
 // TestLogger_BuildAndContext 验证日志器构建与 Context 请求标识传递。
 func TestLogger_BuildAndContext(t *testing.T) {
 	cfg := &config.Config{
 		App: config.AppConfig{
-			Name: "bgin-test",
+			Name: "cgin-test",
 			Env:  "local",
 		},
 		Log: config.LogConfig{
@@ -46,7 +46,7 @@ func TestLogger_BuildAndContext(t *testing.T) {
 func TestLogger_ChannelJSON(t *testing.T) {
 	cfg := &config.Config{
 		App: config.AppConfig{
-			Name: "bgin-test",
+			Name: "cgin-test",
 			Env:  "production",
 		},
 		Log: config.LogConfig{

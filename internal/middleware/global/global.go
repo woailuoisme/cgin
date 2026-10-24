@@ -19,9 +19,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/cache"
-	"bgin/internal/platform/i18n"
+	"cgin/internal/config"
+	"cgin/internal/platform/cache"
+	"cgin/internal/platform/i18n"
 )
 
 // Deps 描述全局中间件所需的全部外部依赖。

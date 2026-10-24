@@ -26,8 +26,8 @@ import (
 	govalidator "github.com/go-playground/validator/v10"
 	"github.com/samber/lo"
 
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/i18n"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/i18n"
 )
 
 func init() {
@@ -244,7 +244,7 @@ var reservedShortNames = map[string]struct{}{
 	"system": {},
 	"me":     {},
 	"api":    {},
-	"bgin":   {},
+	"cgin":   {},
 }
 
 // validateUsernameSlug 校验用户名的字符集。前置长度守卫（1-64 字符），防御恶意超长串造成正则回溯。

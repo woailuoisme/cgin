@@ -13,9 +13,9 @@ const defaultMiniProgramKey = "default"
 type WeChatConfig struct {
 	// ApplicationsJSON 以 JSON 对象描述多个微信小程序凭据。
 	// 形如 {"user": {"app_id":"...", "app_secret":"..."}, "merchant": {"app_id":"...", "app_secret":"..."}}。
-	ApplicationsJSON string `mapstructure:"wechat_miniprogram_apps_json"`
+	ApplicationsJSON string `env:"WECHAT_MINIPROGRAM_APPS_JSON"`
 	// MiniProgram 单小程序便捷配置：未提供 ApplicationsJSON 时作为默认应用生效。
-	MiniProgram WeChatMiniProgramConfig `mapstructure:",squash"`
+	MiniProgram WeChatMiniProgramConfig
 }
 
 // Declared 判断微信能力是否已配置（多应用 JSON 或单应用环境变量任一已声明即视为已配置）。
@@ -46,9 +46,9 @@ func (c *WeChatConfig) Applications() (map[string]WeChatMiniProgramConfig, error
 // WeChatMiniProgramConfig 定义单个微信小程序服务端凭据。
 type WeChatMiniProgramConfig struct {
 	// AppID 小程序 AppID。
-	AppID string `mapstructure:"wechat_miniprogram_app_id" json:"app_id"`
+	AppID string `env:"WECHAT_MINIPROGRAM_APP_ID" json:"app_id"`
 	// AppSecret 小程序 AppSecret。
-	AppSecret string `mapstructure:"wechat_miniprogram_app_secret" json:"app_secret"`
+	AppSecret string `env:"WECHAT_MINIPROGRAM_APP_SECRET" json:"app_secret"`
 }
 
 // Declared 判断小程序凭据是否已被声明。

@@ -25,9 +25,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/websocket"
 
-	"bgin/internal/config"
-	featureRealtime "bgin/internal/features/realtime"
-	platformRealtime "bgin/internal/platform/realtime"
+	"cgin/internal/config"
+	featureRealtime "cgin/internal/features/realtime"
+	platformRealtime "cgin/internal/platform/realtime"
 )
 
 // getRealtimeConfig 加载当前环境的 Centrifugo 配置。

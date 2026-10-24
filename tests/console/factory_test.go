@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
-	"bgin/internal/console"
-	"bgin/internal/console/core"
+	"cgin/internal/config"
+	"cgin/internal/console"
+	"cgin/internal/console/core"
 )
 
 func TestIOStreams_BufferingAndColor(t *testing.T) {

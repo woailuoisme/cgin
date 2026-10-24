@@ -20,8 +20,8 @@ import (
 	"github.com/samber/oops"
 	"go.uber.org/zap"
 
-	"bgin/internal/platform/i18n"
-	"bgin/internal/platform/logger"
+	"cgin/internal/platform/i18n"
+	"cgin/internal/platform/logger"
 )
 
 // PostgreSQL 错误码，用于把约束冲突翻译成对调用方有意义的响应。

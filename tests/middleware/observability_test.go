@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/middleware/global"
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/logger"
+	"cgin/internal/middleware/global"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/logger"
 )
 
 // TestAccessLog404SingleWarn 验证 404 请求仅输出一条 WARN 访问日志，
@@ -182,47 +182,4 @@ func TestAccessLog_ProbeSilencing(t *testing.T) {
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz-fail", nil))
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
 	assert.NotEmpty(t, strings.TrimSpace(buf.String()), "异常状态探针必须保留日志用于监控告警")
-}
-
-// TestObservability_Recovery_MarksSentryReported 验证 Recovery 中间件捕获 panic 后，
-// 会在 gin.Context 注入染色标记 sentry_reported = true，避免后续 ErrorHandler 二次重复上报。
-func TestObservability_Recovery_MarksSentryReported(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	var reported bool
-	mw := global.New(global.Deps{})
-	engine := gin.New()
-	engine.Use(
-		mw.ErrorHandler(),
-		func(c *gin.Context) {
-			c.Next()
-			reported = global.IsSentryReported(c)
-		},
-		mw.Recovery(),
-	)
-
-	engine.GET("/panic", func(c *gin.Context) {
-		panic("database connection lost")
-	})
-
-	rec := httptest.NewRecorder()
-	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/panic", nil))
-
-	require.Equal(t, http.StatusInternalServerError, rec.Code)
-	assert.True(t, reported, "发生 panic 时 Recovery 必须将上下文标记为已上报，杜绝重复 Issue")
-}
-
-// TestGlobal_SentryReportedHelpers 验证上下文染色辅助函数的安全边界与判断逻辑。
-func TestGlobal_SentryReportedHelpers(t *testing.T) {
-	assert.False(t, global.IsSentryReported(nil))
-
-	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	assert.False(t, global.IsSentryReported(c))
-
-	global.MarkSentryReported(c)
-	assert.True(t, global.IsSentryReported(c))
-
-	// 重复标记幂等
-	global.MarkSentryReported(c)
-	assert.True(t, global.IsSentryReported(c))
 }

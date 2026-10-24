@@ -10,7 +10,7 @@ import (
 
 	"github.com/samber/lo"
 
-	"bgin/internal/platform/errs"
+	"cgin/internal/platform/errs"
 )
 
 // MemoryMailer 纯内存邮件发送器，专用于脱机单元测试与发送行为断言。

@@ -13,9 +13,9 @@ import (
 	"github.com/samber/oops"
 	"go.uber.org/zap"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/resilience"
+	"cgin/internal/config"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/resilience"
 )
 
 // resendMailer 基于 Resend 官方 SDK 实现的现代化邮件发送器。
@@ -40,7 +40,7 @@ func newResendMailer(cfg config.MailConfig, log *zap.Logger) (*resendMailer, err
 	})
 
 	client := resend.NewCustomClient(httpClient, apiKey)
-	client.UserAgent = "bgin-mailer/1.0"
+	client.UserAgent = "cgin-mailer/1.0"
 
 	baseURLStr := strings.TrimRight(cmp.Or(strings.TrimSpace(cfg.Resend.BaseURL), "https://api.resend.com"), "/") + "/"
 	parsedURL, err := url.Parse(baseURLStr)

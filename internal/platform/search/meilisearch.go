@@ -12,8 +12,8 @@ import (
 	"github.com/samber/lo"
 	"github.com/samber/oops"
 
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/resilience"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/resilience"
 )
 
 var (

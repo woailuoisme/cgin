@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/platform/notification/channel/chat"
-	"bgin/internal/platform/notification/channel/chat/telegram"
+	"cgin/internal/platform/notification/channel/chat"
+	"cgin/internal/platform/notification/channel/chat/telegram"
 )
 
 // telegramStub 记录 Telegram Bot API 收到的一次请求。

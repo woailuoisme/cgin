@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"bgin/internal/platform/cache"
+	"cgin/internal/platform/cache"
 )
 
 // BlacklistStore 抽象令牌与用户撤销黑名单的缓存存取能力。

@@ -3,7 +3,7 @@ package realtime
 import (
 	"time"
 
-	platformRealtime "bgin/internal/platform/realtime"
+	platformRealtime "cgin/internal/platform/realtime"
 )
 
 // TokenResource 描述客户端连接 Centrifugo 所需的 JWT 凭据与连接元信息。

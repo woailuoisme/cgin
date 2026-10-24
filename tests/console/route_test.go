@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/console"
+	"cgin/internal/console"
 )
 
 func executeConsoleCommand(ctx context.Context, args ...string) (string, error) {

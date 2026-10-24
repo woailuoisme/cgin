@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-resty/resty/v2"
 
-	"bgin/internal/platform/errs"
+	"cgin/internal/platform/errs"
 )
 
 const (

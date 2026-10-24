@@ -17,8 +17,8 @@ import (
 	"go.uber.org/goleak"
 	"go.uber.org/zap"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/eventbus"
+	"cgin/internal/config"
+	"cgin/internal/platform/eventbus"
 )
 
 func TestMain(m *testing.M) {

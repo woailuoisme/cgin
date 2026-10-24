@@ -1,0 +1,50 @@
+-- {{ .ChineseName }}聚合查询（由 make:crud 生成，改表结构后请重新执行 sqlc generate）。
+
+-- name: Get{{ .PascalName }}ByID :one
+SELECT *
+FROM {{ .TableName }} AS {{ .TableAlias }}
+WHERE {{ .TableAlias }}.id = @id
+  AND {{ .TableAlias }}.deleted_at IS NULL;
+
+-- name: List{{ .PluralPascal }} :many
+SELECT sqlc.embed({{ .TableAlias }}), count(*) OVER () AS total_count
+FROM {{ .TableName }} AS {{ .TableAlias }}
+WHERE {{ .TableAlias }}.deleted_at IS NULL
+  AND (sqlc.narg('search')::text IS NULL OR {{ .TableAlias }}.name ILIKE sqlc.narg('search')::text)
+  AND (sqlc.narg('status')::text IS NULL OR {{ .TableAlias }}.status = sqlc.narg('status')::text)
+ORDER BY {{ .TableAlias }}.created_at DESC, {{ .TableAlias }}.id DESC
+LIMIT @page_limit::bigint
+OFFSET @page_offset::bigint;
+
+-- name: Create{{ .PascalName }} :one
+INSERT INTO {{ .TableName }} (
+  name,
+  description,
+  status
+) VALUES (
+  @name,
+  sqlc.narg('description'),
+  @status
+)
+RETURNING *;
+
+-- name: Update{{ .PascalName }} :one
+UPDATE {{ .TableName }} AS {{ .TableAlias }}
+SET
+  name = COALESCE(sqlc.narg('name'), {{ .TableAlias }}.name),
+  description = CASE
+    WHEN @clear_description::bool THEN NULL
+    ELSE COALESCE(sqlc.narg('description'), {{ .TableAlias }}.description)
+  END,
+  status = COALESCE(sqlc.narg('status'), {{ .TableAlias }}.status),
+  updated_at = now()
+WHERE {{ .TableAlias }}.id = @id
+  AND {{ .TableAlias }}.deleted_at IS NULL
+RETURNING *;
+
+-- name: SoftDelete{{ .PascalName }} :execrows
+UPDATE {{ .TableName }} AS {{ .TableAlias }}
+SET deleted_at = now(),
+    updated_at = now()
+WHERE {{ .TableAlias }}.id = @id
+  AND {{ .TableAlias }}.deleted_at IS NULL;

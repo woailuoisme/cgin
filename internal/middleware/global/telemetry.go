@@ -15,13 +15,13 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
-	"bgin/internal/platform/telemetry"
+	"cgin/internal/platform/telemetry"
 )
 
 const (
 	headerTraceID = "x-trace-id"
-	tracerScope   = "bgin/http"
-	meterScope    = "bgin/http"
+	tracerScope   = "cgin/http"
+	meterScope    = "cgin/http"
 )
 
 type httpMetrics struct {

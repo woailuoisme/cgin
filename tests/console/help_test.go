@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/console"
-	"bgin/internal/console/core"
+	"cgin/internal/console"
+	"cgin/internal/console/core"
 )
 
 // getHelpOutput 辅助函数：通过 ExecuteContext 捕获包含全量默认标志与附加命令的完整帮助输出。
@@ -38,7 +38,7 @@ func TestColoredHelp_Formatting(t *testing.T) {
 		output := getHelpOutput(t)
 		assert.NotContains(t, output, "\x1b[", "禁用色彩时不应包含 ANSI 转义序列")
 		assert.Contains(t, output, "Usage:")
-		assert.Contains(t, output, "bgin [command]")
+		assert.Contains(t, output, "cgin [command]")
 		assert.Contains(t, output, "Available commands:")
 		assert.Contains(t, output, "completion")
 		assert.Contains(t, output, "help")
@@ -50,9 +50,9 @@ func TestColoredHelp_Formatting(t *testing.T) {
 		assert.Contains(t, output, "route\n")
 		assert.Contains(t, output, "route:list")
 		assert.Contains(t, output, "Flags:")
-		assert.Contains(t, output, "-h, --help      help for bgin")
-		assert.Contains(t, output, "-v, --version   version for bgin")
-		assert.Contains(t, output, `Use "bgin [command] --help" for more information about a command.`)
+		assert.Contains(t, output, "-h, --help      help for cgin")
+		assert.Contains(t, output, "-v, --version   version for cgin")
+		assert.Contains(t, output, `Use "cgin [command] --help" for more information about a command.`)
 	})
 
 	// 2. 测试启用彩色高亮时的 ANSI 转义字符与关键高亮元素
@@ -86,14 +86,14 @@ func TestColoredHelp_Formatting(t *testing.T) {
 		assert.Contains(t, output, core.StyleCmd("help", pad))
 
 		// 验证选项标志与使用说明完整包含
-		assert.Contains(t, output, "help for bgin")
-		assert.Contains(t, output, "version for bgin")
-		assert.Contains(t, output, `Use "`+core.StyleUseLine("bgin [command] --help")+`" for more information about a command.`)
+		assert.Contains(t, output, "help for cgin")
+		assert.Contains(t, output, "version for cgin")
+		assert.Contains(t, output, `Use "`+core.StyleUseLine("cgin [command] --help")+`" for more information about a command.`)
 	})
 
 	// 3. 验证 FlagUsages 彩色解析的列对齐严格保真
 	t.Run("flag styling preserves column alignment", func(t *testing.T) {
-		rawFlags := `  -h, --help             help for bgin
+		rawFlags := `  -h, --help             help for cgin
   -p, --port int         Override APP_PORT
       --chinese string   Chinese desc
       --client           Client flag
@@ -113,7 +113,7 @@ func TestColoredHelp_Formatting(t *testing.T) {
 		require.Len(t, coloredLines, len(plainLines))
 
 		for i := range plainLines {
-			plainDescIdx := strings.Index(plainLines[i], "bgin")
+			plainDescIdx := strings.Index(plainLines[i], "cgin")
 			if plainDescIdx == -1 {
 				plainDescIdx = strings.Index(plainLines[i], "Override")
 			}
@@ -127,7 +127,7 @@ func TestColoredHelp_Formatting(t *testing.T) {
 		}
 	})
 
-	// 4. 验证层级子命令 (如 bgin serve 与 bgin make crud) 帮助信息的高亮与对齐继承
+	// 4. 验证层级子命令 (如 cgin serve 与 cgin make crud) 帮助信息的高亮与对齐继承
 	t.Run("subcommand help inherits colored template", func(t *testing.T) {
 		core.SetColorEnabled(true)
 		defer core.ResetColorOverride()
@@ -136,14 +136,14 @@ func TestColoredHelp_Formatting(t *testing.T) {
 		serveOutput := getHelpOutput(t, "serve")
 		assert.Contains(t, serveOutput, core.StyleHeader("Usage:"))
 		assert.Contains(t, serveOutput, core.StyleHeader("Flags:"))
-		assert.Contains(t, serveOutput, core.StyleUseLine("bgin serve [flags]"))
+		assert.Contains(t, serveOutput, core.StyleUseLine("cgin serve [flags]"))
 		assert.Contains(t, serveOutput, "Override APP_PORT")
 
 		// 验证 make:crud 命令
 		crudOutput := getHelpOutput(t, "make:crud")
 		assert.Contains(t, crudOutput, core.StyleHeader("Usage:"))
 		assert.Contains(t, crudOutput, core.StyleHeader("Flags:"))
-		assert.Contains(t, crudOutput, core.StyleUseLine("bgin make:crud [name] [flags]"))
+		assert.Contains(t, crudOutput, core.StyleUseLine("cgin make:crud [name] [flags]"))
 		assert.Contains(t, crudOutput, "Custom Chinese business description")
 	})
 }

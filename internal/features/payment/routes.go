@@ -3,7 +3,7 @@ package payment
 import (
 	"github.com/gin-gonic/gin"
 
-	"bgin/internal/middleware"
+	"cgin/internal/middleware"
 )
 
 // RegisterRoutes 在 /v1/payments 下注册支付网关公开回调端点。

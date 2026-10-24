@@ -1,4 +1,4 @@
-// Package database 负责 PostgreSQL 连接池管理与客户端初始化。
+// Package database 负责 PostgreSQL 连接池管理、事务工作单元与类型安全数据访问。
 package database
 
 import (
@@ -7,62 +7,72 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/stdlib"
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/pgdialect"
+	"github.com/exaring/otelpgx"
+	"github.com/jackc/pgx/v5/multitracer"
+	"github.com/jackc/pgx/v5/pgxpool"
 
-	"bgin/internal/config"
+	"cgin/internal/config"
 )
 
 // Open 建立 PostgreSQL 连接池并执行连通性探测。
-func Open(ctx context.Context, cfg config.DatabaseConfig, applicationName string) (*bun.DB, error) {
-	pgxConfig, err := pgx.ParseConfig(cfg.URL)
+func Open(ctx context.Context, cfg config.DatabaseConfig, applicationName string) (*pgxpool.Pool, error) {
+	poolCfg, err := pgxpool.ParseConfig(cfg.URL)
 	if err != nil {
 		return nil, fmt.Errorf("database: parse DB_URL failed: %w", err)
 	}
 
 	// 设置单条连接建立超时
-	pgxConfig.ConnectTimeout = cfg.ConnectTimeout
+	poolCfg.ConnConfig.ConnectTimeout = cfg.ConnectTimeout
 
-	if pgxConfig.RuntimeParams == nil {
-		pgxConfig.RuntimeParams = make(map[string]string, 4)
+	if poolCfg.ConnConfig.RuntimeParams == nil {
+		poolCfg.ConnConfig.RuntimeParams = make(map[string]string, 4)
 	}
 	// 会话时区固定为 UTC，保持服务端时间计算口径一致
-	pgxConfig.RuntimeParams["timezone"] = "UTC"
+	poolCfg.ConnConfig.RuntimeParams["timezone"] = "UTC"
 	if applicationName != "" {
-		pgxConfig.RuntimeParams["application_name"] = applicationName
+		poolCfg.ConnConfig.RuntimeParams["application_name"] = applicationName
 	}
 
 	// 设置会话级语句与事务超时保护
 	if cfg.StatementTimeout > 0 {
-		pgxConfig.RuntimeParams["statement_timeout"] = millis(cfg.StatementTimeout)
+		poolCfg.ConnConfig.RuntimeParams["statement_timeout"] = millis(cfg.StatementTimeout)
 	}
 	if cfg.IdleInTxTimeout > 0 {
-		pgxConfig.RuntimeParams["idle_in_transaction_session_timeout"] = millis(cfg.IdleInTxTimeout)
+		poolCfg.ConnConfig.RuntimeParams["idle_in_transaction_session_timeout"] = millis(cfg.IdleInTxTimeout)
 	}
 
-	sqlDB := stdlib.OpenDB(*pgxConfig)
-	// 设置连接池容量与生命周期参数
-	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
-	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
-	sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
-	sqlDB.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
+	// 池容量与连接寿命：MinConns 为常驻热连接数，上限由配置校验保证不溢出。
+	poolCfg.MaxConns = int32(cfg.MaxOpenConns) //nolint:gosec // 上限由 DatabaseConfig.Validate 保证
+	poolCfg.MinConns = int32(cfg.MaxIdleConns) //nolint:gosec // 上限由 DatabaseConfig.Validate 保证
+	poolCfg.MaxConnLifetime = cfg.ConnMaxLifetime
+	poolCfg.MaxConnIdleTime = cfg.ConnMaxIdleTime
 
-	if err := sqlDB.PingContext(ctx); err != nil {
-		_ = sqlDB.Close()
+	// 链路追踪与结构化日志：otelpgx 负责 span，ZapTracer 负责慢查询与脱敏审计。
+	poolCfg.ConnConfig.Tracer = multitracer.New(
+		otelpgx.NewTracer(),
+		NewZapTracer(cfg),
+	)
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	if err != nil {
+		return nil, fmt.Errorf("database: create pool failed: %w", err)
+	}
+
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
 		return nil, fmt.Errorf("database: connect failed: %w", err)
 	}
-
-	db := bun.NewDB(sqlDB, pgdialect.New())
-	db = AddQueryHooks(db, cfg)
-	return db, nil
+	return pool, nil
 }
 
 // BudgetWarning 检查连接池上限与服务端 max_connections 预算，超出建议比例时返回告警信息。
-func BudgetWarning(ctx context.Context, db *bun.DB, maxOpenConns int) (string, error) {
+func BudgetWarning(ctx context.Context, pool *pgxpool.Pool, maxOpenConns int) (string, error) {
+	if pool == nil {
+		return "", ErrNotInitialised
+	}
+
 	var maxConns, reserved int
-	if err := db.QueryRowContext(ctx,
+	if err := pool.QueryRow(ctx,
 		"select current_setting('max_connections')::int, current_setting('superuser_reserved_connections')::int",
 	).Scan(&maxConns, &reserved); err != nil {
 		return "", fmt.Errorf("database: read connection budget failed: %w", err)

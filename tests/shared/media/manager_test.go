@@ -8,10 +8,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
-	"bgin/internal/database/models"
-	"bgin/internal/platform/storage"
-	"bgin/internal/shared/media"
+	"cgin/internal/config"
+	"cgin/internal/database"
+	"cgin/internal/platform/storage"
+	"cgin/internal/shared/media"
 )
 
 func TestManager_ContractsAndURLDerivation(t *testing.T) {
@@ -35,26 +35,17 @@ func TestManager_ContractsAndURLDerivation(t *testing.T) {
 	mgr := media.New(mediaCfg, storageCfg, disk, nil)
 	require.NotNil(t, mgr)
 
-	t.Run("Attachable 契约验证", func(t *testing.T) {
-		attachable := media.GenericAttachable{
-			ModelType: "user",
-			ModelID:   "usr_abc123",
-		}
-		assert.Equal(t, "user", attachable.GetModelType())
-		assert.Equal(t, "usr_abc123", attachable.GetModelID())
-
-		userModel := &models.User{
-			ID: "usr_999",
-		}
-		assert.Equal(t, "user", userModel.GetModelType())
-		assert.Equal(t, "usr_999", userModel.GetModelID())
+	t.Run("Owner 宿主标识归一化", func(t *testing.T) {
+		owner := media.NewOwner(" user ", " usr_abc123 ")
+		assert.Equal(t, "user", owner.Type)
+		assert.Equal(t, "usr_abc123", owner.ID)
 	})
 
 	t.Run("URL / Thumbnail / Avatar 动态派生逻辑", func(t *testing.T) {
-		item := &models.Media{
+		item := &database.Media{
 			Disk:     "local",
 			FileName: "avatars/2026/09/28/sample.png",
-			MimeType: "image/png",
+			MIMEType: "image/png",
 		}
 
 		// 1. 原图 URL 获取
@@ -90,7 +81,7 @@ func TestManager_ContractsAndURLDerivation(t *testing.T) {
 		err = mgr.Delete(ctx, "01923456-789a-7b3c-8d4e-5f6a7b8c9d0e")
 		require.Error(t, err)
 
-		_, err = mgr.Get(ctx, media.GenericAttachable{ModelType: "user", ModelID: "1"})
+		_, err = mgr.Get(ctx, media.NewOwner("user", "1"))
 		require.Error(t, err)
 	})
 }

@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"bgin/internal/platform/cache"
+	"cgin/internal/platform/cache"
 )
 
 // TestKey 覆盖命名空间拼接的几种输入。
@@ -16,10 +16,10 @@ func TestKey(t *testing.T) {
 		parts []string
 		want  string
 	}{
-		{"不给片段时只返回命名空间", nil, "bgin"},
-		{"单片段", []string{"session"}, "bgin:session"},
-		{"多片段按序拼接", []string{"jwt", "revoked", "abc"}, "bgin:jwt:revoked:abc"},
-		{"空片段保留分隔符", []string{"a", "", "b"}, "bgin:a::b"},
+		{"不给片段时只返回命名空间", nil, "cgin"},
+		{"单片段", []string{"session"}, "cgin:session"},
+		{"多片段按序拼接", []string{"jwt", "revoked", "abc"}, "cgin:jwt:revoked:abc"},
+		{"空片段保留分隔符", []string{"a", "", "b"}, "cgin:a::b"},
 	}
 
 	for _, tt := range tests {
@@ -34,12 +34,12 @@ func TestKey(t *testing.T) {
 // 这三处是应用里全部的真实用法：键名一旦漂移，在途的令牌撤销名单与限流计数会突然"失联"
 // ——撤销记录查不到、限流配额从零开始，且都不会报错。
 func TestKeyKeepsExistingShapes(t *testing.T) {
-	assert.Equal(t, "bgin:jwt:revoked:jti-1",
+	assert.Equal(t, "cgin:jwt:revoked:jti-1",
 		cache.Key("jwt", "revoked", "jti-1"))
 
-	assert.Equal(t, "bgin:auth:otp-attempts:user@example.com",
+	assert.Equal(t, "cgin:auth:otp-attempts:user@example.com",
 		cache.Key("auth", "otp-attempts", "user@example.com"))
 
-	assert.Equal(t, "bgin:ratelimit:sensitive:ip:127.0.0.1:12345",
+	assert.Equal(t, "cgin:ratelimit:sensitive:ip:127.0.0.1:12345",
 		cache.Key("ratelimit", "sensitive", "ip:127.0.0.1", "12345"))
 }

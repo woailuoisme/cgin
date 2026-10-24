@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
-	"bgin/internal/shared/media"
+	"cgin/internal/config"
+	"cgin/internal/shared/media"
 )
 
 func TestImgproxyClient_Signature(t *testing.T) {
@@ -53,23 +53,6 @@ func TestImgproxyClient_Signature(t *testing.T) {
 		assert.Contains(t, avatarURL, "/rs:fill:120:120:")
 		assert.Contains(t, avatarURL, "/g:fp:")
 		assert.True(t, strings.HasSuffix(avatarURL, ".webp"))
-	})
-
-	t.Run("Builder 链式构建生成 URL", func(t *testing.T) {
-		builtURL, err := client.Build("https://storage.example.com/photos/banner.jpg").
-			Resize(800, 600).
-			Format(media.FormatAVIF).
-			Quality(90).
-			Blur(1.5).
-			Sharpen(0.8).
-			Sign()
-
-		require.NoError(t, err)
-		assert.Contains(t, builtURL, "/rs:fit:800:600:")
-		assert.Contains(t, builtURL, "/q:90/")
-		assert.Contains(t, builtURL, "/bl:1.50/")
-		assert.Contains(t, builtURL, "/sh:0.80/")
-		assert.True(t, strings.HasSuffix(builtURL, ".avif"))
 	})
 
 	t.Run("Insecure 模式生成带 insecure 前缀的 URL", func(t *testing.T) {

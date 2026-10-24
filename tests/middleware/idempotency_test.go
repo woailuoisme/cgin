@@ -3,11 +3,11 @@ package middleware_test
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,441 +15,286 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/middleware/global"
-	"bgin/internal/platform/authentication"
-	"bgin/internal/platform/cache"
-	"bgin/internal/platform/errs"
+	"cgin/internal/middleware/global"
+	"cgin/internal/middleware/global/idempotency"
+	"cgin/internal/platform/errs"
 )
 
-// memStore 是用于单元测试的内存级 IdempotencyStore 实现。
-type memStore struct {
-	mu   sync.Mutex
-	data map[string]string
-}
+// testIdempotencyKey 是符合默认 36 字符校验的幂等键。
+const testIdempotencyKey = "019572d4-a6c8-78b1-8cf0-281b94c032a1"
 
-func newMemStore() *memStore {
-	return &memStore{data: make(map[string]string)}
-}
-
-func (s *memStore) SetNX(_ context.Context, key, value string, _ time.Duration) (bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, exists := s.data[key]; exists {
-		return false, nil
-	}
-	s.data[key] = value
-	return true, nil
-}
-
-func (s *memStore) Get(_ context.Context, key string) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	val, exists := s.data[key]
-	if !exists {
-		return "", cache.ErrNotFound
-	}
-	return val, nil
-}
-
-func (s *memStore) Set(_ context.Context, key, value string, _ time.Duration) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.data[key] = value
-	return nil
-}
-
-func (s *memStore) Delete(_ context.Context, keys ...string) (int64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var count int64
-	for _, k := range keys {
-		if _, exists := s.data[k]; exists {
-			delete(s.data, k)
-			count++
-		}
-	}
-	return count, nil
-}
-
-func setupTestRouter(store global.IdempotencyStore, opts ...global.IdempotencyOption) *gin.Engine {
+// setupRouter 装配错误信封与幂等中间件；未注入存储时使用进程内实现。
+func setupRouter(configs ...idempotency.Config) *gin.Engine {
 	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	m := global.New(global.Deps{})
-	r.Use(m.ErrorHandler())
-	r.Use(global.NewIdempotency(store, opts...))
-	return r
+
+	router := gin.New()
+	middleware := global.New(global.Deps{})
+	router.Use(middleware.ErrorHandler())
+	router.Use(global.NewIdempotency(nil, configs...))
+	return router
 }
 
-// TestIdempotency_PermissiveNoHeader 宽松模式下，未带幂等标头直接放行。
-func TestIdempotency_PermissiveNoHeader(t *testing.T) {
-	store := newMemStore()
-	r := setupTestRouter(store)
+// doRequest 发起一次带幂等键的请求。
+func doRequest(t *testing.T, router *gin.Engine, method, path, key, body string, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
 
-	r.POST("/orders", func(c *gin.Context) {
+	var reader *bytes.Buffer
+	if body != "" {
+		reader = bytes.NewBufferString(body)
+	} else {
+		reader = bytes.NewBuffer(nil)
+	}
+
+	request := httptest.NewRequest(method, path, reader)
+	if key != "" {
+		request.Header.Set(global.HeaderIdempotencyKey, key)
+	}
+	for name, value := range headers {
+		request.Header.Set(name, value)
+	}
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	return recorder
+}
+
+// TestIdempotency_PassThroughWithoutKey 未携带幂等键时完全透传。
+func TestIdempotency_PassThroughWithoutKey(t *testing.T) {
+	router := setupRouter()
+	var calls atomic.Int32
+
+	router.POST("/orders", func(c *gin.Context) {
+		calls.Add(1)
 		c.JSON(http.StatusOK, gin.H{"status": "created"})
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/orders", bytes.NewBufferString(`{"item":"book"}`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusOK, w.Code)
-	assert.Empty(t, w.Header().Get("Idempotent-Replayed"))
+	require.Equal(t, http.StatusOK, doRequest(t, router, http.MethodPost, "/orders", "", `{}`, nil).Code)
+	require.Equal(t, http.StatusOK, doRequest(t, router, http.MethodPost, "/orders", "", `{}`, nil).Code)
+	assert.EqualValues(t, 2, calls.Load())
 }
 
-// TestIdempotency_EnforcedNoHeader 严格模式下，未携带标头应被拦截并返回 400。
-func TestIdempotency_EnforcedNoHeader(t *testing.T) {
-	store := newMemStore()
-	r := setupTestRouter(store, global.WithIdempotencyEnforced(true))
-
-	r.POST("/orders", func(c *gin.Context) {
+// TestIdempotency_RejectsInvalidKey 默认校验要求 36 字符。
+func TestIdempotency_RejectsInvalidKey(t *testing.T) {
+	router := setupRouter()
+	router.POST("/orders", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "created"})
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/orders", bytes.NewBufferString(`{"item":"book"}`))
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusBadRequest, w.Code)
-
-	var errResp map[string]any
-	err := json.Unmarshal(w.Body.Bytes(), &errResp)
-	require.NoError(t, err)
-	assert.Equal(t, string(errs.CodeIdempotencyRequired), errResp["code"])
+	recorder := doRequest(t, router, http.MethodPost, "/orders", "short-key", `{}`, nil)
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), string(errs.CodeBadRequest))
 }
 
-// TestIdempotency_SuccessAndReplay 验证正常执行与相同请求直接回放。
-func TestIdempotency_SuccessAndReplay(t *testing.T) {
-	store := newMemStore()
-	r := setupTestRouter(store)
+// TestIdempotency_ReplaysCompletedResponse 重复请求回放状态码、响应头与响应体。
+func TestIdempotency_ReplaysCompletedResponse(t *testing.T) {
+	router := setupRouter()
+	var calls atomic.Int32
 
-	callCount := 0
-	r.POST("/payments", func(c *gin.Context) {
-		callCount++
-		c.JSON(http.StatusCreated, gin.H{"order_id": "ord_123", "amount": 100})
+	router.POST("/orders", func(c *gin.Context) {
+		calls.Add(1)
+		c.Header("X-Business-Trace", "trace-001")
+		c.SetCookie("session", "secret", 3600, "/", "", false, true)
+		c.JSON(http.StatusCreated, gin.H{"id": "ord_001"})
 	})
 
-	body := `{"amount":100,"currency":"USD"}`
-
-	// 第一次请求：真实执行
-	req1 := httptest.NewRequest(http.MethodPost, "/payments", bytes.NewBufferString(body))
-	req1.Header.Set("Content-Type", "application/json")
-	req1.Header.Set("Idempotency-Key", "idem-uuid-001")
-	w1 := httptest.NewRecorder()
-	r.ServeHTTP(w1, req1)
-
-	require.Equal(t, http.StatusCreated, w1.Code)
-	assert.Empty(t, w1.Header().Get("Idempotent-Replayed"))
-	assert.Equal(t, 1, callCount)
-
-	// 第二次请求：携带相同 Key 与 Body，应直接回放
-	req2 := httptest.NewRequest(http.MethodPost, "/payments", bytes.NewBufferString(body))
-	req2.Header.Set("Content-Type", "application/json")
-	req2.Header.Set("Idempotency-Key", "idem-uuid-001")
-	w2 := httptest.NewRecorder()
-	r.ServeHTTP(w2, req2)
-
-	require.Equal(t, http.StatusCreated, w2.Code)
-	assert.Equal(t, "true", w2.Header().Get("Idempotent-Replayed"))
-	assert.Equal(t, w1.Body.String(), w2.Body.String())
-	assert.Equal(t, 1, callCount, "后端 Handler 不应被再次调用")
-}
-
-// TestIdempotency_ScopeFollowsTokenSubject 锁定幂等作用域按令牌 sub 声明分片：
-// 令牌轮换后同一幂等键仍应回放，而不同用户之间必须互相隔离。
-func TestIdempotency_ScopeFollowsTokenSubject(t *testing.T) {
-	store := newMemStore()
-	r := setupTestRouter(store)
-
-	callCount := 0
-	r.POST("/subscriptions", func(c *gin.Context) {
-		callCount++
-		c.JSON(http.StatusCreated, gin.H{"subscription_id": "sub_1"})
-	})
-
-	body := `{"plan":"pro"}`
-	key := "idem-rotation-001"
-
-	first := postIdempotent(t, r, "/subscriptions", body, key, testJWT(t, "user-1"))
+	first := doRequest(t, router, http.MethodPost, "/orders", testIdempotencyKey, `{"item":"book"}`, nil)
 	require.Equal(t, http.StatusCreated, first.Code)
+	require.NotEmpty(t, first.Header().Get("Set-Cookie"))
 
-	// 令牌已轮换（签名与签发时间不同），但 sub 未变：必须回放而不是重复执行。
-	rotated := postIdempotent(t, r, "/subscriptions", body, key, testJWT(t, "user-1"))
-	require.Equal(t, http.StatusCreated, rotated.Code)
-	assert.Equal(t, "true", rotated.Header().Get(global.HeaderIdempotentReplayed),
-		"凭据轮换后同一用户的重试必须命中缓存")
-	assert.Equal(t, 1, callCount)
-
-	// 另一用户使用相同幂等键与请求体：作用域不同，必须真实执行。
-	other := postIdempotent(t, r, "/subscriptions", body, key, testJWT(t, "user-2"))
-	require.Equal(t, http.StatusCreated, other.Code)
-	assert.Empty(t, other.Header().Get(global.HeaderIdempotentReplayed),
-		"不同用户不得共享幂等命名空间")
-	assert.Equal(t, 2, callCount)
+	second := doRequest(t, router, http.MethodPost, "/orders", testIdempotencyKey, `{"item":"book"}`, nil)
+	require.Equal(t, http.StatusCreated, second.Code)
+	assert.JSONEq(t, first.Body.String(), second.Body.String())
+	assert.Equal(t, "trace-001", second.Header().Get("X-Business-Trace"))
+	assert.Empty(t, second.Header().Get("Set-Cookie"), "Cookie 默认不参与回放")
+	assert.EqualValues(t, 1, calls.Load())
 }
 
-// postIdempotent 发起一次带幂等键与 Bearer 凭据的 POST 请求。
-func postIdempotent(t *testing.T, r *gin.Engine, path, body, key, token string) *httptest.ResponseRecorder {
-	t.Helper()
+// TestIdempotency_ReplaysEmptyBodyStatus 无响应体时仍需回放状态码。
+func TestIdempotency_ReplaysEmptyBodyStatus(t *testing.T) {
+	router := setupRouter()
+	var calls atomic.Int32
 
-	req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Idempotency-Key", key)
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+	router.POST("/no-content", func(c *gin.Context) {
+		calls.Add(1)
+		c.Status(http.StatusNoContent)
+	})
+
+	require.Equal(t, http.StatusNoContent, doRequest(t, router, http.MethodPost, "/no-content", testIdempotencyKey, `{}`, nil).Code)
+	require.Equal(t, http.StatusNoContent, doRequest(t, router, http.MethodPost, "/no-content", testIdempotencyKey, `{}`, nil).Code)
+	assert.EqualValues(t, 1, calls.Load())
+}
+
+// TestIdempotency_ConcurrentRequestsExecuteOnce 相同键并发时只执行一次，其余等待后回放。
+func TestIdempotency_ConcurrentRequestsExecuteOnce(t *testing.T) {
+	router := setupRouter()
+	var calls atomic.Int32
+
+	router.POST("/payments", func(c *gin.Context) {
+		calls.Add(1)
+		time.Sleep(40 * time.Millisecond)
+		c.JSON(http.StatusOK, gin.H{"status": "paid"})
+	})
+
+	const workers = 6
+	var waitGroup sync.WaitGroup
+	codes := make([]int, workers)
+	waitGroup.Add(workers)
+	for index := range workers {
+		go func() {
+			defer waitGroup.Done()
+			codes[index] = doRequest(t, router, http.MethodPost, "/payments", testIdempotencyKey, `{}`, nil).Code
+		}()
 	}
+	waitGroup.Wait()
 
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	return w
-}
-
-// testJWT 构造一个仅载荷有意义的 JWT：中间件只解析 sub，不做签名校验。
-func testJWT(t *testing.T, subject string) string {
-	t.Helper()
-
-	encode := func(payload map[string]string) string {
-		raw, err := json.Marshal(payload)
-		require.NoError(t, err)
-		return base64.RawURLEncoding.EncodeToString(raw)
+	for _, code := range codes {
+		assert.Equal(t, http.StatusOK, code)
 	}
-
-	return encode(map[string]string{"alg": "HS256", "typ": "JWT"}) + "." +
-		encode(map[string]string{"sub": subject}) + ".signature"
+	assert.EqualValues(t, 1, calls.Load())
 }
 
-// TestIdempotency_AltHeaderBridge 验证 X-Idempotency-Key 标头平滑兼容。
-func TestIdempotency_AltHeaderBridge(t *testing.T) {
-	store := newMemStore()
-	r := setupTestRouter(store)
+// TestIdempotency_DoesNotCacheHandlerError 处理器返回错误时不缓存，允许重试。
+func TestIdempotency_DoesNotCacheHandlerError(t *testing.T) {
+	router := setupRouter()
+	var calls atomic.Int32
 
-	r.POST("/charges", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"charge_id": "ch_888"})
-	})
-
-	body := `{"amount":50}`
-
-	req1 := httptest.NewRequest(http.MethodPost, "/charges", bytes.NewBufferString(body))
-	req1.Header.Set("X-Idempotency-Key", "legacy-key-999")
-	w1 := httptest.NewRecorder()
-	r.ServeHTTP(w1, req1)
-	require.Equal(t, http.StatusOK, w1.Code)
-
-	req2 := httptest.NewRequest(http.MethodPost, "/charges", bytes.NewBufferString(body))
-	req2.Header.Set("X-Idempotency-Key", "legacy-key-999")
-	w2 := httptest.NewRecorder()
-	r.ServeHTTP(w2, req2)
-
-	require.Equal(t, http.StatusOK, w2.Code)
-	assert.Equal(t, "true", w2.Header().Get("Idempotent-Replayed"))
-}
-
-// TestIdempotency_PayloadMismatch 验证相同 Key 复用于不同载荷时返回 422。
-func TestIdempotency_PayloadMismatch(t *testing.T) {
-	store := newMemStore()
-	r := setupTestRouter(store)
-
-	r.POST("/transfers", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"transfer": "ok"})
-	})
-
-	// 第一次请求
-	req1 := httptest.NewRequest(http.MethodPost, "/transfers", bytes.NewBufferString(`{"to":"Alice","amount":100}`))
-	req1.Header.Set("Idempotency-Key", "transfer-key-1")
-	w1 := httptest.NewRecorder()
-	r.ServeHTTP(w1, req1)
-	require.Equal(t, http.StatusOK, w1.Code)
-
-	// 第二次请求：改了接收人或金额
-	req2 := httptest.NewRequest(http.MethodPost, "/transfers", bytes.NewBufferString(`{"to":"Bob","amount":999}`))
-	req2.Header.Set("Idempotency-Key", "transfer-key-1")
-	w2 := httptest.NewRecorder()
-	r.ServeHTTP(w2, req2)
-
-	require.Equal(t, http.StatusUnprocessableEntity, w2.Code)
-
-	var errResp map[string]any
-	err := json.Unmarshal(w2.Body.Bytes(), &errResp)
-	require.NoError(t, err)
-	assert.Equal(t, string(errs.CodeIdempotencyMismatch), errResp["code"])
-}
-
-// TestIdempotency_InFlightConflict 验证同一 Key 在处理中发生并发时返回 409。
-func TestIdempotency_InFlightConflict(t *testing.T) {
-	store := newMemStore()
-	r := setupTestRouter(store)
-
-	// 预先向 store 注入处于 "processing" 状态的记录，模拟前序并发请求仍在执行中
-	cacheKey := cache.Key("idempotency", "user:usr_concurrent", "inflight-key-123")
-	processingRecord := `{"status":"processing","fingerprint":"any","created_at":123456789}`
-	err := store.Set(t.Context(), cacheKey, processingRecord, 30*time.Second)
-	require.NoError(t, err)
-
-	r.POST("/heavy-task", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"done": true})
-	})
-
-	req := httptest.NewRequest(http.MethodPost, "/heavy-task", bytes.NewBufferString(`{}`))
-	req.Header.Set("Idempotency-Key", "inflight-key-123")
-	req = req.WithContext(authentication.With(req.Context(), authentication.Identity{UserID: "usr_concurrent"}))
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusConflict, w.Code)
-
-	var errResp map[string]any
-	err = json.Unmarshal(w.Body.Bytes(), &errResp)
-	require.NoError(t, err)
-	assert.Equal(t, string(errs.CodeIdempotencyConflict), errResp["code"])
-}
-
-// TestIdempotency_ServerErrorDoesNotCache 验证 500 异常时不缓存，并自动删除锁以供重试。
-func TestIdempotency_ServerErrorDoesNotCache(t *testing.T) {
-	store := newMemStore()
-	r := setupTestRouter(store)
-
-	attempts := 0
-	r.POST("/flaky", func(c *gin.Context) {
-		attempts++
-		if attempts == 1 {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "db down"})
+	router.POST("/flaky", func(c *gin.Context) {
+		if calls.Add(1) == 1 {
+			_ = c.Error(errs.Internal(errors.New("database unavailable")))
+			c.Abort()
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "recovered"})
 	})
 
-	body := `{"param":"val"}`
+	first := doRequest(t, router, http.MethodPost, "/flaky", testIdempotencyKey, `{}`, nil)
+	require.Equal(t, http.StatusInternalServerError, first.Code)
 
-	// 第一次调用：返回 500
-	req1 := httptest.NewRequest(http.MethodPost, "/flaky", bytes.NewBufferString(body))
-	req1.Header.Set("Idempotency-Key", "flaky-key-1")
-	w1 := httptest.NewRecorder()
-	r.ServeHTTP(w1, req1)
-	require.Equal(t, http.StatusInternalServerError, w1.Code)
-
-	// 第二次调用：因为锁已释放，应当允许重试执行成功，而不是被 409 或 500 缓存阻断
-	req2 := httptest.NewRequest(http.MethodPost, "/flaky", bytes.NewBufferString(body))
-	req2.Header.Set("Idempotency-Key", "flaky-key-1")
-	w2 := httptest.NewRecorder()
-	r.ServeHTTP(w2, req2)
-
-	require.Equal(t, http.StatusOK, w2.Code)
-	assert.Equal(t, 2, attempts)
-	assert.Empty(t, w2.Header().Get("Idempotent-Replayed"))
+	second := doRequest(t, router, http.MethodPost, "/flaky", testIdempotencyKey, `{}`, nil)
+	require.Equal(t, http.StatusOK, second.Code)
+	assert.EqualValues(t, 2, calls.Load())
 }
 
-// TestIdempotency_UserScopeIsolation 验证不同用户使用相同 Idempotency-Key 互不干扰。
-func TestIdempotency_UserScopeIsolation(t *testing.T) {
-	store := newMemStore()
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	m := global.New(global.Deps{})
-	r.Use(m.ErrorHandler())
-
-	// 模拟认证中间件：从 Header 取 X-Test-User-ID 注入 Identity 上下文
-	r.Use(func(c *gin.Context) {
-		if uid := c.GetHeader("X-Test-User-ID"); uid != "" {
-			c.Request = c.Request.WithContext(authentication.With(c.Request.Context(), authentication.Identity{UserID: uid}))
-		}
-		c.Next()
+// TestIdempotency_KeyScopeIsolation 不同作用域使用同一幂等键互不干扰。
+func TestIdempotency_KeyScopeIsolation(t *testing.T) {
+	router := setupRouter(idempotency.Config{
+		KeyScope: func(c *gin.Context) string {
+			return c.GetHeader("X-Tenant")
+		},
 	})
-	r.Use(global.NewIdempotency(store))
+	var calls atomic.Int32
 
-	r.POST("/user-actions", func(c *gin.Context) {
-		id, _ := authentication.FromContext(c.Request.Context())
-		c.JSON(http.StatusOK, gin.H{"actor": id.UserID})
+	router.POST("/actions", func(c *gin.Context) {
+		calls.Add(1)
+		c.JSON(http.StatusOK, gin.H{"tenant": c.GetHeader("X-Tenant")})
 	})
 
-	body := `{"action":"submit"}`
-	sharedKey := "user-action-shared-key"
+	first := doRequest(t, router, http.MethodPost, "/actions", testIdempotencyKey, `{}`, map[string]string{"X-Tenant": "tenant-a"})
+	second := doRequest(t, router, http.MethodPost, "/actions", testIdempotencyKey, `{}`, map[string]string{"X-Tenant": "tenant-b"})
 
-	// 用户 1 发送
-	req1 := httptest.NewRequest(http.MethodPost, "/user-actions", bytes.NewBufferString(body))
-	req1.Header.Set("Idempotency-Key", sharedKey)
-	req1.Header.Set("X-Test-User-ID", "usr_111")
-	w1 := httptest.NewRecorder()
-	r.ServeHTTP(w1, req1)
-	require.Equal(t, http.StatusOK, w1.Code)
-	assert.Contains(t, w1.Body.String(), "usr_111")
-
-	// 用户 2 使用相同 Key 发送，应当正常执行，不得回放用户 1 的结果
-	req2 := httptest.NewRequest(http.MethodPost, "/user-actions", bytes.NewBufferString(body))
-	req2.Header.Set("Idempotency-Key", sharedKey)
-	req2.Header.Set("X-Test-User-ID", "usr_222")
-	w2 := httptest.NewRecorder()
-	r.ServeHTTP(w2, req2)
-	require.Equal(t, http.StatusOK, w2.Code)
-	assert.Contains(t, w2.Body.String(), "usr_222")
-	assert.Empty(t, w2.Header().Get("Idempotent-Replayed"))
+	require.Equal(t, http.StatusOK, first.Code)
+	require.Equal(t, http.StatusOK, second.Code)
+	assert.Contains(t, first.Body.String(), "tenant-a")
+	assert.Contains(t, second.Body.String(), "tenant-b")
+	assert.EqualValues(t, 2, calls.Load())
 }
 
-// TestIdempotency_IgnoreSafeMethods 验证 GET/HEAD 请求不受幂等中间件影响。
-func TestIdempotency_IgnoreSafeMethods(t *testing.T) {
-	store := newMemStore()
-	r := setupTestRouter(store, global.WithIdempotencyEnforced(true))
+// TestIdempotency_KeepResponseHeaders 显式白名单只回放列出的响应头。
+func TestIdempotency_KeepResponseHeaders(t *testing.T) {
+	router := setupRouter(idempotency.Config{KeepResponseHeaders: []string{"X-Keep"}})
+	router.POST("/headers", func(c *gin.Context) {
+		c.Header("X-Keep", "kept")
+		c.Header("X-Drop", "dropped")
+		c.SetCookie("session", "secret", 3600, "/", "", false, true)
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
 
-	r.GET("/status", func(c *gin.Context) {
+	require.Equal(t, http.StatusOK, doRequest(t, router, http.MethodPost, "/headers", testIdempotencyKey, `{}`, nil).Code)
+	replay := doRequest(t, router, http.MethodPost, "/headers", testIdempotencyKey, `{}`, nil)
+
+	assert.Equal(t, "kept", replay.Header().Get("X-Keep"))
+	assert.Empty(t, replay.Header().Get("X-Drop"))
+	assert.Empty(t, replay.Header().Get("Set-Cookie"))
+}
+
+// TestIdempotency_LifetimeExpiry 缓存过期后重新执行处理器。
+func TestIdempotency_LifetimeExpiry(t *testing.T) {
+	router := setupRouter(idempotency.Config{Lifetime: 30 * time.Millisecond})
+	var calls atomic.Int32
+
+	router.POST("/expiring", func(c *gin.Context) {
+		calls.Add(1)
+		c.JSON(http.StatusOK, gin.H{"call": calls.Load()})
+	})
+
+	require.Equal(t, http.StatusOK, doRequest(t, router, http.MethodPost, "/expiring", testIdempotencyKey, `{}`, nil).Code)
+	time.Sleep(60 * time.Millisecond)
+	require.Equal(t, http.StatusOK, doRequest(t, router, http.MethodPost, "/expiring", testIdempotencyKey, `{}`, nil).Code)
+	assert.EqualValues(t, 2, calls.Load())
+}
+
+// TestIdempotency_SkipsSafeMethods 默认不拦截无副作用的 HTTP 方法。
+func TestIdempotency_SkipsSafeMethods(t *testing.T) {
+	router := setupRouter()
+	var calls atomic.Int32
+
+	router.GET("/status", func(c *gin.Context) {
+		calls.Add(1)
 		c.JSON(http.StatusOK, gin.H{"alive": true})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/status", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, http.StatusOK, doRequest(t, router, http.MethodGet, "/status", testIdempotencyKey, "", nil).Code)
+	require.Equal(t, http.StatusOK, doRequest(t, router, http.MethodGet, "/status", testIdempotencyKey, "", nil).Code)
+	assert.EqualValues(t, 2, calls.Load())
 }
 
-// TestIdempotency_SessionScopeIsolation 验证匿名客户端携带 X-Session-ID 时按会话隔离。
-func TestIdempotency_SessionScopeIsolation(t *testing.T) {
-	store := newMemStore()
-	r := setupTestRouter(store)
-
-	r.POST("/checkout", func(c *gin.Context) {
-		c.JSON(http.StatusCreated, gin.H{"session": c.GetHeader("X-Session-ID")})
+// TestIdempotency_LockFailure 获取锁失败时返回 500。
+func TestIdempotency_LockFailure(t *testing.T) {
+	router := setupRouter(idempotency.Config{Lock: failingLocker{}})
+	router.POST("/locked", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	key := "shared-checkout-key"
-	body := `{"cart_id":"cart_999"}`
-
-	// 会话 A 请求
-	reqA := httptest.NewRequest(http.MethodPost, "/checkout", bytes.NewBufferString(body))
-	reqA.Header.Set("Content-Type", "application/json")
-	reqA.Header.Set("Idempotency-Key", key)
-	reqA.Header.Set("X-Session-ID", "sess_AAA")
-	wA := httptest.NewRecorder()
-	r.ServeHTTP(wA, reqA)
-	require.Equal(t, http.StatusCreated, wA.Code)
-	assert.Contains(t, wA.Body.String(), "sess_AAA")
-
-	// 会话 B 使用相同幂等键：必须隔离，不应回放会话 A 的结果
-	reqB := httptest.NewRequest(http.MethodPost, "/checkout", bytes.NewBufferString(body))
-	reqB.Header.Set("Content-Type", "application/json")
-	reqB.Header.Set("Idempotency-Key", key)
-	reqB.Header.Set("X-Session-ID", "sess_BBB")
-	wB := httptest.NewRecorder()
-	r.ServeHTTP(wB, reqB)
-	require.Equal(t, http.StatusCreated, wB.Code)
-	assert.Contains(t, wB.Body.String(), "sess_BBB")
-	assert.Empty(t, wB.Header().Get("Idempotent-Replayed"))
+	recorder := doRequest(t, router, http.MethodPost, "/locked", testIdempotencyKey, `{}`, nil)
+	require.Equal(t, http.StatusInternalServerError, recorder.Code)
 }
 
-// TestIdempotency_MultipartSafe 验证 multipart/form-data 请求流式通过，正常完成且未因读取大体内存而崩溃。
-func TestIdempotency_MultipartSafe(t *testing.T) {
-	store := newMemStore()
-	r := setupTestRouter(store)
+// TestIdempotency_PublicHelpers 暴露写入缓存与缓存回放状态。
+func TestIdempotency_PublicHelpers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	middleware := global.New(global.Deps{})
+	router.Use(middleware.ErrorHandler())
 
-	r.POST("/upload", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"uploaded": true})
+	var fromCache, putToCache atomic.Bool
+	router.Use(func(c *gin.Context) {
+		c.Next()
+		fromCache.Store(global.IsFromCache(c))
+		putToCache.Store(global.WasPutToCache(c))
+	})
+	router.Use(global.NewIdempotency(nil))
+	router.POST("/observe", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	multipartBody := "--boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test.txt\"\r\nContent-Type: text/plain\r\n\r\nhello world\r\n--boundary--\r\n"
-	req := httptest.NewRequest(http.MethodPost, "/upload", bytes.NewBufferString(multipartBody))
-	req.Header.Set("Content-Type", "multipart/form-data; boundary=boundary")
-	req.Header.Set("Idempotency-Key", "upload-key-001")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, doRequest(t, router, http.MethodPost, "/observe", testIdempotencyKey, `{}`, nil).Code)
+	assert.False(t, fromCache.Load())
+	assert.True(t, putToCache.Load())
 
-	require.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "true")
+	require.Equal(t, http.StatusOK, doRequest(t, router, http.MethodPost, "/observe", testIdempotencyKey, `{}`, nil).Code)
+	assert.True(t, fromCache.Load())
+	assert.False(t, putToCache.Load())
+}
+
+// failingLocker 是始终加锁失败的测试替身。
+type failingLocker struct{}
+
+// Lock 始终返回错误。
+func (failingLocker) Lock(_ context.Context, _ string) error {
+	return errors.New("lock backend unavailable")
+}
+
+// Unlock 无条件成功。
+func (failingLocker) Unlock(_ context.Context, _ string) error {
+	return nil
 }

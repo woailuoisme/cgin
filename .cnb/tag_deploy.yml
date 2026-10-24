@@ -1,6 +1,6 @@
 # 多环境部署配置
 # 文档: https://docs.cnb.cool/zh/build/deploy.html
-# 项目: bgin | 端口: 3300 | 健康检查: /healthz
+# 项目: cgin | 端口: 3300 | 健康检查: /healthz
 #
 # 流程：推送 v* 标签 → .cnb.yml 的 tag_push 构建镜像 → 分支页「部署」按钮 → 执行下方环境
 
@@ -27,7 +27,7 @@ environments:
           # 替换为你的预发布服务器地址
           # ssh deploy@staging.your-domain.com "
           #   docker pull ${IMAGE}
-          #   docker compose -f /opt/bgin/docker-compose.yml up -d
+          #   docker compose -f /opt/cgin/docker-compose.yml up -d
           # "
 
           echo ">>> Fill in the deploy script based on your infrastructure"
@@ -74,7 +74,7 @@ environments:
           # 替换为你的生产服务器地址
           # ssh deploy@prod.your-domain.com "
           #   docker pull ${IMAGE}
-          #   docker compose -f /opt/bgin/docker-compose.yml up -d
+          #   docker compose -f /opt/cgin/docker-compose.yml up -d
           # "
 
           echo ">>> Fill in the deploy script based on your infrastructure"

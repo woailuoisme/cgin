@@ -3,50 +3,31 @@ package admin
 import (
 	"context"
 	"io"
-	"strings"
 
 	"github.com/samber/lo"
-	"github.com/uptrace/bun"
 
-	"bgin/internal/database/models"
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/excel"
-	"bgin/internal/platform/response"
-	"bgin/internal/platform/validator"
-	"bgin/internal/shared/enums"
-	"bgin/internal/shared/user"
+	"cgin/internal/database/sqlc"
+	"cgin/internal/platform/response"
+	"cgin/internal/shared/enums"
+	"cgin/internal/shared/user"
 )
-
-// passwordHasher 声明用户管理服务所需的口令安全哈希能力（遵循 Uber Go Guide：接口由消费方定义）。
-type passwordHasher interface {
-	Make(password string) (string, error)
-}
 
 // Deps 声明用户管理服务的外部依赖。
 type Deps struct {
-	DB          *bun.DB
 	UserService *user.Service
-	Hasher      passwordHasher
 }
 
 // Service 实现后台用户管理用例。
 type Service struct {
-	db          bun.IDB
 	userService *user.Service
-	hasher      passwordHasher
 }
 
-// NewService 构造管理服务。
+// NewService 构造管理服务；UserService 为装配方必须提供的硬依赖。
 func NewService(deps Deps) *Service {
-	userService := deps.UserService
-	if userService == nil && deps.DB != nil {
-		userService = user.NewService(deps.DB)
+	if deps.UserService == nil {
+		panic("admin: user service requires a non-nil UserService")
 	}
-	return &Service{
-		db:          deps.DB,
-		userService: userService,
-		hasher:      deps.Hasher,
-	}
+	return &Service{userService: deps.UserService}
 }
 
 // ListUsers 返回分页用户列表，排序与过滤都走白名单。
@@ -57,15 +38,15 @@ func (s *Service) ListUsers(ctx context.Context, query ListUsersQueryParams) ([]
 		return nil, response.Meta{}, err
 	}
 
-	items := lo.Map(users, func(entity models.User, _ int) UserResource {
+	items := lo.Map(users, func(entity sqlc.User, _ int) UserResource {
 		return toUserResource(&entity)
 	})
 	return items, response.NewMeta(page, pageSize, total), nil
 }
 
 // ExportUsers 流式导出匹配条件的所有用户数据至目标 io.Writer，采用物理分块拉取杜绝 OOM。
-func (s *Service) ExportUsers(ctx context.Context, query ListUsersQueryParams, w io.Writer, opts ...excel.ExportOption) error {
-	return ExportChunkedStream(ctx, w, UserFetchFunc(s.userService.ListChunk), query.ToFilter(), opts...)
+func (s *Service) ExportUsers(ctx context.Context, query ListUsersQueryParams, w io.Writer) error {
+	return writeUsersXLSX(ctx, w, s.userService.ListChunk, query.ToFilter())
 }
 
 // GetUser 返回管理视角的单个用户。
@@ -79,30 +60,16 @@ func (s *Service) GetUser(ctx context.Context, id string) (UserResource, error) 
 
 // CreateUser 由管理员直接创建账号，初始口令由调用方指定。
 func (s *Service) CreateUser(ctx context.Context, req CreateUserBody) (UserResource, error) {
-	if err := validator.PasswordStrength("password", req.Password); err != nil {
-		return UserResource{}, err
-	}
-
-	entity := &models.User{
-		Name:          strings.TrimSpace(req.Name),
-		Email:         user.NormaliseEmail(req.Email),
-		EmailVerified: req.EmailVerified,
+	created, err := s.userService.Register(ctx, user.RegisterParams{
+		Name:          req.Name,
+		Email:         req.Email,
+		Username:      req.Username,
 		Image:         req.Image,
 		Role:          req.Role,
 		Status:        enums.StatusActive,
-	}
-	if req.Username != nil {
-		normalised := user.NormaliseUsername(*req.Username)
-		entity.Username = &normalised
-		entity.DisplayUsername = &normalised
-	}
-
-	hash, err := s.hasher.Make(req.Password)
-	if err != nil {
-		return UserResource{}, errs.Internal(err)
-	}
-
-	created, err := s.userService.CreateWithCredential(ctx, entity, hash)
+		EmailVerified: req.EmailVerified,
+		Password:      req.Password,
+	})
 	if err != nil {
 		return UserResource{}, err
 	}

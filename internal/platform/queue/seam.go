@@ -5,7 +5,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
-	"bgin/internal/config"
+	"cgin/internal/config"
 )
 
 // Dispatcher 是业务代码可见的唯一入队入口。

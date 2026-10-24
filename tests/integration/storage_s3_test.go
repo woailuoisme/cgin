@@ -18,8 +18,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/storage"
+	"cgin/internal/config"
+	"cgin/internal/platform/storage"
 )
 
 // newS3Disk 读取当前环境的 S3 配置并构造驱动；没配 endpoint 就跳过。
@@ -60,7 +60,7 @@ func TestS3RoundTrip(t *testing.T) {
 
 	// 用时间戳隔离，避免与其他用例或人工调试踩到同一个键。
 	key := fmt.Sprintf("tests/%d/hello.txt", time.Now().UnixNano())
-	content := []byte("bgin storage integration")
+	content := []byte("cgin storage integration")
 
 	t.Cleanup(func() { _ = disk.Delete(t.Context(), key) })
 

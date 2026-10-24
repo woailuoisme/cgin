@@ -13,10 +13,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/features/client/profile"
-	"bgin/internal/platform/authentication"
-	"bgin/internal/platform/errs"
-	"bgin/internal/shared/enums"
+	"cgin/internal/features/client/profile"
+	"cgin/internal/platform/authentication"
+	"cgin/internal/platform/errs"
+	"cgin/internal/shared/enums"
 )
 
 // TestUpdateProfileRequestShape 校验自助更新只暴露 Q27 允许的字段。
@@ -28,7 +28,7 @@ func TestUpdateProfileRequestShape(t *testing.T) {
 		"username":"alice_01",
 		"displayUsername":"Alice",
 		"phoneNumber":"+8613800138000",
-		"email":"should-be-ignored@bgin.local",
+		"email":"should-be-ignored@cgin.local",
 		"role":"admin"
 	}`), &request))
 

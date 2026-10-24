@@ -2,7 +2,6 @@ package middleware_test
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,18 +10,20 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
-	"bgin/internal/database/models"
-	"bgin/internal/middleware"
-	"bgin/internal/middleware/global"
-	"bgin/internal/platform/authentication"
-	"bgin/internal/platform/authorization"
-	"bgin/internal/platform/cache"
-	"bgin/internal/platform/errs"
-	"bgin/internal/shared/user"
+	"cgin/internal/config"
+	"cgin/internal/database/sqlc"
+	"cgin/internal/middleware"
+	"cgin/internal/middleware/global"
+	"cgin/internal/platform/authentication"
+	"cgin/internal/platform/authorization"
+	"cgin/internal/platform/cache"
+	"cgin/internal/platform/errs"
+	"cgin/internal/shared/enums"
+	"cgin/internal/shared/user"
 )
 
 type memAuthBlacklistStore struct {
@@ -59,39 +60,44 @@ func (s *memAuthBlacklistStore) Exists(_ context.Context, key string) (bool, err
 }
 
 type mockUserRepo struct {
-	users map[string]*models.User
+	users map[string]*sqlc.User
 }
 
 func newMockUserRepo() *mockUserRepo {
-	return &mockUserRepo{users: make(map[string]*models.User)}
+	return &mockUserRepo{users: make(map[string]*sqlc.User)}
 }
 
-func (r *mockUserRepo) FindByID(_ context.Context, id string) (*models.User, error) {
+func (r *mockUserRepo) FindByID(_ context.Context, id string) (*sqlc.User, error) {
 	u, ok := r.users[id]
 	if !ok {
-		return nil, sql.ErrNoRows
+		return nil, pgx.ErrNoRows
 	}
 	return u, nil
 }
 
-func (r *mockUserRepo) FindByCredentials(_ context.Context, creds authentication.Credentials) (*models.User, error) {
+func (r *mockUserRepo) FindByCredentials(_ context.Context, creds authentication.Credentials) (*sqlc.User, error) {
 	u, ok := r.users[creds.Account]
 	if !ok {
-		return nil, sql.ErrNoRows
+		return nil, pgx.ErrNoRows
 	}
 	return u, nil
 }
 
-func (r *mockUserRepo) ValidateCredentials(_ context.Context, _ *models.User, _ authentication.Credentials) (bool, error) {
+func (r *mockUserRepo) ValidateCredentials(_ context.Context, _ *sqlc.User, _ authentication.Credentials) (bool, error) {
 	return true, nil
+}
+
+// Identity 把测试用户投影为令牌身份。
+func (r *mockUserRepo) Identity(u *sqlc.User) authentication.Identity {
+	return user.Identity(u)
 }
 
 // setupAuthEnv 构建测试用中间件与守卫环境。
 func setupAuthEnv() (
 	*middleware.Middleware,
 	*authentication.TokenIssuer,
-	*authentication.Guard[*models.User],
-	*authentication.Guard[*models.User],
+	*authentication.Guard[*sqlc.User],
+	*authentication.Guard[*sqlc.User],
 	*mockUserRepo,
 ) {
 	gin.SetMode(gin.TestMode)
@@ -99,14 +105,14 @@ func setupAuthEnv() (
 	store := newMemAuthBlacklistStore()
 	tokens := authentication.NewTokenIssuer(config.JWTConfig{
 		Secret:     "0123456789abcdef0123456789abcdef",
-		Issuer:     "bgin-test",
+		Issuer:     "cgin-test",
 		AccessTTL:  15 * time.Minute,
 		RefreshTTL: 24 * time.Hour,
 	}, store)
 
 	repo := newMockUserRepo()
-	clientGuard := authentication.NewGuard(tokens, repo, user.ClientPolicy{})
-	adminGuard := authentication.NewGuard(tokens, repo, user.AdminPolicy{})
+	clientGuard := authentication.NewGuard(tokens, repo, user.ClientPolicy{}, repo.Identity)
+	adminGuard := authentication.NewGuard(tokens, repo, user.AdminPolicy{}, repo.Identity)
 
 	mgr := authentication.NewManager()
 	mgr.Register("client", clientGuard)
@@ -119,7 +125,6 @@ func setupAuthEnv() (
 	}
 
 	m := middleware.New(middleware.Deps{
-		Tokens:      tokens,
 		AuthManager: mgr,
 		Authz:       enforcer,
 	})
@@ -180,10 +185,10 @@ func TestAuth_MissingOrMalformedHeader(t *testing.T) {
 func TestAuth_DefaultGuardSuccess(t *testing.T) {
 	m, _, clientGuard, _, repo := setupAuthEnv()
 
-	repo.users["usr_client_1"] = &models.User{
+	repo.users["usr_client_1"] = &sqlc.User{
 		ID:     "usr_client_1",
-		Role:   models.RoleUser,
-		Status: models.StatusActive,
+		Role:   enums.RoleUser,
+		Status: enums.StatusActive,
 		Name:   "Client User",
 	}
 
@@ -218,7 +223,7 @@ func TestAuth_DefaultGuardSuccess(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Equal(t, "usr_client_1", capturedID.UserID)
-		assert.Equal(t, string(models.RoleUser), capturedID.Role)
+		assert.Equal(t, string(enums.RoleUser), capturedID.Role)
 	}
 }
 
@@ -226,15 +231,15 @@ func TestAuth_DefaultGuardSuccess(t *testing.T) {
 func TestAuth_NamedAdminGuard(t *testing.T) {
 	m, _, clientGuard, adminGuard, repo := setupAuthEnv()
 
-	repo.users["usr_normal"] = &models.User{
+	repo.users["usr_normal"] = &sqlc.User{
 		ID:     "usr_normal",
-		Role:   models.RoleUser,
-		Status: models.StatusActive,
+		Role:   enums.RoleUser,
+		Status: enums.StatusActive,
 	}
-	repo.users["usr_admin"] = &models.User{
+	repo.users["usr_admin"] = &sqlc.User{
 		ID:     "usr_admin",
-		Role:   models.RoleAdmin,
-		Status: models.StatusActive,
+		Role:   enums.RoleAdmin,
+		Status: enums.StatusActive,
 	}
 
 	clientSess, err := clientGuard.Login(context.Background(), repo.users["usr_normal"])
@@ -273,10 +278,10 @@ func TestAuth_NamedAdminGuard(t *testing.T) {
 func TestAuth_RevocationEpoch(t *testing.T) {
 	m, _, clientGuard, _, repo := setupAuthEnv()
 
-	repo.users["usr_revoked"] = &models.User{
+	repo.users["usr_revoked"] = &sqlc.User{
 		ID:     "usr_revoked",
-		Role:   models.RoleUser,
-		Status: models.StatusActive,
+		Role:   enums.RoleUser,
+		Status: enums.StatusActive,
 	}
 
 	sess, err := clientGuard.Login(context.Background(), repo.users["usr_revoked"])
@@ -311,74 +316,9 @@ func TestAuth_RevocationEpoch(t *testing.T) {
 	assert.Equal(t, string(errs.CodeAuthTokenRevoked), errResp.Code)
 }
 
-// TestAuth_FallbackWithoutAuthManager 验证未注入 AuthManager 时的向下兼容降级行为。
-func TestAuth_FallbackWithoutAuthManager(t *testing.T) {
-	tokens := authentication.NewTokenIssuer(config.JWTConfig{
-		Secret:     "0123456789abcdef0123456789abcdef",
-		Issuer:     "bgin-test",
-		AccessTTL:  15 * time.Minute,
-		RefreshTTL: 24 * time.Hour,
-	}, nil)
-
-	m := middleware.New(middleware.Deps{
-		Tokens:      tokens,
-		AuthManager: nil, // 未提供 AuthManager
-	})
-
-	pair, err := tokens.Issue("usr_fallback", "user")
-	require.NoError(t, err)
-
-	router := gin.New()
-	router.Use(global.New(global.Deps{}).ErrorHandler())
-	router.GET("/fallback", m.Auth(), func(c *gin.Context) {
-		c.Status(http.StatusOK)
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/fallback", nil)
-	req.Header.Set("Authorization", "Bearer "+pair.AccessToken)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-}
-
-// TestAuth_NamedGuardWithoutAuthManager 验证未注入 AuthManager 时使用指定守卫触发 fail-closed 错误。
-func TestAuth_NamedGuardWithoutAuthManager(t *testing.T) {
-	tokens := authentication.NewTokenIssuer(config.JWTConfig{
-		Secret:     "0123456789abcdef0123456789abcdef",
-		Issuer:     "bgin-test",
-		AccessTTL:  15 * time.Minute,
-		RefreshTTL: 24 * time.Hour,
-	}, nil)
-
-	m := middleware.New(middleware.Deps{
-		Tokens:      tokens,
-		AuthManager: nil,
-	})
-
-	pair, err := tokens.Issue("usr_admin_1", "admin")
-	require.NoError(t, err)
-
-	router := gin.New()
-	router.Use(global.New(global.Deps{}).ErrorHandler())
-	router.GET("/admin/protected", m.Auth("admin"), func(c *gin.Context) {
-		c.Status(http.StatusOK)
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/admin/protected", nil)
-	req.Header.Set("Authorization", "Bearer "+pair.AccessToken)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
-}
-
-// TestAuth_NoTokensWithoutAuthManager 验证未注入 AuthManager 且未配置 Tokens 时触发 500 内部错误。
-func TestAuth_NoTokensWithoutAuthManager(t *testing.T) {
-	m := middleware.New(middleware.Deps{
-		Tokens:      nil,
-		AuthManager: nil,
-	})
+// TestAuth_NilManagerFailsClosed 验证未注入 AuthManager 时 fail-closed 返回 500。
+func TestAuth_NilManagerFailsClosed(t *testing.T) {
+	m := middleware.New(middleware.Deps{})
 
 	router := gin.New()
 	router.Use(global.New(global.Deps{}).ErrorHandler())
@@ -454,7 +394,7 @@ func TestCan_RoleBasedAccess(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/users", nil)
 	ctx := authentication.With(req.Context(), authentication.Identity{
 		UserID: "usr_user_1",
-		Role:   string(models.RoleUser),
+		Role:   string(enums.RoleUser),
 	})
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
@@ -469,7 +409,7 @@ func TestCan_RoleBasedAccess(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/users", nil)
 	ctx = authentication.With(req.Context(), authentication.Identity{
 		UserID: "usr_admin_1",
-		Role:   string(models.RoleAdmin),
+		Role:   string(enums.RoleAdmin),
 	})
 	req = req.WithContext(ctx)
 	w = httptest.NewRecorder()
@@ -483,10 +423,10 @@ func TestAuth_MultiGuardFallback(t *testing.T) {
 	m, _, clientGuard, _, repo := setupAuthEnv()
 
 	// 注册普通用户
-	repo.users["usr_user_1"] = &models.User{
+	repo.users["usr_user_1"] = &sqlc.User{
 		ID:     "usr_user_1",
-		Status: models.StatusActive,
-		Role:   models.RoleUser,
+		Status: enums.StatusActive,
+		Role:   enums.RoleUser,
 	}
 
 	clientSess, err := clientGuard.Login(context.Background(), repo.users["usr_user_1"])
@@ -529,7 +469,7 @@ func TestCan_Permission(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/users", nil)
 	ctx := authentication.With(req.Context(), authentication.Identity{
 		UserID: "usr_admin_1",
-		Role:   string(models.RoleAdmin),
+		Role:   string(enums.RoleAdmin),
 	})
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()

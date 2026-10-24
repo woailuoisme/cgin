@@ -102,7 +102,7 @@ Authorization: Bearer <your_access_token>
 | **`Accept`**          |  ✅  | 客户端期望的响应格式                                     | `application/json`                     |
 | **`Authorization`**   | 条件 | 访问受保护资源的 Bearer Token                            | `Bearer eyJhbGci...`                   |
 | **`x-request-id`**    |  ❌  | 全链路追踪 ID；未提供时由服务端生成，并在响应头回写      | `req_019572d4a6c878b18cf0`             |
-| **`Idempotency-Key`** | 可选 | 非幂等写操作的去重键；携带则去重并回放首次响应，未携带行为不变 | `019572d4-a6c8-78b1-8cf0-281b94c032a1` |
+| **`Idempotency-Key`** | 可选 | 非幂等写操作的去重键（36 字符 UUID）；携带则去重并回放首次响应，未携带行为不变 | `019572d4-a6c8-78b1-8cf0-281b94c032a1` |
 | **`If-None-Match`**   | 未实现 | 条件读取：资源未变化时返回`304 Not Modified`，节省带宽 | `W/"019572d4a6c878b1"`                 |
 
 > 上表标为「未实现」的请求头当前**会被服务端忽略**，不产生任何效果，详见 3.4。
@@ -115,13 +115,14 @@ Authorization: Bearer <your_access_token>
 
 对创建类、支付类等非幂等写操作，建议携带 `Idempotency-Key`：
 
-- **Key 取值**：推荐使用 UUIDv7 或 ULID 等全局唯一、单调递增的字符串。
+- **Key 取值**：必须为 36 字符 UUID（服务端按长度校验），推荐 UUIDv7。
 - **重试保持稳定**：同一业务意图的多次重试必须复用同一个 Key；每次重试生成新 Key 将失去去重保护。
 - **服务端行为**：
-  - 相同 Key、相同请求载荷：返回首次请求的结果，不会重复执行；
-  - 相同 Key、不同请求载荷：拒绝执行并返回 `422 Unprocessable Entity`；
-  - 相同 Key 的首次请求仍在处理中：返回 `409 Conflict`，请退避后重试；
-  - Key 在约定的保留期内有效，覆盖常规重试与异步补偿周期。
+  - 相同 Key 的并发请求串行化：只有首个请求真正执行，其余等待并回放同一结果；
+  - 回放包含首次响应的状态码、响应体与可回放响应头（默认排除 `Set-Cookie`）；
+  - 处理器返回错误的请求不写入缓存，可用同一 Key 安全重试；
+  - Key 默认保留 30 分钟，可通过中间件配置调整；
+  - 幂等作用域按认证用户 / 凭据 / 会话 / 客户端标识 / IP+UA 隔离，不同主体使用相同 Key 互不影响。
 
 ### 3.4 条件读取与缓存协商 (Conditional Reads)
 
@@ -313,9 +314,6 @@ Location: /{version}/tasks/<taskId>
 | `CONFLICT`                  |  409   | 资源状态冲突（如唯一键重复）                         |
 | `RATE_LIMITED`              |  429   | 超出速率配额                                         |
 | `REQUEST_TOO_LARGE`         |  413   | 请求体超过服务端上限（普通请求 1 MiB、multipart 上传按 `MEDIA_MAX_FILE_SIZE`），重试无用、须改小载荷 |
-| `IDEMPOTENCY_REQUIRED`      |  400   | 该端点要求 `Idempotency-Key` 却未提供                |
-| `IDEMPOTENCY_CONFLICT`      |  409   | 同一幂等键的请求正在处理中，请稍后重试               |
-| `IDEMPOTENCY_MISMATCH`      |  422   | 同一幂等键重复提交但载荷不一致                       |
 | `GATEWAY_TIMEOUT`           |  504   | 请求处理超时（上游数据库或外部依赖未在时限内响应）   |
 | `CLIENT_CLOSED_REQUEST`     |  499   | 客户端在服务端响应完成前主动终止了连接（如关闭网页或切断网络） |
 | `SERVICE_UNAVAILABLE`       |  503   | 外部依赖暂不可用或服务暂未启用                       |
@@ -343,7 +341,6 @@ Location: /{version}/tasks/<taskId>
 | `EXCEL_READ_ROW_ERROR`      |  422   | 逐行读取时该行内容不合法                             |
 | `EXCEL_DUPLICATE_ROW`       |  409   | 导入数据行存在重复键（文件内重复或数据库已存在）     |
 | `EMPTY_SHEETS`              |  400   | 工作簿内没有任何可导入的工作表                       |
-| `CSV_READ_ERROR`            |  400   | CSV 输入流不合法或无法读取                           |
 | `NOTIFICATION_MISSING_RECIPIENT`    |  400   | 通知未指定接收方实体                         |
 | `NOTIFICATION_MISSING_RECIPIENT_ID` |  400   | 接收方实体缺少有效标识                       |
 | `NOTIFICATION_UNSUPPORTED_SMS`      |  400   | 该通知未实现短信承载方式                     |
@@ -365,7 +362,7 @@ Location: /{version}/tasks/<taskId>
 
 > 本清单与服务端的错误码定义一一对应，新增错误码必须同时更新此处。
 >
-> 服务端内部还有一批"仅用于日志与堆栈定位"的失败码（如 `EXCEL_SPOOL_COPY_ERROR`、
+> 服务端内部还有一批"仅用于日志与堆栈定位"的失败码（如 `EXCEL_STYLE_ERROR`、
 > `TENCENT_HTTP_ERROR`）。它们**不会**出现在响应体里：这类失败一律按 `500` 返回
 > `INTERNAL_SERVER_ERROR`，原始码只留在服务端日志中。因此上表即客户端可能收到的全部取值。
 

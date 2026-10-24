@@ -9,23 +9,23 @@ import (
 
 // DatabaseConfig 描述 PostgreSQL 连接池参数（对齐 Laravel config/database.php）。
 type DatabaseConfig struct {
-	URL              string        `mapstructure:"db_url"`
-	MaxOpenConns     int           `mapstructure:"db_max_open_conns"`
-	MaxIdleConns     int           `mapstructure:"db_max_idle_conns"`
-	ConnMaxLifetime  time.Duration `mapstructure:"db_conn_max_lifetime"`
-	ConnMaxIdleTime  time.Duration `mapstructure:"db_conn_max_idle_time"`
-	ConnectTimeout   time.Duration `mapstructure:"db_connect_timeout"`
-	StatementTimeout time.Duration `mapstructure:"db_statement_timeout"`
-	IdleInTxTimeout  time.Duration `mapstructure:"db_idle_in_tx_timeout"`
-	SlowThreshold    time.Duration `mapstructure:"db_slow_threshold"`
-	Debug            bool          `mapstructure:"db_debug"`
+	URL              string        `env:"DB_URL,required,notEmpty"`
+	MaxOpenConns     int           `env:"DB_MAX_OPEN_CONNS" envDefault:"10"`
+	MaxIdleConns     int           `env:"DB_MAX_IDLE_CONNS" envDefault:"10"`
+	ConnMaxLifetime  time.Duration `env:"DB_CONN_MAX_LIFETIME" envDefault:"30m"`
+	ConnMaxIdleTime  time.Duration `env:"DB_CONN_MAX_IDLE_TIME" envDefault:"5m"`
+	ConnectTimeout   time.Duration `env:"DB_CONNECT_TIMEOUT" envDefault:"5s"`
+	StatementTimeout time.Duration `env:"DB_STATEMENT_TIMEOUT" envDefault:"30s"`
+	IdleInTxTimeout  time.Duration `env:"DB_IDLE_IN_TX_TIMEOUT" envDefault:"60s"`
+	SlowThreshold    time.Duration `env:"DB_SLOW_THRESHOLD" envDefault:"200ms"`
+	Debug            bool          `env:"DB_DEBUG"`
 }
 
 // SeedConfig 描述初始管理员播种凭据。
 type SeedConfig struct {
-	AdminEmail    string `mapstructure:"seed_admin_email"`
-	AdminPassword string `mapstructure:"seed_admin_password"`
-	AdminName     string `mapstructure:"seed_admin_name"`
+	AdminEmail    string `env:"SEED_ADMIN_EMAIL" envDefault:"admin@cgin.local"`
+	AdminPassword string `env:"SEED_ADMIN_PASSWORD"`
+	AdminName     string `env:"SEED_ADMIN_NAME" envDefault:"Administrator"`
 }
 
 // ResolveDBDebug 报告是否开启数据库 SQL 调试输出，优先显式配置，其次回退至 APP_DEBUG。
@@ -34,6 +34,9 @@ func (c *Config) ResolveDBDebug() bool {
 }
 
 // validateDatabase 检查连接池参数与会话超时区间。
+//
+// DB_URL 在 env tag 上已声明 required,notEmpty；此处仍做一次 trim 后的判定，
+// 因为 tag 不裁剪空白，"   " 这类值只在语义期才能拦下。
 func (c *Config) validateDatabase() error {
 	if strings.TrimSpace(c.Database.URL) == "" {
 		return errors.New("config: DB_URL is required")

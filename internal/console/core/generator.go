@@ -11,7 +11,7 @@ import (
 	"strings"
 	"text/template"
 
-	"bgin/internal/console/stubs"
+	"cgin/internal/console/stubs"
 )
 
 // GeneratorOptions 封装了代码生成器的入参配置。
@@ -179,7 +179,8 @@ func (p *CRUDPlan) featureDir() string {
 func (p *CRUDPlan) Files() ([]PlannedFile, error) {
 	featureDir := p.featureDir()
 	return []PlannedFile{
-		{RelPath: filepath.Join("internal", "database", "models", p.data.SnakeName+".go"), Template: "model.tmpl", Data: p.data},
+		{RelPath: filepath.Join("internal", "database", "queries", p.data.PluralSnake+".sql"), Template: "queries.tmpl", Data: p.data},
+		{RelPath: filepath.Join("internal", "database", "schemas", p.data.PluralSnake+".sql"), Template: "schema.tmpl", Data: p.data},
 		{RelPath: filepath.Join(featureDir, "dto.go"), Template: "dto.tmpl", Data: p.data},
 		{RelPath: filepath.Join(featureDir, "service.go"), Template: "service.tmpl", Data: p.data},
 		{RelPath: filepath.Join(featureDir, "handler.go"), Template: "handler.tmpl", Data: p.data},
@@ -223,80 +224,76 @@ func (p *Pipeline) Execute(plan Plan) ([]GeneratedResult, error) {
 		return nil, err
 	}
 
-	var results []GeneratedResult
-
-	for _, f := range files {
-		absPath := filepath.Join(p.RootDir, f.RelPath)
-		_, statErr := os.Stat(absPath)
-		exists := statErr == nil
-
-		if exists && !p.Force {
-			results = append(results, GeneratedResult{
-				Path:     f.RelPath,
-				Template: f.Template,
-				Action:   ActionSkipped,
-				Message:  "file already exists, skipped (use --force to overwrite)",
-			})
-			continue
-		}
-
-		tmplContent, err := fs.ReadFile(p.TemplateFS, f.Template)
+	results := make([]GeneratedResult, 0, len(files))
+	for _, file := range files {
+		result, err := p.executeFile(file)
 		if err != nil {
-			return results, fmt.Errorf("failed to read template %s: %w", f.Template, err)
+			return results, err
 		}
+		results = append(results, result)
+	}
+	return results, nil
+}
 
-		tmpl, err := template.New(f.Template).Parse(string(tmplContent))
-		if err != nil {
-			return results, fmt.Errorf("failed to parse template %s: %w", f.Template, err)
-		}
+// executeFile 生成单个文件并返回处理结果。
+func (p *Pipeline) executeFile(file PlannedFile) (GeneratedResult, error) {
+	absPath := filepath.Join(p.RootDir, file.RelPath)
+	_, statErr := os.Stat(absPath)
+	exists := statErr == nil
 
-		var buf bytes.Buffer
-		if err := tmpl.Execute(&buf, f.Data); err != nil {
-			return results, fmt.Errorf("failed to render template %s: %w", f.Template, err)
-		}
-
-		formatted := buf.Bytes()
-		if strings.HasSuffix(f.RelPath, ".go") {
-			if src, err := format.Source(buf.Bytes()); err == nil {
-				formatted = src
-			}
-		}
-
-		if p.DryRun {
-			results = append(results, GeneratedResult{
-				Path:     f.RelPath,
-				Template: f.Template,
-				Action:   ActionDryRun,
-				Message:  fmt.Sprintf("would write %d bytes", len(formatted)),
-			})
-			continue
-		}
-
-		parentDir := filepath.Dir(absPath)
-		if err := os.MkdirAll(parentDir, 0o755); err != nil { //nolint:gosec // 生成物目录需对协作者与 CI 可读
-			return results, fmt.Errorf("failed to create directory %s: %w", parentDir, err)
-		}
-
-		if err := os.WriteFile(absPath, formatted, 0o644); err != nil { //nolint:gosec // 生成物源码需对协作者与 CI 可读
-			return results, fmt.Errorf("failed to write file %s: %w", absPath, err)
-		}
-
-		action := ActionCreated
-		msg := "successfully generated"
-		if exists {
-			action = ActionOverwritten
-			msg = "overwritten existing file"
-		}
-
-		results = append(results, GeneratedResult{
-			Path:     f.RelPath,
-			Template: f.Template,
-			Action:   action,
-			Message:  msg,
-		})
+	if exists && !p.Force {
+		return generatedResult(file, ActionSkipped, "file already exists, skipped (use --force to overwrite)"), nil
 	}
 
-	return results, nil
+	formatted, err := p.render(file)
+	if err != nil {
+		return GeneratedResult{}, err
+	}
+
+	if p.DryRun {
+		return generatedResult(file, ActionDryRun, fmt.Sprintf("would write %d bytes", len(formatted))), nil
+	}
+
+	parentDir := filepath.Dir(absPath)
+	if err := os.MkdirAll(parentDir, 0o755); err != nil { //nolint:gosec // 生成物目录需对协作者与 CI 可读
+		return GeneratedResult{}, fmt.Errorf("failed to create directory %s: %w", parentDir, err)
+	}
+
+	if err := os.WriteFile(absPath, formatted, 0o644); err != nil { //nolint:gosec // 生成物源码需对协作者与 CI 可读
+		return GeneratedResult{}, fmt.Errorf("failed to write file %s: %w", absPath, err)
+	}
+
+	if exists {
+		return generatedResult(file, ActionOverwritten, "overwritten existing file"), nil
+	}
+	return generatedResult(file, ActionCreated, "successfully generated"), nil
+}
+
+// render 读取模板、渲染内容，并对 Go 文件执行源码格式化。
+func (p *Pipeline) render(file PlannedFile) ([]byte, error) {
+	content, err := fs.ReadFile(p.TemplateFS, file.Template)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read template %s: %w", file.Template, err)
+	}
+
+	tmpl, err := template.New(file.Template).Parse(string(content))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse template %s: %w", file.Template, err)
+	}
+
+	var buffer bytes.Buffer
+	if err := tmpl.Execute(&buffer, file.Data); err != nil {
+		return nil, fmt.Errorf("failed to render template %s: %w", file.Template, err)
+	}
+	if !strings.HasSuffix(file.RelPath, ".go") {
+		return buffer.Bytes(), nil
+	}
+
+	// 格式化失败时保留原始渲染结果，与既有行为一致。
+	if formatted, err := format.Source(buffer.Bytes()); err == nil {
+		return formatted, nil
+	}
+	return buffer.Bytes(), nil
 }
 
 // Destroy 调度执行指定的规划回退，安全删除生成文件与空目录。
@@ -306,51 +303,48 @@ func (p *Pipeline) Destroy(plan Plan) ([]GeneratedResult, error) {
 		return nil, err
 	}
 
-	var results []GeneratedResult
-
-	for _, f := range files {
-		absPath := filepath.Join(p.RootDir, f.RelPath)
-
-		if _, err := os.Stat(absPath); os.IsNotExist(err) {
-			results = append(results, GeneratedResult{
-				Path:     f.RelPath,
-				Template: f.Template,
-				Action:   ActionSkipped,
-				Message:  "file does not exist, skipped",
-			})
-			continue
+	results := make([]GeneratedResult, 0, len(files))
+	for _, file := range files {
+		result, err := p.destroyFile(file)
+		if err != nil {
+			return results, err
 		}
-
-		if p.DryRun {
-			results = append(results, GeneratedResult{
-				Path:     f.RelPath,
-				Template: f.Template,
-				Action:   ActionDryRun,
-				Message:  "would delete file",
-			})
-			continue
-		}
-
-		if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
-			return results, fmt.Errorf("failed to delete file %s: %w", absPath, err)
-		}
-
-		results = append(results, GeneratedResult{
-			Path:     f.RelPath,
-			Template: f.Template,
-			Action:   ActionDeleted,
-			Message:  "successfully deleted",
-		})
+		results = append(results, result)
 	}
 
 	if !p.DryRun {
 		for _, dir := range plan.CleanupDirs() {
-			absDir := filepath.Join(p.RootDir, dir)
-			_ = os.Remove(absDir)
+			_ = os.Remove(filepath.Join(p.RootDir, dir))
 		}
 	}
-
 	return results, nil
+}
+
+// destroyFile 删除单个生成文件并返回处理结果。
+func (p *Pipeline) destroyFile(file PlannedFile) (GeneratedResult, error) {
+	absPath := filepath.Join(p.RootDir, file.RelPath)
+
+	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+		return generatedResult(file, ActionSkipped, "file does not exist, skipped"), nil
+	}
+	if p.DryRun {
+		return generatedResult(file, ActionDryRun, "would delete file"), nil
+	}
+
+	if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
+		return GeneratedResult{}, fmt.Errorf("failed to delete file %s: %w", absPath, err)
+	}
+	return generatedResult(file, ActionDeleted, "successfully deleted"), nil
+}
+
+// generatedResult 构造单个文件的生成结果。
+func generatedResult(file PlannedFile, action FileAction, message string) GeneratedResult {
+	return GeneratedResult{
+		Path:     file.RelPath,
+		Template: file.Template,
+		Action:   action,
+		Message:  message,
+	}
 }
 
 // GenerateCRUD 执行完整的 CRUD 模块代码脚手架生成。

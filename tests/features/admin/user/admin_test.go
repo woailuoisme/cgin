@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	admin "bgin/internal/features/admin/user"
-	"bgin/internal/shared/user"
+	admin "cgin/internal/features/admin/user"
+	"cgin/internal/shared/user"
 )
 
 // api.md 6.1 规定的分页默认值与上限。
@@ -26,22 +26,25 @@ const (
 // TestNormaliseSortUsesWhitelist 校验排序只认白名单字段，注入尝试被丢弃。
 func TestNormaliseSortUsesWhitelist(t *testing.T) {
 	tests := []struct {
-		name string
-		raw  string
-		want []string
+		name     string
+		raw      string
+		wantKey  string
+		wantDesc bool
 	}{
-		{"缺省退回稳定排序", "", []string{"u.created_at DESC"}},
-		{"升序", "email", []string{"u.email ASC"}},
-		{"降序", "-name", []string{"u.name DESC"}},
-		{"复合排序", "createdAt,-email", []string{"u.created_at ASC", "u.email DESC"}},
-		{"注入尝试被丢弃", `id; DROP TABLE "user"`, []string{"u.created_at DESC"}},
-		{"未知字段与空白被剥掉", " unknown , email ,", []string{"u.email ASC"}},
-		{"不在白名单的列被忽略", "u.password", []string{"u.created_at DESC"}},
+		{"缺省退回稳定排序", "", "createdAt", true},
+		{"升序", "email", "email", false},
+		{"降序", "-name", "name", true},
+		{"复合排序取首个合法键", "createdAt,-email", "createdAt", false},
+		{"注入尝试被丢弃", `id; DROP TABLE "user"`, "createdAt", true},
+		{"未知字段与空白被剥掉", " unknown , email ,", "email", false},
+		{"不在白名单的列被忽略", "u.password", "createdAt", true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, user.NormaliseSort(tt.raw))
+			key, desc := user.NormaliseSort(tt.raw)
+			assert.Equal(t, tt.wantKey, key)
+			assert.Equal(t, tt.wantDesc, desc)
 		})
 	}
 }
@@ -79,5 +82,7 @@ func TestListUsersQueryAcceptsCompoundSort(t *testing.T) {
 	var query admin.ListUsersQuery
 	require.NoError(t, json.Unmarshal([]byte(`{"sort":"-createdAt,email"}`), &query))
 	assert.Equal(t, "-createdAt,email", query.Sort)
-	assert.Equal(t, []string{"u.created_at DESC", "u.email ASC"}, user.NormaliseSort(query.Sort))
+	key, desc := user.NormaliseSort(query.Sort)
+	assert.Equal(t, "createdAt", key)
+	assert.True(t, desc)
 }

@@ -13,22 +13,18 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/spf13/cobra"
 
-	"bgin/internal/bootstrap"
-	"bgin/internal/console/core"
-	"bgin/internal/features/client/auth"
-	"bgin/internal/features/system"
-	"bgin/internal/platform/cache"
-	"bgin/internal/platform/mailer"
-	"bgin/internal/platform/queue"
-	"bgin/internal/platform/storage"
+	"cgin/internal/console/core"
+	"cgin/internal/features/client/auth"
+	"cgin/internal/platform/cache"
+	"cgin/internal/platform/mailer"
+	"cgin/internal/platform/queue"
 )
 
 // QueueWorkOptions 封装 queue:work 命令的参数与依赖容器 (SRP & DIP)。
 type QueueWorkOptions struct {
-	QueueArg         string
-	Concurrency      int
-	WithoutScheduler bool
-	Factory          Factory
+	QueueArg    string
+	Concurrency int
+	Factory     Factory
 }
 
 // NewQueueWorkOptions 构造 QueueWorkOptions 实例。
@@ -68,20 +64,8 @@ func (o *QueueWorkOptions) Run(ctx context.Context) error {
 	}
 	defer func() { _ = mailerClient.Close() }()
 
-	storageClient, err := storage.Open(ctx, cfg.Storage)
-	if err != nil {
-		return fmt.Errorf("failed to initialize storage: %w", err)
-	}
-
 	reg := queue.DefaultRegistry()
 	auth.RegisterJobs(reg, mailerClient)
-	system.RegisterJobs(reg, storageClient)
-
-	if !o.WithoutScheduler {
-		sched := queue.NewSchedule(reg)
-		bootstrap.RegisterSchedules(sched)
-		sched.Register()
-	}
 
 	var locker queue.Locker
 	if cacheLocker, err := cache.NewRedisLocker(cfg.Cache); err == nil {
@@ -108,16 +92,9 @@ func (o *QueueWorkOptions) Run(ctx context.Context) error {
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if !o.WithoutScheduler {
-		if err := client.StartScheduler(cfg); err != nil {
-			return fmt.Errorf("failed to start schedule runner: %w", err)
-		}
-	}
-
 	go func() {
 		<-ctx.Done()
 		_ = client.StopWorker()
-		_ = client.StopScheduler()
 	}()
 
 	streams := o.Factory.IOStreams()
@@ -125,7 +102,7 @@ func (o *QueueWorkOptions) Run(ctx context.Context) error {
 	return client.RunWorker(queues)
 }
 
-// newQueueWorkCmd 启动 Asynq 统一工作协程与计划任务调度器。
+// newQueueWorkCmd 启动 Asynq 统一工作协程。
 func newQueueWorkCmd(f Factory) *cobra.Command {
 	opts := NewQueueWorkOptions(f)
 
@@ -133,20 +110,11 @@ func newQueueWorkCmd(f Factory) *cobra.Command {
 		Use:   "queue:work",
 		Short: "Start processing jobs on the queue as a worker daemon",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := opts.Complete(cmd, args); err != nil {
-				return err
-			}
-			if err := opts.Validate(); err != nil {
-				return err
-			}
-			return opts.Run(cmd.Context())
-		},
+		RunE:  runCommand(opts),
 	}
 
 	cmd.Flags().StringVarP(&opts.QueueArg, "queue", "q", queue.DefaultQueueName, "Names and weights of queues to listen to (e.g. 'default' or 'high:3,default:1')")
 	cmd.Flags().IntVarP(&opts.Concurrency, "concurrency", "c", 0, "Maximum number of concurrent worker goroutines (0 to use config)")
-	cmd.Flags().BoolVar(&opts.WithoutScheduler, "without-scheduler", false, "Disable the built-in recurring schedule runner in this worker")
 
 	return cmd
 }
@@ -241,15 +209,7 @@ func newQueueFailedCmd(f Factory) *cobra.Command {
 		Use:   "queue:failed",
 		Short: "List all failed queue jobs",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := opts.Complete(cmd, args); err != nil {
-				return err
-			}
-			if err := opts.Validate(); err != nil {
-				return err
-			}
-			return opts.Run(cmd.Context())
-		},
+		RunE:  runCommand(opts),
 	}
 
 	cmd.Flags().StringVarP(&opts.Queue, "queue", "q", "", "Filter failed jobs by queue name")
@@ -330,15 +290,7 @@ func newQueueRetryCmd(f Factory) *cobra.Command {
 			}
 			return nil
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := opts.Complete(cmd, args); err != nil {
-				return err
-			}
-			if err := opts.Validate(); err != nil {
-				return err
-			}
-			return opts.Run(cmd.Context())
-		},
+		RunE: runCommand(opts),
 	}
 }
 
@@ -422,15 +374,7 @@ func newQueueFlushCmd(f Factory) *cobra.Command {
 		Use:   "queue:flush",
 		Short: "Flush all failed queue jobs",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := opts.Complete(cmd, args); err != nil {
-				return err
-			}
-			if err := opts.Validate(); err != nil {
-				return err
-			}
-			return opts.Run(cmd.Context())
-		},
+		RunE:  runCommand(opts),
 	}
 
 	cmd.Flags().StringVarP(&opts.Queue, "queue", "q", "", "Filter queue to flush (empty for all queues)")

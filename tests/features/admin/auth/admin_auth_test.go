@@ -3,23 +3,23 @@ package auth_test
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
-	"bgin/internal/database/models"
-	adminauth "bgin/internal/features/admin/auth"
-	"bgin/internal/platform/authentication"
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/hasher"
-	"bgin/internal/platform/validator"
-	"bgin/internal/shared/enums"
-	shareduser "bgin/internal/shared/user"
+	"cgin/internal/config"
+	"cgin/internal/database/sqlc"
+	adminauth "cgin/internal/features/admin/auth"
+	"cgin/internal/platform/authentication"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/hasher"
+	"cgin/internal/platform/validator"
+	"cgin/internal/shared/enums"
+	shareduser "cgin/internal/shared/user"
 )
 
 func init() {
@@ -30,19 +30,19 @@ const testJWTSecret = "0123456789abcdef0123456789abcdef"
 
 // mockRepo 模拟管理员认证数据仓储。
 type mockRepo struct {
-	users        map[string]*models.User
-	accounts     map[string]*models.Account
+	users        map[string]*sqlc.User
+	accounts     map[string]*sqlc.Account
 	loginRecords []string
 }
 
 func newMockRepo() *mockRepo {
 	return &mockRepo{
-		users:    make(map[string]*models.User),
-		accounts: make(map[string]*models.Account),
+		users:    make(map[string]*sqlc.User),
+		accounts: make(map[string]*sqlc.Account),
 	}
 }
 
-func (m *mockRepo) FindByCredentials(ctx context.Context, creds authentication.Credentials) (*models.User, error) {
+func (m *mockRepo) FindByCredentials(ctx context.Context, creds authentication.Credentials) (*sqlc.User, error) {
 	return m.FindByEmail(ctx, creds.Account)
 }
 
@@ -50,10 +50,10 @@ func (m *mockRepo) FindCredentialPassword(_ context.Context, userID string) (*st
 	if a, ok := m.accounts[userID]; ok {
 		return a.Password, nil
 	}
-	return nil, sql.ErrNoRows
+	return nil, pgx.ErrNoRows
 }
 
-func (m *mockRepo) ValidateCredentials(_ context.Context, u *models.User, creds authentication.Credentials) (bool, error) {
+func (m *mockRepo) ValidateCredentials(_ context.Context, u *sqlc.User, creds authentication.Credentials) (bool, error) {
 	if a, ok := m.accounts[u.ID]; ok && a.Password != nil {
 		h := hasher.New()
 		return h.Check(*a.Password, creds.Password)
@@ -61,35 +61,52 @@ func (m *mockRepo) ValidateCredentials(_ context.Context, u *models.User, creds 
 	return false, nil
 }
 
-func (m *mockRepo) FindByEmail(_ context.Context, email string) (*models.User, error) {
+func (m *mockRepo) FindByEmail(_ context.Context, email string) (*sqlc.User, error) {
 	for _, u := range m.users {
 		if u.Email == email {
 			return u, nil
 		}
 	}
-	return nil, sql.ErrNoRows
+	return nil, pgx.ErrNoRows
 }
 
-func (m *mockRepo) FindByID(_ context.Context, id string) (*models.User, error) {
+func (m *mockRepo) FindByID(_ context.Context, id string) (*sqlc.User, error) {
 	if u, ok := m.users[id]; ok {
 		return u, nil
 	}
-	return nil, sql.ErrNoRows
+	return nil, pgx.ErrNoRows
 }
 
-func (m *mockRepo) FindCredentialAccount(_ context.Context, userID string) (*models.Account, error) {
+func (m *mockRepo) FindCredentialAccount(_ context.Context, userID string) (*sqlc.Account, error) {
 	if a, ok := m.accounts[userID]; ok {
 		return a, nil
 	}
-	return nil, sql.ErrNoRows
+	return nil, pgx.ErrNoRows
 }
 
-func (m *mockRepo) UpdatePassword(_ context.Context, userID, passwordHash string) error {
-	if a, ok := m.accounts[userID]; ok {
-		a.Password = &passwordHash
-		return nil
+// ChangePassword 模拟凭据深模块的改密语义。
+func (m *mockRepo) ChangePassword(_ context.Context, userID, currentPassword, newPassword string) error {
+	if err := validator.PasswordStrength("newPassword", newPassword); err != nil {
+		return err
 	}
-	return sql.ErrNoRows
+	account, ok := m.accounts[userID]
+	if !ok || account.Password == nil {
+		return shareduser.ErrNoCredential
+	}
+	h := hasher.New()
+	matched, err := h.Check(*account.Password, currentPassword)
+	if err != nil {
+		return err
+	}
+	if !matched {
+		return errs.PasswordMismatch()
+	}
+	hash, err := h.Make(newPassword)
+	if err != nil {
+		return err
+	}
+	account.Password = &hash
+	return nil
 }
 
 func (m *mockRepo) RecordLogin(_ context.Context, userID, _ string) error {
@@ -98,19 +115,17 @@ func (m *mockRepo) RecordLogin(_ context.Context, userID, _ string) error {
 }
 
 func setupService(repo *mockRepo) (*adminauth.Service, *authentication.TokenIssuer) {
-	h := hasher.New()
 	tokens := authentication.NewTokenIssuer(config.JWTConfig{
 		Secret:     testJWTSecret,
-		Issuer:     "bgin-test",
+		Issuer:     "cgin-test",
 		AccessTTL:  15 * time.Minute,
 		RefreshTTL: 24 * time.Hour,
 	}, nil)
 
-	guard := authentication.NewGuard(tokens, repo, shareduser.AdminPolicy{})
+	guard := authentication.NewGuard(tokens, repo, shareduser.AdminPolicy{}, shareduser.Identity)
 	service := adminauth.NewService(adminauth.Deps{
-		Guard:  guard,
-		Tokens: tokens,
-		Hasher: h,
+		Guard:     guard,
+		Passwords: repo,
 	})
 	return service, tokens
 }
@@ -127,28 +142,28 @@ func TestAdminSignInEmailAntiEnumeration(t *testing.T) {
 	require.NoError(t, err)
 
 	// 管理员账号
-	repo.users["admin_1"] = &models.User{
+	repo.users["admin_1"] = &sqlc.User{
 		ID:     "admin_1",
 		Email:  "admin@example.com",
-		Role:   models.RoleAdmin,
-		Status: models.StatusActive,
+		Role:   enums.RoleAdmin,
+		Status: enums.StatusActive,
 	}
-	repo.accounts["admin_1"] = &models.Account{
+	repo.accounts["admin_1"] = &sqlc.Account{
 		UserID:     "admin_1",
-		ProviderID: models.ProviderCredential,
+		ProviderID: string(enums.ProviderCredential),
 		Password:   &adminHash,
 	}
 
 	// 普通用户账号
-	repo.users["user_1"] = &models.User{
+	repo.users["user_1"] = &sqlc.User{
 		ID:     "user_1",
 		Email:  "user@example.com",
-		Role:   models.RoleUser,
-		Status: models.StatusActive,
+		Role:   enums.RoleUser,
+		Status: enums.StatusActive,
 	}
-	repo.accounts["user_1"] = &models.Account{
+	repo.accounts["user_1"] = &sqlc.Account{
 		UserID:     "user_1",
-		ProviderID: models.ProviderCredential,
+		ProviderID: string(enums.ProviderCredential),
 		Password:   &userHash,
 	}
 
@@ -202,27 +217,27 @@ func TestAdminSignInBannedAndInactive(t *testing.T) {
 	hash, err := h.Make("Admin1234!")
 	require.NoError(t, err)
 
-	repo.users["banned_admin"] = &models.User{
+	repo.users["banned_admin"] = &sqlc.User{
 		ID:     "banned_admin",
 		Email:  "banned@example.com",
-		Role:   models.RoleAdmin,
-		Status: models.StatusBanned,
+		Role:   enums.RoleAdmin,
+		Status: enums.StatusBanned,
 	}
-	repo.accounts["banned_admin"] = &models.Account{
+	repo.accounts["banned_admin"] = &sqlc.Account{
 		UserID:     "banned_admin",
-		ProviderID: models.ProviderCredential,
+		ProviderID: string(enums.ProviderCredential),
 		Password:   &hash,
 	}
 
-	repo.users["inactive_admin"] = &models.User{
+	repo.users["inactive_admin"] = &sqlc.User{
 		ID:     "inactive_admin",
 		Email:  "inactive@example.com",
-		Role:   models.RoleAdmin,
-		Status: models.StatusInactive,
+		Role:   enums.RoleAdmin,
+		Status: enums.StatusInactive,
 	}
-	repo.accounts["inactive_admin"] = &models.Account{
+	repo.accounts["inactive_admin"] = &sqlc.Account{
 		UserID:     "inactive_admin",
-		ProviderID: models.ProviderCredential,
+		ProviderID: string(enums.ProviderCredential),
 		Password:   &hash,
 	}
 
@@ -251,17 +266,17 @@ func TestAdminSignInBannedAndInactive(t *testing.T) {
 // TestAdminGetSessionAndRoleCheck 校验会话获取与管理员角色约束。
 func TestAdminGetSessionAndRoleCheck(t *testing.T) {
 	repo := newMockRepo()
-	repo.users["admin_1"] = &models.User{
+	repo.users["admin_1"] = &sqlc.User{
 		ID:     "admin_1",
 		Email:  "admin@example.com",
-		Role:   models.RoleAdmin,
-		Status: models.StatusActive,
+		Role:   enums.RoleAdmin,
+		Status: enums.StatusActive,
 	}
-	repo.users["user_1"] = &models.User{
+	repo.users["user_1"] = &sqlc.User{
 		ID:     "user_1",
 		Email:  "user@example.com",
-		Role:   models.RoleUser,
-		Status: models.StatusActive,
+		Role:   enums.RoleUser,
+		Status: enums.StatusActive,
 	}
 
 	service, _ := setupService(repo)
@@ -289,17 +304,17 @@ func TestAdminGetSessionAndRoleCheck(t *testing.T) {
 // TestAdminRefreshDemotedUserDenied 校验令牌刷新时若被降权为普通用户则拒绝续签。
 func TestAdminRefreshDemotedUserDenied(t *testing.T) {
 	repo := newMockRepo()
-	repo.users["demoted"] = &models.User{
+	repo.users["demoted"] = &sqlc.User{
 		ID:     "demoted",
 		Email:  "demoted@example.com",
-		Role:   models.RoleUser, // 降权为普通用户
-		Status: models.StatusActive,
+		Role:   enums.RoleUser, // 降权为普通用户
+		Status: enums.StatusActive,
 	}
 
 	service, tokens := setupService(repo)
 	ctx := t.Context()
 
-	pair, err := tokens.Issue("demoted", string(models.RoleAdmin))
+	pair, err := tokens.Issue("demoted", string(enums.RoleAdmin))
 	require.NoError(t, err)
 
 	_, err = service.Refresh(ctx, adminauth.RefreshTokenRequest{
@@ -317,15 +332,15 @@ func TestAdminChangePasswordFlow(t *testing.T) {
 	hash, err := h.Make("OldAdminPass123!")
 	require.NoError(t, err)
 
-	repo.users["admin_1"] = &models.User{
+	repo.users["admin_1"] = &sqlc.User{
 		ID:     "admin_1",
 		Email:  "admin@example.com",
-		Role:   models.RoleAdmin,
-		Status: models.StatusActive,
+		Role:   enums.RoleAdmin,
+		Status: enums.StatusActive,
 	}
-	repo.accounts["admin_1"] = &models.Account{
+	repo.accounts["admin_1"] = &sqlc.Account{
 		UserID:     "admin_1",
-		ProviderID: models.ProviderCredential,
+		ProviderID: string(enums.ProviderCredential),
 		Password:   &hash,
 	}
 
@@ -365,15 +380,15 @@ func TestAdminChangePasswordFlow(t *testing.T) {
 	assert.True(t, matched)
 
 	// 4. 普通用户越权请求管理端修改口令，拦截 403
-	repo.users["user_1"] = &models.User{
+	repo.users["user_1"] = &sqlc.User{
 		ID:     "user_1",
 		Email:  "user@example.com",
-		Role:   models.RoleUser,
-		Status: models.StatusActive,
+		Role:   enums.RoleUser,
+		Status: enums.StatusActive,
 	}
-	repo.accounts["user_1"] = &models.Account{
+	repo.accounts["user_1"] = &sqlc.Account{
 		UserID:     "user_1",
-		ProviderID: models.ProviderCredential,
+		ProviderID: string(enums.ProviderCredential),
 		Password:   &hash,
 	}
 	err = service.ChangePassword(ctx, "user_1", adminauth.ChangePasswordRequest{
@@ -385,15 +400,15 @@ func TestAdminChangePasswordFlow(t *testing.T) {
 	assert.Equal(t, 403, status)
 
 	// 5. 封禁管理员请求修改口令，拦截 403 / AccountBanned
-	repo.users["banned_admin"] = &models.User{
+	repo.users["banned_admin"] = &sqlc.User{
 		ID:     "banned_admin",
 		Email:  "banned@example.com",
-		Role:   models.RoleAdmin,
-		Status: models.StatusBanned,
+		Role:   enums.RoleAdmin,
+		Status: enums.StatusBanned,
 	}
-	repo.accounts["banned_admin"] = &models.Account{
+	repo.accounts["banned_admin"] = &sqlc.Account{
 		UserID:     "banned_admin",
-		ProviderID: models.ProviderCredential,
+		ProviderID: string(enums.ProviderCredential),
 		Password:   &hash,
 	}
 	err = service.ChangePassword(ctx, "banned_admin", adminauth.ChangePasswordRequest{
@@ -416,10 +431,10 @@ func TestAdminChangePasswordFlow(t *testing.T) {
 
 // TestAdminAuthDTOSerialization 校验 DTO 的 JSON 序列化与反序列化字段契约。
 func TestAdminAuthDTOSerialization(t *testing.T) {
-	raw := []byte(`{"email":"admin@bgin.local","password":"secret"}`)
+	raw := []byte(`{"email":"admin@cgin.local","password":"secret"}`)
 	var req adminauth.SignInEmailRequest
 	require.NoError(t, json.Unmarshal(raw, &req))
-	assert.Equal(t, "admin@bgin.local", req.Email)
+	assert.Equal(t, "admin@cgin.local", req.Email)
 	assert.Equal(t, "secret", req.Password)
 
 	signOutRaw := []byte(`{"refreshToken":"rt_test123"}`)

@@ -2,7 +2,7 @@
     "swagger": "2.0",
     "info": {
         "description": "取值为 \"Bearer \u003caccess_token\u003e\"，含 Bearer 前缀与一个空格。",
-        "title": "bgin API",
+        "title": "cgin API",
         "contact": {},
         "version": "1.0"
     },
@@ -893,10 +893,14 @@
                 },
                 "role": {
                     "description": "用户权限角色 (user: 普通用户, admin: 系统管理员)",
-                    "type": "string",
                     "enum": [
                         "user",
                         "admin"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/enums.Role"
+                        }
                     ],
                     "example": "user"
                 },
@@ -931,7 +935,7 @@
                 }
             }
         },
-        "bgin_internal_platform_realtime.ProxyError": {
+        "cgin_internal_platform_realtime.ProxyError": {
             "type": "object",
             "properties": {
                 "code": {
@@ -942,7 +946,7 @@
                 }
             }
         },
-        "bgin_internal_platform_realtime.SubscribeResult": {
+        "cgin_internal_platform_realtime.SubscribeResult": {
             "type": "object",
             "properties": {
                 "data": {},
@@ -1153,10 +1157,10 @@
                     "$ref": "#/definitions/realtime.DisconnectCommand"
                 },
                 "error": {
-                    "$ref": "#/definitions/bgin_internal_platform_realtime.ProxyError"
+                    "$ref": "#/definitions/cgin_internal_platform_realtime.ProxyError"
                 },
                 "result": {
-                    "$ref": "#/definitions/bgin_internal_platform_realtime.SubscribeResult"
+                    "$ref": "#/definitions/cgin_internal_platform_realtime.SubscribeResult"
                 }
             }
         },

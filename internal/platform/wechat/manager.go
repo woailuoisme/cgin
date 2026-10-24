@@ -8,9 +8,9 @@ import (
 	"strings"
 	"sync"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/cache"
-	"bgin/internal/platform/errs"
+	"cgin/internal/config"
+	"cgin/internal/platform/cache"
+	"cgin/internal/platform/errs"
 )
 
 // DefaultAppKey 是默认小程序应用的命名空间标识。

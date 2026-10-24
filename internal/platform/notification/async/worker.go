@@ -9,7 +9,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"bgin/internal/platform/logger"
+	"cgin/internal/platform/logger"
 )
 
 // 提交失败的原因：由调用方决定是降级同步执行还是丢弃，池自身不替调用方做取舍。

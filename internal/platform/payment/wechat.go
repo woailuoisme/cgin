@@ -12,9 +12,9 @@ import (
 	"github.com/go-pay/gopay/wechat/v3"
 	"go.uber.org/zap"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/payment/enums"
+	"cgin/internal/config"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/payment/enums"
 )
 
 // 微信支付币种常量。

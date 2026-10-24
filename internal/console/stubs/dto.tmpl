@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"bgin/internal/platform/response"
-	"bgin/internal/database/models"
+	"cgin/internal/database/sqlc"
+	"cgin/internal/platform/response"
 )
 
 // {{ .PascalName }}PathParams 路径中的{{ .ChineseName }}唯一标识。
@@ -111,7 +111,7 @@ type {{ .PascalName }}PageResource struct {
 }
 
 // To{{ .PascalName }}Resource 将数据库实体转换为外部响应资源。
-func To{{ .PascalName }}Resource(entity *models.{{ .PascalName }}) {{ .PascalName }}Resource {
+func To{{ .PascalName }}Resource(entity *sqlc.{{ .PascalName }}) {{ .PascalName }}Resource {
 	if entity == nil {
 		return {{ .PascalName }}Resource{}
 	}

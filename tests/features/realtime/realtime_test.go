@@ -18,11 +18,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
-	featureRealtime "bgin/internal/features/realtime"
-	"bgin/internal/platform/authentication"
-	platformRealtime "bgin/internal/platform/realtime"
-	"bgin/internal/shared/enums"
+	"cgin/internal/config"
+	featureRealtime "cgin/internal/features/realtime"
+	"cgin/internal/platform/authentication"
+	platformRealtime "cgin/internal/platform/realtime"
+	"cgin/internal/shared/enums"
 )
 
 func generateTestSig(secret string, body []byte) string {

@@ -1,5 +1,5 @@
 # ==============================================================================
-# bgin - Docker Build Ignore List (.dockerignore)
+# cgin - Docker Build Ignore List (.dockerignore)
 # 极致优化 Docker 构建上下文：仅传递纯 Go 编译所需的源代码与必要内嵌资源。
 # ==============================================================================
 
@@ -103,8 +103,8 @@ scratch
 bin
 build
 dist
-/bgin
-/bgin-cli
+/cgin
+/cgin-cli
 *.exe
 *.exe~
 *.dll

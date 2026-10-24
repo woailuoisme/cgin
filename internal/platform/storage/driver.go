@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"bgin/internal/config"
+	"cgin/internal/config"
 )
 
 // DriverFactory 是根据配置构造底层 Disk 实例的工厂函数契约。

@@ -12,7 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"bgin/internal/console/core"
+	"cgin/internal/console/core"
 )
 
 // jwtSecretRegexp 匹配 .env 中已存在的 JWT_SECRET 配置行。
@@ -124,15 +124,7 @@ func newJWTSecretCmd(f Factory) *cobra.Command {
 		Use:   "jwt:secret",
 		Short: "Set the JWT secret key in .env file",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := opts.Complete(cmd, args); err != nil {
-				return err
-			}
-			if err := opts.Validate(); err != nil {
-				return err
-			}
-			return opts.Run(cmd.Context())
-		},
+		RunE:  runCommand(opts),
 	}
 
 	cmd.Flags().BoolVarP(&opts.Show, "show", "s", false, "Display the key instead of modifying files")

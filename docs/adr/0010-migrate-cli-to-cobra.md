@@ -7,7 +7,7 @@
 依据 Go 工业界最佳实践（Kubernetes、GitHub CLI 标准）及本仓库架构设计原则，全面迁移至 `github.com/spf13/cobra`，确立以下 6 项核心架构契约：
 
 1. **工业级分层拓扑与 Artisan 冒号别名双轨兼容 (Hierarchical Tree with Hidden Colon Aliases)**：
-   采用标准分层子命令设计（如 `bgin db migrate`、`bgin queue work`、`bgin scout import`、`bgin jwt secret`）。同时在根命令层注入带 `Hidden: true` 标记的冒号别名（如 `db:migrate`、`queue:work` 等），既保持与现有 `.air.worker.toml`、`justfile` 脚本及 Laravel Artisan 习惯的 100% 向后兼容，又使 `--help` 输出保持整洁聚焦。
+   采用标准分层子命令设计（如 `cgin db migrate`、`cgin queue work`、`cgin scout import`、`cgin jwt secret`）。同时在根命令层注入带 `Hidden: true` 标记的冒号别名（如 `db:migrate`、`queue:work` 等），既保持与现有 `.air.worker.toml`、`justfile` 脚本及 Laravel Artisan 习惯的 100% 向后兼容，又使 `--help` 输出保持整洁聚焦。
 
 2. **零包级全局变量与纯函数工厂构造 (Stateless Factory Pattern with Zero Global State)**：
    拒绝包级全局 `*cobra.Command` 变量与 `init()` 注册。所有命令统一通过工厂函数按需创建（如 `NewRootCommand()`、`newDBCmd()`、`newServeCmd()` 等），Flag 均局部绑定至具体命令实例。多测试用例并发或串行执行时彻底杜绝 Flag 污染与脏状态残留。
@@ -28,7 +28,7 @@
 
 第 1、5 条在落地过程中与 `AGENTS.md` §1 的现行契约合流，实现形态与原文有出入，**以 AGENTS 为准**：
 
-1. **命名与别名**：命令的 `Use` 直接就是 Artisan 冒号名（`db:migrate`、`queue:work`、`make:crud`…），靠 `GroupID` 在 `--help` 里按命名空间分组；未再引入 `bgin db migrate` 层级父命令，也没有 `Hidden: true` 的重复别名。
+1. **命名与别名**：命令的 `Use` 直接就是 Artisan 冒号名（`db:migrate`、`queue:work`、`make:crud`…），靠 `GroupID` 在 `--help` 里按命名空间分组；未再引入 `cgin db migrate` 层级父命令，也没有 `Hidden: true` 的重复别名。
    冒号名是唯一入口——`justfile` 与 `.air.worker.toml` 都直接调用它，再挂一层父命令只会多一份需要同步维护的命令树。
 2. **分组数量与语言**：实际注册 6 个 `cobra.Group`（`db`/`jwt`/`make`/`queue`/`route`/`scout`），而非原文的 4 个中文分组；原文的 4 组已无法覆盖后续新增的 `make`/`route`/`jwt` 命名空间，且分组标题沿用命名空间本身以保证与命令前缀一致。
 

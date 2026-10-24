@@ -2,19 +2,20 @@ package seeders
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/uptrace/bun"
+	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 
-	"bgin/internal/config"
-	"bgin/internal/database/models"
-	"bgin/internal/platform/hasher"
-	"bgin/internal/platform/logger"
-	"bgin/internal/platform/validator"
+	"cgin/internal/config"
+	"cgin/internal/database"
+	"cgin/internal/database/sqlc"
+	"cgin/internal/platform/hasher"
+	"cgin/internal/platform/logger"
+	"cgin/internal/platform/validator"
+	"cgin/internal/shared/enums"
 )
 
 func init() {
@@ -32,7 +33,7 @@ func (s *AdminSeeder) Name() string {
 }
 
 // Seed 执行管理员播种操作。
-func (s *AdminSeeder) Seed(ctx context.Context, db *bun.DB) error {
+func (s *AdminSeeder) Seed(ctx context.Context, db *database.DB) error {
 	cfg := s.Cfg
 	if cfg == nil {
 		loaded, err := config.Load()
@@ -49,31 +50,43 @@ func (s *AdminSeeder) Seed(ctx context.Context, db *bun.DB) error {
 		return fmt.Errorf("admin seeder: SEED_ADMIN_PASSWORD does not meet strength requirements: %w", err)
 	}
 
-	pwdHasher := hasher.New()
-	_, err := models.FindUserByEmail(ctx, db, cfg.Seed.AdminEmail)
-	switch {
-	case err == nil:
-		logger.FromContext(ctx).Warn("admin account already exists, skipping seeding",
-			zap.String("email", cfg.Seed.AdminEmail))
+	email := strings.ToLower(strings.TrimSpace(cfg.Seed.AdminEmail))
+	if _, err := db.Queries(ctx).GetUserByEmail(ctx, sqlc.GetUserByEmailParams{Email: email}); err == nil {
+		logger.FromContext(ctx).Warn("admin account already exists, skipping seeding", zap.String("email", email))
 		return nil
-	case !errors.Is(err, sql.ErrNoRows):
+	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("admin seeder query existing admin failed: %w", err)
 	}
 
-	hash, err := pwdHasher.Make(cfg.Seed.AdminPassword)
+	hash, err := hasher.New().Make(cfg.Seed.AdminPassword)
 	if err != nil {
 		return fmt.Errorf("admin seeder hash password failed: %w", err)
 	}
 
-	admin := &models.User{
-		Name:          cfg.Seed.AdminName,
-		Email:         strings.ToLower(strings.TrimSpace(cfg.Seed.AdminEmail)),
-		EmailVerified: true,
-		Role:          models.RoleAdmin,
-		Status:        models.StatusActive,
-	}
-
-	if err := models.CreateUserWithCredential(ctx, db, admin, hash); err != nil {
+	var admin sqlc.User
+	err = db.RunInTx(ctx, func(ctx context.Context, q *sqlc.Queries) error {
+		row, err := q.CreateUser(ctx, sqlc.CreateUserParams{
+			Name:          cfg.Seed.AdminName,
+			Email:         email,
+			EmailVerified: true,
+			Role:          string(enums.RoleAdmin),
+			Status:        string(enums.StatusActive),
+		})
+		if err != nil {
+			return err
+		}
+		if _, err := q.CreateAccount(ctx, sqlc.CreateAccountParams{
+			UserID:     row.ID,
+			AccountID:  row.ID,
+			ProviderID: string(enums.ProviderCredential),
+			Password:   &hash,
+		}); err != nil {
+			return err
+		}
+		admin = row
+		return nil
+	})
+	if err != nil {
 		return fmt.Errorf("admin seeder create account failed: %w", err)
 	}
 

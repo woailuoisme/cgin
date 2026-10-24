@@ -4,11 +4,10 @@ import (
 	"github.com/aarondl/opt/omitnull"
 	"github.com/gin-gonic/gin"
 
-	"bgin/internal/platform/authentication"
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/response"
-	"bgin/internal/shared/media"
-	"bgin/internal/shared/user"
+	"cgin/internal/platform/authentication"
+	"cgin/internal/platform/response"
+	"cgin/internal/shared/media"
+	"cgin/internal/shared/user"
 )
 
 // Handler 是本人档案端点的 HTTP 适配层。
@@ -25,15 +24,6 @@ func NewHandler(userService *user.Service, mediaManager *media.Manager) *Handler
 	}
 }
 
-func (h *Handler) currentUserID(c *gin.Context) (string, bool) {
-	id, ok := authentication.FromContext(c.Request.Context())
-	if !ok {
-		_ = c.Error(errs.Unauthorized(errs.CodeAuthTokenInvalid, "Authentication is required"))
-		return "", false
-	}
-	return id.UserID, true
-}
-
 // GetProfile 处理 GET /v1/users/me。
 //
 // @Summary      读取本人档案
@@ -45,10 +35,12 @@ func (h *Handler) currentUserID(c *gin.Context) (string, bool) {
 // @x-order      1
 // @Router       /users/me [get]
 func (h *Handler) GetProfile(c *gin.Context) {
-	userID, ok := h.currentUserID(c)
-	if !ok {
+	identity, err := authentication.RequireIdentity(c.Request.Context())
+	if err != nil {
+		_ = c.Error(err)
 		return
 	}
+	userID := identity.UserID
 
 	profile, err := h.userService.GetProfile(c.Request.Context(), userID)
 	if err != nil {
@@ -71,10 +63,12 @@ func (h *Handler) GetProfile(c *gin.Context) {
 // @x-order      2
 // @Router       /users/me [patch]
 func (h *Handler) UpdateProfile(c *gin.Context) {
-	userID, ok := h.currentUserID(c)
-	if !ok {
+	identity, err := authentication.RequireIdentity(c.Request.Context())
+	if err != nil {
+		_ = c.Error(err)
 		return
 	}
+	userID := identity.UserID
 
 	var body UpdateProfileBody
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -105,10 +99,12 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 // @x-order      3
 // @Router       /users/me/avatar [post]
 func (h *Handler) UploadAvatar(c *gin.Context) {
-	userID, ok := h.currentUserID(c)
-	if !ok {
+	identity, err := authentication.RequireIdentity(c.Request.Context())
+	if err != nil {
+		_ = c.Error(err)
 		return
 	}
+	userID := identity.UserID
 
 	var body UploadAvatarBody
 	if err := c.ShouldBind(&body); err != nil {

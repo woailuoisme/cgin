@@ -2,15 +2,16 @@ package {{ .PackageName }}
 
 import (
 	"context"
-	"database/sql"
 	"errors"
+	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/samber/lo"
-	"github.com/uptrace/bun"
 
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/response"
-	"bgin/internal/database/models"
+	"cgin/internal/database"
+	"cgin/internal/database/sqlc"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/response"
 )
 
 // Service 定义 {{ .ChineseName }} 业务用例契约。
@@ -23,110 +24,107 @@ type Service interface {
 }
 
 type service struct {
-	db bun.IDB
+	db *database.DB
 }
 
 // NewService 构造 {{ .ChineseName }} 业务服务实例。
-func NewService(db bun.IDB) Service {
+func NewService(db *database.DB) Service {
 	return &service{db: db}
 }
 
+// List 分页查询{{ .ChineseName }}，总数由 count(*) OVER () 单查询返回。
 func (s *service) List(ctx context.Context, query List{{ .PascalName }}QueryParams) ([]{{ .PascalName }}Resource, response.Meta, error) {
-	total, err := models.Count{{ .PluralPascal }}(ctx, s.db, query.Search, query.Status)
+	page := max(query.Page, 1)
+	pageSize := min(max(query.PageSize, 1), 100)
+
+	params := sqlc.List{{ .PluralPascal }}Params{
+		PageOffset: int64((page - 1) * pageSize),
+		PageLimit:  int64(pageSize),
+	}
+	if search := strings.TrimSpace(query.Search); search != "" {
+		pattern := "%" + search + "%"
+		params.Search = &pattern
+	}
+	if status := strings.TrimSpace(query.Status); status != "" {
+		params.Status = &status
+	}
+
+	rows, err := s.db.Queries(ctx).List{{ .PluralPascal }}(ctx, params)
 	if err != nil {
 		return nil, response.Meta{}, errs.Internal(err)
 	}
 
-	offset := (query.Page - 1) * query.PageSize
-	entities, err := models.List{{ .PluralPascal }}(ctx, s.db, query.Search, query.Status, offset, query.PageSize)
-	if err != nil {
-		return nil, response.Meta{}, errs.Internal(err)
+	total := 0
+	if len(rows) > 0 {
+		total = int(rows[0].TotalCount)
 	}
-
-	items := lo.Map(entities, func(item models.{{ .PascalName }}, _ int) {{ .PascalName }}Resource {
-		return To{{ .PascalName }}Resource(&item)
+	items := lo.Map(rows, func(row sqlc.List{{ .PluralPascal }}Row, _ int) {{ .PascalName }}Resource {
+		return To{{ .PascalName }}Resource(&row.{{ .PascalName }})
 	})
-
-	meta := response.NewMeta(query.Page, query.PageSize, total)
-	return items, meta, nil
+	return items, response.NewMeta(page, pageSize, total), nil
 }
 
+// GetByID 按主键查询{{ .ChineseName }}详情。
 func (s *service) GetByID(ctx context.Context, id string) (*{{ .PascalName }}Resource, error) {
-	entity, err := models.Find{{ .PascalName }}ByID(ctx, s.db, id)
+	entity, err := s.db.Queries(ctx).Get{{ .PascalName }}ByID(ctx, sqlc.Get{{ .PascalName }}ByIDParams{ID: id})
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, errs.NotFound("{{ .KebabName }} not found")
 		}
 		return nil, errs.Internal(err)
 	}
 
-	res := To{{ .PascalName }}Resource(entity)
+	res := To{{ .PascalName }}Resource(&entity)
 	return &res, nil
 }
 
+// Create 创建{{ .ChineseName }}。
 func (s *service) Create(ctx context.Context, req Create{{ .PascalName }}Body) (*{{ .PascalName }}Resource, error) {
-	entity := &models.{{ .PascalName }}{
-		Name:        req.Name,
+	entity, err := s.db.Queries(ctx).Create{{ .PascalName }}(ctx, sqlc.Create{{ .PascalName }}Params{
+		Name:        strings.TrimSpace(req.Name),
 		Description: &req.Description,
 		Status:      req.Status,
-	}
-
-	if err := entity.Insert(ctx, s.db); err != nil {
+	})
+	if err != nil {
 		return nil, errs.Internal(err)
 	}
 
-	res := To{{ .PascalName }}Resource(entity)
+	res := To{{ .PascalName }}Resource(&entity)
 	return &res, nil
 }
 
+// Update 单语句局部更新{{ .ChineseName }}。
 func (s *service) Update(ctx context.Context, id string, req Update{{ .PascalName }}Body) (*{{ .PascalName }}Resource, error) {
-	entity, err := models.Find{{ .PascalName }}ByID(ctx, s.db, id)
+	params := sqlc.Update{{ .PascalName }}Params{ID: id, Name: req.Name, Status: req.Status}
+	if req.Description != nil {
+		trimmed := strings.TrimSpace(*req.Description)
+		if trimmed == "" {
+			params.ClearDescription = true
+		} else {
+			params.Description = &trimmed
+		}
+	}
+
+	entity, err := s.db.Queries(ctx).Update{{ .PascalName }}(ctx, params)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, errs.NotFound("{{ .KebabName }} not found")
 		}
 		return nil, errs.Internal(err)
 	}
 
-	var changedColumns []string
-	if req.Name != nil {
-		entity.Name = *req.Name
-		changedColumns = append(changedColumns, "name")
-	}
-	if req.Description != nil {
-		entity.Description = req.Description
-		changedColumns = append(changedColumns, "description")
-	}
-	if req.Status != nil {
-		entity.Status = *req.Status
-		changedColumns = append(changedColumns, "status")
-	}
-
-	if len(changedColumns) > 0 {
-		if err := entity.Update(ctx, s.db, changedColumns...); err != nil {
-			return nil, errs.Internal(err)
-		}
-	}
-
-	res := To{{ .PascalName }}Resource(entity)
+	res := To{{ .PascalName }}Resource(&entity)
 	return &res, nil
 }
 
+// Delete 软删除{{ .ChineseName }}。
 func (s *service) Delete(ctx context.Context, id string) error {
-	entity, err := models.Find{{ .PascalName }}ByID(ctx, s.db, id)
+	affected, err := s.db.Queries(ctx).SoftDelete{{ .PascalName }}(ctx, sqlc.SoftDelete{{ .PascalName }}Params{ID: id})
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return errs.NotFound("{{ .KebabName }} not found")
-		}
 		return errs.Internal(err)
 	}
-
-	if err := entity.SoftDelete(ctx, s.db); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return errs.NotFound("{{ .KebabName }} not found")
-		}
-		return errs.Internal(err)
+	if affected == 0 {
+		return errs.NotFound("{{ .KebabName }} not found")
 	}
-
 	return nil
 }

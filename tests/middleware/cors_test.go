@@ -8,8 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 
-	"bgin/internal/config"
-	"bgin/internal/middleware/global"
+	"cgin/internal/config"
+	"cgin/internal/middleware/global"
 )
 
 // TestCORS_OptionsPreflightShortCircuit 验证 OPTIONS 预检请求返回 204 并且直接短路阻断后续中间件与路由。

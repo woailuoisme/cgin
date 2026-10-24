@@ -9,9 +9,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/logger"
-	platformsentry "bgin/internal/platform/sentry"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/logger"
 )
 
 // Handler 描述任务执行的原子处理函数契约 (SRP)。
@@ -50,8 +49,13 @@ func RecoveryMiddleware(l *zap.Logger) Middleware {
 						zap.Any("panic", r),
 						zap.String("stack", stack),
 					)
-					execErr = fmt.Errorf("queue: job panic: %v", r)
-					platformsentry.CaptureExceptionWithContext(ctx, execErr)
+					var cause error
+					if err, ok := r.(error); ok {
+						cause = err
+					} else {
+						cause = fmt.Errorf("%v", r)
+					}
+					execErr = fmt.Errorf("queue: job panic: %w", cause)
 				}
 			}()
 			return next(ctx, job)
@@ -65,9 +69,7 @@ func TracingMiddleware(l *zap.Logger, headers map[string]string) Middleware {
 		return func(ctx context.Context, job Job) error {
 			if reqID := headers["request_id"]; reqID != "" {
 				ctx = logger.WithContext(ctx, l, reqID)
-				platformsentry.SetTag(ctx, "request_id", reqID)
 			}
-			platformsentry.SetTag(ctx, "task", job.TaskName())
 			return next(ctx, job)
 		}
 	}

@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/authentication"
-	"bgin/internal/platform/errs"
+	"cgin/internal/config"
+	"cgin/internal/platform/authentication"
+	"cgin/internal/platform/errs"
 )
 
 // newIssuer 构造不依赖 Redis 的签发器，仅用于签发与校验路径。
@@ -26,7 +26,7 @@ func newIssuer(secret, issuer string, accessTTL time.Duration) *authentication.T
 
 // TestIssueAndParse 校验双令牌形态不同，且访问令牌载荷完整。
 func TestIssueAndParse(t *testing.T) {
-	issuer := newIssuer(testSecret, "bgin-test", 15*time.Minute)
+	issuer := newIssuer(testSecret, "cgin-test", 15*time.Minute)
 
 	pair, err := issuer.Issue("u_1", "admin")
 	require.NoError(t, err)
@@ -43,7 +43,7 @@ func TestIssueAndParse(t *testing.T) {
 
 // TestParseRejectsCrossTypeUsage 校验刷新令牌不能当访问令牌用，反之亦然。
 func TestParseRejectsCrossTypeUsage(t *testing.T) {
-	issuer := newIssuer(testSecret, "bgin-test", 15*time.Minute)
+	issuer := newIssuer(testSecret, "cgin-test", 15*time.Minute)
 	pair, err := issuer.Issue("u_1", "user")
 	require.NoError(t, err)
 
@@ -56,17 +56,17 @@ func TestParseRejectsCrossTypeUsage(t *testing.T) {
 
 // TestParseRejectsForeignSecret 校验换密钥后旧令牌立即失效。
 func TestParseRejectsForeignSecret(t *testing.T) {
-	pair, err := newIssuer(testSecret, "bgin-test", 15*time.Minute).Issue("u_1", "user")
+	pair, err := newIssuer(testSecret, "cgin-test", 15*time.Minute).Issue("u_1", "user")
 	require.NoError(t, err)
 
-	other := newIssuer("ffffffffffffffffffffffffffffffff", "bgin-test", 15*time.Minute)
+	other := newIssuer("ffffffffffffffffffffffffffffffff", "cgin-test", 15*time.Minute)
 	_, err = other.Parse(pair.AccessToken, authentication.TypeAccess)
 	assert.Error(t, err)
 }
 
 // TestParseRejectsForeignIssuer 校验签发方不匹配被拒绝。
 func TestParseRejectsForeignIssuer(t *testing.T) {
-	pair, err := newIssuer(testSecret, "bgin-test", 15*time.Minute).Issue("u_1", "user")
+	pair, err := newIssuer(testSecret, "cgin-test", 15*time.Minute).Issue("u_1", "user")
 	require.NoError(t, err)
 
 	other := newIssuer(testSecret, "someone-else", 15*time.Minute)
@@ -76,7 +76,7 @@ func TestParseRejectsForeignIssuer(t *testing.T) {
 
 // TestParseRejectsGarbage 校验畸形令牌被拒绝。
 func TestParseRejectsGarbage(t *testing.T) {
-	issuer := newIssuer(testSecret, "bgin-test", 15*time.Minute)
+	issuer := newIssuer(testSecret, "cgin-test", 15*time.Minute)
 
 	for _, raw := range []string{"", "not-a-jwt", "a.b.c"} {
 		_, err := issuer.Parse(raw, authentication.TypeAccess)
@@ -86,7 +86,7 @@ func TestParseRejectsGarbage(t *testing.T) {
 
 // TestExpiredTokenUsesDedicatedCode 校验过期令牌返回专门的错误码而非泛化的无效错误。
 func TestExpiredTokenUsesDedicatedCode(t *testing.T) {
-	issuer := newIssuer(testSecret, "bgin-test", -time.Minute)
+	issuer := newIssuer(testSecret, "cgin-test", -time.Minute)
 
 	pair, err := issuer.Issue("u_1", "user")
 	require.NoError(t, err)
@@ -102,7 +102,7 @@ func TestExpiredTokenUsesDedicatedCode(t *testing.T) {
 
 // TestRoleClaimIsCarried 校验角色声明写入令牌，供鉴权中间件免查库使用（ADR-0003）。
 func TestRoleClaimIsCarried(t *testing.T) {
-	issuer := newIssuer(testSecret, "bgin-test", 15*time.Minute)
+	issuer := newIssuer(testSecret, "cgin-test", 15*time.Minute)
 
 	pair, err := issuer.Issue("u_1", "admin")
 	require.NoError(t, err)
@@ -114,7 +114,7 @@ func TestRoleClaimIsCarried(t *testing.T) {
 
 // TestEachIssueHasUniqueJTI 校验每次签发的 jti 都不同，否则撤销会误伤其他令牌。
 func TestEachIssueHasUniqueJTI(t *testing.T) {
-	issuer := newIssuer(testSecret, "bgin-test", 15*time.Minute)
+	issuer := newIssuer(testSecret, "cgin-test", 15*time.Minute)
 
 	first, err := issuer.Issue("u_1", "user")
 	require.NoError(t, err)
@@ -129,7 +129,7 @@ func TestRevokeByJTI(t *testing.T) {
 	store := newMockBlacklistStore()
 	issuer := authentication.NewTokenIssuer(config.JWTConfig{
 		Secret:     testSecret,
-		Issuer:     "bgin-test",
+		Issuer:     "cgin-test",
 		AccessTTL:  15 * time.Minute,
 		RefreshTTL: 24 * time.Hour,
 	}, store)
@@ -166,7 +166,7 @@ func TestRevokeUserEpoch(t *testing.T) {
 	store := newMockBlacklistStore()
 	issuer := authentication.NewTokenIssuer(config.JWTConfig{
 		Secret:     testSecret,
-		Issuer:     "bgin-test",
+		Issuer:     "cgin-test",
 		AccessTTL:  15 * time.Minute,
 		RefreshTTL: 24 * time.Hour,
 	}, store)
@@ -210,7 +210,7 @@ func TestRevokeUserEpoch(t *testing.T) {
 
 // TestJWTCodec_StatelessOperations 验证纯无状态 JWTCodec 独立编解码能力。
 func TestJWTCodec_StatelessOperations(t *testing.T) {
-	codec := authentication.NewJWTCodec([]byte(testSecret), "bgin-test", 15*time.Minute, 24*time.Hour)
+	codec := authentication.NewJWTCodec([]byte(testSecret), "cgin-test", 15*time.Minute, 24*time.Hour)
 
 	pair, err := codec.IssuePair("usr_100", "user", 10*time.Minute, time.Hour, map[string]any{
 		"scope": "read:all",
@@ -239,7 +239,7 @@ func TestTokenIssuer_AuthenticateToken(t *testing.T) {
 	store := newMockBlacklistStore()
 	issuer := authentication.NewTokenIssuer(config.JWTConfig{
 		Secret:     testSecret,
-		Issuer:     "bgin-test",
+		Issuer:     "cgin-test",
 		AccessTTL:  15 * time.Minute,
 		RefreshTTL: 24 * time.Hour,
 	}, store)

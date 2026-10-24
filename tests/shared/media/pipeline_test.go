@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/platform/storage"
-	"bgin/internal/shared/media"
+	"cgin/internal/platform/storage"
+	"cgin/internal/shared/media"
 )
 
 func TestPipeline_RoundTrip(t *testing.T) {

@@ -22,10 +22,6 @@ const (
 	CodeForbidden        Code = "FORBIDDEN"
 	CodeConflict         Code = "CONFLICT"
 	CodeRateLimited      Code = "RATE_LIMITED"
-	// 幂等性控制错误码。
-	CodeIdempotencyConflict Code = "IDEMPOTENCY_CONFLICT"
-	CodeIdempotencyMismatch Code = "IDEMPOTENCY_MISMATCH"
-	CodeIdempotencyRequired Code = "IDEMPOTENCY_REQUIRED"
 	// CodeRequestTooLarge 请求体超过服务端上限。
 	CodeRequestTooLarge Code = "REQUEST_TOO_LARGE"
 	// CodeGatewayTimeout 上游依赖或数据库未在时限内响应。
@@ -73,8 +69,6 @@ const (
 	CodeExcelMapError     Code = "EXCEL_MAP_ERROR"
 	CodeExcelRowsError    Code = "EXCEL_ROWS_ERROR"
 	CodeEmptySheets       Code = "EMPTY_SHEETS"
-	// CodeCSVReadError CSV 输入流不合法或无法读取。
-	CodeCSVReadError Code = "CSV_READ_ERROR"
 	// CodeExcelReadRowError 逐行读取时该行内容不合法。
 	CodeExcelReadRowError Code = "EXCEL_READ_ROW_ERROR"
 	// CodeExcelDuplicateRow 导入数据行存在重复键（文件内重复或数据库已存在）。
@@ -113,16 +107,6 @@ const (
 	CodeExcelFlushError          Code = "EXCEL_FLUSH_ERROR"
 	CodeExcelStyleError          Code = "EXCEL_STYLE_ERROR"
 	CodeExcelGeneratorError      Code = "EXCEL_GENERATOR_ERROR"
-	CodeExcelConsumeError        Code = "EXCEL_CONSUME_ERROR"
-	CodeExcelTempFileError       Code = "EXCEL_TEMP_FILE_ERROR"
-	CodeExcelSpoolWriteError     Code = "EXCEL_SPOOL_WRITE_ERROR"
-	CodeExcelSpoolCopyError      Code = "EXCEL_SPOOL_COPY_ERROR"
-	CodeExcelSpoolCloseError     Code = "EXCEL_SPOOL_CLOSE_ERROR"
-	CodeExcelNilPointer          Code = "EXCEL_NIL_POINTER"
-	CodeNilWriter                Code = "NIL_WRITER"
-	CodeNilReader                Code = "NIL_READER"
-	CodeNilGenerator             Code = "NIL_GENERATOR"
-	CodeNilCallback              Code = "NIL_CALLBACK"
 	CodeContextCanceled          Code = "CONTEXT_CANCELED"
 	CodeNotificationSendFailed   Code = "NOTIFICATION_SEND_FAILED"
 	CodeNotificationFormatFailed Code = "NOTIFICATION_FORMAT_FAILED"
@@ -164,9 +148,6 @@ var statuses = map[Code]int{
 	CodeForbidden:           http.StatusForbidden,
 	CodeConflict:            http.StatusConflict,
 	CodeRateLimited:         http.StatusTooManyRequests,
-	CodeIdempotencyConflict: http.StatusConflict,
-	CodeIdempotencyMismatch: http.StatusUnprocessableEntity,
-	CodeIdempotencyRequired: http.StatusBadRequest,
 	CodeRequestTooLarge:     http.StatusRequestEntityTooLarge,
 	CodeGatewayTimeout:      http.StatusGatewayTimeout,
 	CodeClientClosedRequest: StatusClientClosedRequest,
@@ -197,7 +178,6 @@ var statuses = map[Code]int{
 	CodeExcelReadRowError: http.StatusUnprocessableEntity,
 	CodeExcelDuplicateRow: http.StatusConflict,
 	CodeEmptySheets:       http.StatusBadRequest,
-	CodeCSVReadError:      http.StatusBadRequest,
 
 	CodeNotificationMissingRecipient:   http.StatusBadRequest,
 	CodeNotificationMissingRecipientID: http.StatusBadRequest,

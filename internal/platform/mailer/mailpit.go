@@ -16,8 +16,8 @@ import (
 	gomail "github.com/wneessen/go-mail"
 	"go.uber.org/zap"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/errs"
+	"cgin/internal/config"
+	"cgin/internal/platform/errs"
 )
 
 // mailpitMailer 基于 wneessen/go-mail 实现的 Mailpit 本地测试发信器。

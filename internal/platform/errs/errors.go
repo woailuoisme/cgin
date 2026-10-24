@@ -103,21 +103,6 @@ func Conflict(message string) *Error {
 	return New(CodeConflict, cmp.Or(message, msgConflict))
 }
 
-// IdempotencyConflict 构造 409，表示同一幂等键正在执行中。
-func IdempotencyConflict(message string) *Error {
-	return New(CodeIdempotencyConflict, cmp.Or(message, "A request with the same idempotency key is currently being processed"))
-}
-
-// IdempotencyMismatch 构造 422，表示相同幂等键被复用于不同的请求载荷。
-func IdempotencyMismatch(message string) *Error {
-	return New(CodeIdempotencyMismatch, cmp.Or(message, "Idempotency key was previously used with different request parameters"))
-}
-
-// IdempotencyRequired 构造 400，表示当前端点强制要求携带幂等键。
-func IdempotencyRequired(message string) *Error {
-	return New(CodeIdempotencyRequired, cmp.Or(message, "Idempotency-Key header is required for this request"))
-}
-
 // RateLimited 构造 429。
 func RateLimited(message string) *Error {
 	return New(CodeRateLimited, cmp.Or(message, msgRateLimited))
@@ -145,6 +130,11 @@ func ServiceUnavailable(message string) *Error {
 
 // InvalidCredentials 是登录失败的唯一对外口径，不区分"邮箱不存在"与"密码错误"。
 func InvalidCredentials() *Error { return New(CodeAuthInvalidCredentials, msgInvalidLogin) }
+
+// PasswordMismatch 构造 422，表示当前口令与本地凭据不匹配。
+func PasswordMismatch() *Error {
+	return New(CodeAuthPasswordMismatch, "The current password is incorrect")
+}
 
 // Unauthorized 构造 401，用于凭证缺失、格式错误、过期或已撤销。
 func Unauthorized(code Code, message string) *Error { return New(code, message) }

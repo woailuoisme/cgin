@@ -3,10 +3,10 @@ package adminauth
 import (
 	"github.com/gin-gonic/gin"
 
-	"bgin/internal/platform/authentication"
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/response"
-	"bgin/internal/platform/validator"
+	"cgin/internal/platform/authentication"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/response"
+	"cgin/internal/platform/validator"
 )
 
 // Handler 是管理员认证的 HTTP 适配层。

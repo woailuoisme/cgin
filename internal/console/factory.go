@@ -4,13 +4,12 @@ import (
 	"context"
 	"sync"
 
-	"github.com/uptrace/bun"
 	"go.uber.org/zap"
 
-	"bgin/internal/config"
-	"bgin/internal/console/core"
-	"bgin/internal/database"
-	"bgin/internal/platform/logger"
+	"cgin/internal/config"
+	"cgin/internal/console/core"
+	"cgin/internal/database"
+	"cgin/internal/platform/logger"
 )
 
 // ValidationError 表示控制台命令参数校验失败的强类型错误。
@@ -32,7 +31,7 @@ type Factory interface {
 	IOStreams() *core.IOStreams
 	Prompter() core.Prompter
 	Config() (*config.Config, error)
-	DB(ctx context.Context) (*bun.DB, error)
+	DB(ctx context.Context) (*database.DB, error)
 	Logger() *zap.Logger
 }
 
@@ -46,7 +45,7 @@ type defaultFactory struct {
 	cfgErr  error
 
 	dbOnce sync.Once
-	db     *bun.DB
+	db     *database.DB
 	dbErr  error
 
 	loggerOnce sync.Once
@@ -80,15 +79,20 @@ func (f *defaultFactory) Config() (*config.Config, error) {
 	return f.cfg, f.cfgErr
 }
 
-// DB 懒加载并缓存 Bun ORM 数据库连接。
-func (f *defaultFactory) DB(ctx context.Context) (*bun.DB, error) {
+// DB 懒加载并缓存数据访问入口。
+func (f *defaultFactory) DB(ctx context.Context) (*database.DB, error) {
 	f.dbOnce.Do(func() {
 		cfg, err := f.Config()
 		if err != nil {
 			f.dbErr = err
 			return
 		}
-		f.db, f.dbErr = database.Open(ctx, cfg.Database, cfg.App.Name)
+		pool, err := database.Open(ctx, cfg.Database, cfg.App.Name)
+		if err != nil {
+			f.dbErr = err
+			return
+		}
+		f.db = database.NewDB(pool)
 	})
 	return f.db, f.dbErr
 }
@@ -112,7 +116,7 @@ type TestFactory struct {
 	PrompterValue core.Prompter
 	ConfigValue   *config.Config
 	ConfigErr     error
-	DBValue       *bun.DB
+	DBValue       *database.DB
 	DBErr         error
 	LoggerValue   *zap.Logger
 }
@@ -136,7 +140,7 @@ func (f *TestFactory) Config() (*config.Config, error) {
 	return f.ConfigValue, f.ConfigErr
 }
 
-func (f *TestFactory) DB(_ context.Context) (*bun.DB, error) {
+func (f *TestFactory) DB(_ context.Context) (*database.DB, error) {
 	return f.DBValue, f.DBErr
 }
 

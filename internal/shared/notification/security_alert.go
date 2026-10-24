@@ -3,10 +3,10 @@ package notification
 import (
 	"cmp"
 
-	"bgin/internal/platform/mailer"
-	"bgin/internal/platform/notification"
-	"bgin/internal/platform/notification/contract"
-	sharedDatabase "bgin/internal/shared/notification/database"
+	"cgin/internal/platform/mailer"
+	"cgin/internal/platform/notification"
+	"cgin/internal/platform/notification/contract"
+	sharedDatabase "cgin/internal/shared/notification/database"
 )
 
 // SecurityAlertNotification 多渠道账号安全事件通知（邮件 + 数据库站内信 + 实时广播）。

@@ -3,17 +3,17 @@ package realtime
 import (
 	"cmp"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"time"
 
-	"github.com/uptrace/bun"
+	"github.com/jackc/pgx/v5"
 
-	"bgin/internal/config"
-	"bgin/internal/database/models"
-	"bgin/internal/platform/errs"
-	platformRealtime "bgin/internal/platform/realtime"
+	"cgin/internal/config"
+	"cgin/internal/database"
+	"cgin/internal/database/sqlc"
+	"cgin/internal/platform/errs"
+	platformRealtime "cgin/internal/platform/realtime"
 )
 
 // Deps 汇总实时通信服务的装配依赖。
@@ -25,7 +25,7 @@ type Deps struct {
 	// Secret Centrifugo 反向代理请求的 HMAC 签名密钥。
 	Secret string
 	// DB 数据库连接，注入后签发的连接凭据以库中最新角色为准；未注入时沿用调用方传入的角色。
-	DB bun.IDB
+	DB *database.DB
 }
 
 // Service 承载实时通信业务规则与鉴权编排。
@@ -35,7 +35,7 @@ type Service struct {
 	// secret 是 Centrifugo 反向代理请求的 HMAC 签名密钥。
 	secret string
 	// db 用于签发前核对账号当前角色；未注入时退回调用方传入的角色。
-	db bun.IDB
+	db *database.DB
 }
 
 // NewService 创建实时通信服务。
@@ -59,9 +59,9 @@ func (s *Service) IssueToken(ctx context.Context, userID, role string) (*TokenRe
 	}
 
 	if s.db != nil {
-		entity, err := models.FindUserByID(ctx, s.db, userID)
+		entity, err := s.db.Queries(ctx).GetUserByID(ctx, sqlc.GetUserByIDParams{ID: userID})
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
+			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, errs.NotFound("The requested user does not exist")
 			}
 			return nil, errs.Internal(err)

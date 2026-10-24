@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/storage"
+	"cgin/internal/config"
+	"cgin/internal/platform/storage"
 )
 
 // TestOpenLocalDisk 覆盖 local 驱动的正常装配路径。

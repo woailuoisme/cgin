@@ -21,7 +21,7 @@ import (
 	"go.uber.org/zap/buffer"
 	"go.uber.org/zap/zapcore"
 
-	"bgin/internal/config"
+	"cgin/internal/config"
 )
 
 // ctxKey 是日志器在 context 中的私有键，避免与其他包产生键名冲突。
@@ -151,7 +151,7 @@ func WithCaller(enabled bool) Option {
 	}
 }
 
-// WithExtraCore 附加自定义 zapcore.Core 输出目标（例如用于 Sentry/GlitchTip 事件上报）。
+// WithExtraCore 附加自定义 zapcore.Core 输出目标（例如遥测事件上报）。
 func WithExtraCore(c zapcore.Core) Option {
 	return func(o *Options) {
 		if c != nil {

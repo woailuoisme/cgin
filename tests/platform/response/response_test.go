@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/platform/response"
+	"cgin/internal/platform/response"
 )
 
 func init() { gin.SetMode(gin.TestMode) }

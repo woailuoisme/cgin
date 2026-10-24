@@ -16,9 +16,9 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
-	"bgin/internal/bootstrap"
-	"bgin/internal/config"
-	"bgin/internal/console/core"
+	"cgin/internal/bootstrap"
+	"cgin/internal/config"
+	"cgin/internal/console/core"
 )
 
 // RouteEntry 描述解析提取后的单条 HTTP 路由信息。
@@ -136,15 +136,7 @@ func newRouteListCmd(f Factory) *cobra.Command {
 		Use:   "route:list",
 		Short: "List all registered HTTP routes with methods and handlers",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := opts.Complete(cmd, args); err != nil {
-				return err
-			}
-			if err := opts.Validate(); err != nil {
-				return err
-			}
-			return opts.Run(cmd.Context())
-		},
+		RunE:  runCommand(opts),
 	}
 
 	cmd.Flags().StringVarP(&opts.MethodFilter, "method", "m", "", "Filter routes by HTTP method (GET, POST, etc.)")
@@ -164,9 +156,9 @@ func formatHandlerName(raw string) string {
 		return "-"
 	}
 	s = strings.TrimSuffix(s, "-fm")
-	s = strings.TrimPrefix(s, "bgin/internal/features/")
-	s = strings.TrimPrefix(s, "bgin/internal/")
-	s = strings.TrimPrefix(s, "bgin/")
+	s = strings.TrimPrefix(s, "cgin/internal/features/")
+	s = strings.TrimPrefix(s, "cgin/internal/")
+	s = strings.TrimPrefix(s, "cgin/")
 	s = strings.ReplaceAll(s, ".(*Handler).", ".Handler.")
 	return s
 }

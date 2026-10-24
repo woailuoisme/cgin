@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"bgin/internal/platform/errs"
+	"cgin/internal/platform/errs"
 )
 
 // Identity 描述已认证请求的上下文身份凭据与会话元数据。
@@ -18,6 +18,8 @@ type Identity struct {
 	TokenID        string
 	TokenExpiresAt time.Time
 	Claims         *Claims
+	// CustomClaims 是主体投影带入的附加 JWT 声明，签发令牌时合并进载荷。
+	CustomClaims map[string]any
 }
 
 // AllRoles 返回当前身份的全部角色列表（兼容单个 Role 字段）。
@@ -71,8 +73,8 @@ func With(ctx context.Context, id Identity) context.Context {
 
 // WithUser 将已明确加载的用户实体预置至请求上下文，并同步设置身份信息。
 // 使当前及后续请求处理流程中无需再执行数据库查询。
-func WithUser(ctx context.Context, user Authenticatable) context.Context {
-	if user == nil {
+func WithUser[T any](ctx context.Context, user T, id Identity) context.Context {
+	if any(user) == nil {
 		return ctx
 	}
 	cache, ok := ctx.Value(ctxKey{}).(*requestAuthCache)
@@ -81,16 +83,17 @@ func WithUser(ctx context.Context, user Authenticatable) context.Context {
 		ctx = context.WithValue(ctx, ctxKey{}, cache)
 	}
 	cache.user = user
-	cache.identity.UserID = user.GetAuthIdentifier()
-	if cache.identity.Role == "" {
-		cache.identity.Role = user.GetAuthRole()
+	if id.UserID != "" {
+		cache.identity.UserID = id.UserID
 	}
-	if len(cache.identity.Roles) == 0 {
-		if roled, ok := user.(RoledSubject); ok {
-			cache.identity.Roles = roled.GetAuthRoles()
-		} else if cache.identity.Role != "" {
-			cache.identity.Roles = []string{cache.identity.Role}
-		}
+	if id.Role != "" {
+		cache.identity.Role = id.Role
+	}
+	if len(id.Roles) > 0 {
+		cache.identity.Roles = id.Roles
+	}
+	if len(cache.identity.Roles) == 0 && cache.identity.Role != "" {
+		cache.identity.Roles = []string{cache.identity.Role}
 	}
 	cache.hasIdent = true
 	return ctx
@@ -105,8 +108,17 @@ func FromContext(ctx context.Context) (Identity, bool) {
 	return cache.identity, true
 }
 
+// RequireIdentity 提取已认证身份；缺失时返回统一 401 业务错误。
+func RequireIdentity(ctx context.Context) (Identity, error) {
+	id, ok := FromContext(ctx)
+	if !ok {
+		return Identity{}, errs.Unauthorized(errs.CodeAuthTokenInvalid, "Authentication is required")
+	}
+	return id, nil
+}
+
 // UserFromContext 从上下文中高速提取已缓存的用户实体；未预置或类型不符时返回 false。
-func UserFromContext[T Authenticatable](ctx context.Context) (T, bool) {
+func UserFromContext[T any](ctx context.Context) (T, bool) {
 	var zero T
 	cache, ok := ctx.Value(ctxKey{}).(*requestAuthCache)
 	if !ok || cache == nil || cache.user == nil {

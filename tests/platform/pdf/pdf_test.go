@@ -13,11 +13,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/i18n"
-	"bgin/internal/platform/pdf"
-	"bgin/internal/platform/pdf/template"
-	"bgin/internal/platform/storage"
+	"cgin/internal/config"
+	"cgin/internal/platform/i18n"
+	"cgin/internal/platform/pdf"
+	"cgin/internal/platform/pdf/template"
+	"cgin/internal/platform/storage"
 )
 
 type simpleTestDoc struct {

@@ -4,7 +4,7 @@ package realtime
 import (
 	"errors"
 
-	"bgin/internal/config"
+	"cgin/internal/config"
 )
 
 // ErrRealtimeDisabled 表示实时通信服务未在配置中启用。

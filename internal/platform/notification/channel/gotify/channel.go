@@ -11,8 +11,8 @@ import (
 	"github.com/samber/lo"
 	"github.com/samber/oops"
 
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/notification/contract"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/notification/contract"
 )
 
 // Channel Gotify 推送通知渠道实现。

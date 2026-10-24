@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"bgin/internal/platform/mailer/templates"
+	"cgin/internal/platform/mailer/templates"
 )
 
 var (
@@ -17,7 +17,7 @@ var (
 	tmplCache     = make(map[string]*template.Template)
 	globalThemeMu sync.RWMutex
 	globalTheme   ThemeConfig
-	globalAppName = "bgin"
+	globalAppName = "cgin"
 	themeKeys     = [...]string{"ThemePrimary", "ThemeSuccess", "ThemeDanger", "ThemeWarning", "ThemeBg"}
 )
 

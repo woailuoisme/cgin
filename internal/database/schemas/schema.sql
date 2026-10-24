@@ -1,4 +1,4 @@
--- gin-bun 的迁移真相源。atlas 直接读取本文件生成版本式迁移（见 ADR-0004）。
+-- 声明式 DDL 唯一事实源：Atlas 生成版本迁移，sqlc 生成类型安全查询集（见 ADR-0004 / ADR-0012）。
 --
 -- 与根目录 auth.sql 的关系：auth.sql 是完整构想 schema（13 张表），本文件只保留
 -- 本期真正使用的 3 张表，并补上 auth.sql 里没有的 user.role CHECK 约束。

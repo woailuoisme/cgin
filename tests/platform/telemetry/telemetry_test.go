@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/telemetry"
+	"cgin/internal/config"
+	"cgin/internal/platform/telemetry"
 )
 
 func TestTelemetry_Disabled(t *testing.T) {
@@ -18,7 +18,7 @@ func TestTelemetry_Disabled(t *testing.T) {
 		Enabled: false,
 	}
 
-	shutdown, err := telemetry.Init(context.Background(), cfg, "bgin", "test", "v1.0.0")
+	shutdown, err := telemetry.Init(context.Background(), cfg, "cgin", "test", "v1.0.0")
 	require.NoError(t, err)
 	require.NotNil(t, shutdown)
 
@@ -33,7 +33,7 @@ func TestTelemetry_Disabled(t *testing.T) {
 	meter := telemetry.Meter("test")
 	assert.NotNil(t, meter)
 
-	core := telemetry.NewZapCore("bgin", zapcore.InfoLevel)
+	core := telemetry.NewZapCore("cgin", zapcore.InfoLevel)
 	assert.Nil(t, core)
 }
 
@@ -44,7 +44,7 @@ func TestTelemetryConfig_Helpers(t *testing.T) {
 
 		emptyCfg := config.TelemetryConfig{}
 		assert.Equal(t, "fallback", emptyCfg.EffectiveServiceName("fallback"))
-		assert.Equal(t, "bgin", emptyCfg.EffectiveServiceName(""))
+		assert.Equal(t, "cgin", emptyCfg.EffectiveServiceName(""))
 	})
 
 	t.Run("EffectiveEndpoint", func(t *testing.T) {

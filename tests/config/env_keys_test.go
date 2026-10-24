@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
+	"cgin/internal/config"
 )
 
 // nonConfigEnvVars 记录环境文件里刻意不属于应用配置的变量：它们服务于开发或测试工具

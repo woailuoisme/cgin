@@ -9,7 +9,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"bgin/internal/platform/cache"
+	"cgin/internal/platform/cache"
 )
 
 // Locker 定义分布式互斥锁契约。

@@ -8,8 +8,8 @@ import (
 
 	"github.com/samber/lo"
 
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/payment/enums"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/payment/enums"
 )
 
 // Fake 注入操作名常量，用于按操作注入故障。

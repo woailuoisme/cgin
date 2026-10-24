@@ -14,9 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/logger"
-	"bgin/internal/platform/queue"
+	"cgin/internal/config"
+	"cgin/internal/platform/logger"
+	"cgin/internal/platform/queue"
 )
 
 type solidTestJob struct {

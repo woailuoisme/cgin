@@ -10,7 +10,7 @@ import (
 
 // CORSConfig 描述跨域资源共享策略。未配置时不放行任何跨域来源。
 type CORSConfig struct {
-	AllowedOrigins []string `mapstructure:"cors_allowed_origins"`
+	AllowedOrigins []string `env:"CORS_ALLOWED_ORIGINS"`
 }
 
 // validateCORS 校验跨域来源白名单：仅接受通配符 * 或带 scheme 的来源，并在生产环境中拒绝通配符。

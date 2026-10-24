@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/mailer"
+	"cgin/internal/config"
+	"cgin/internal/platform/mailer"
 )
 
 // testMailable 模拟带模板的结构化邮件。
@@ -36,8 +36,8 @@ func (m *testMailable) Template() (string, map[string]any) {
 func TestMailpitDriverLifecycle(t *testing.T) {
 	cfg := config.MailConfig{
 		Driver:      "mailpit",
-		FromAddress: "no-reply@bgin.local",
-		FromName:    "bgin",
+		FromAddress: "no-reply@cgin.local",
+		FromName:    "cgin",
 		Mailpit: config.MailpitConfig{
 			Host: "127.0.0.1",
 			Port: 1025,
@@ -123,7 +123,7 @@ func TestResendDriverSendSuccess(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "Bearer re_test_secret_key", receivedAuth)
-	assert.Equal(t, "bgin-mailer/1.0", receivedAgent)
+	assert.Equal(t, "cgin-mailer/1.0", receivedAgent)
 	assert.Equal(t, "Shop <noreply@example.com>", receivedBody["from"])
 	assert.Equal(t, []any{"buyer@example.com"}, receivedBody["to"])
 	assert.Equal(t, "订单支付凭据", receivedBody["subject"])

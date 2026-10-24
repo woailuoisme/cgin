@@ -9,15 +9,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/uptrace/bun"
 	"go.uber.org/zap"
 
-	"bgin/internal/platform/logger"
+	"cgin/internal/database"
+	"cgin/internal/platform/logger"
 )
 
 // Seeder 是数据播种器必须实现的统一接口。
 type Seeder interface {
-	Seed(ctx context.Context, db *bun.DB) error
+	Seed(ctx context.Context, db *database.DB) error
 }
 
 // NamedSeeder 允许播种器显式声明自定义类名标识。
@@ -63,14 +63,14 @@ func SubProgressHookFromContext(ctx context.Context) SubProgressHook {
 
 // Runner 负责调度执行 Seeder 链条，并自动规避重复执行。
 type Runner struct {
-	db       *bun.DB
+	db       *database.DB
 	called   map[string]bool
 	stepHook StepHook
 	mu       sync.Mutex
 }
 
 // NewRunner 构造全新的播种调度器。
-func NewRunner(db *bun.DB) *Runner {
+func NewRunner(db *database.DB) *Runner {
 	return &Runner{
 		db:     db,
 		called: make(map[string]bool),

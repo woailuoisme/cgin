@@ -3,7 +3,7 @@ package system
 import (
 	"context"
 
-	"bgin/internal/platform/ready"
+	"cgin/internal/platform/ready"
 )
 
 // 组件名定义，对齐 ready 标准组件常量，对应就绪响应 checks 键名与链路日志。
@@ -15,7 +15,6 @@ const (
 	ComponentRealtime = ready.ComponentRealtime
 	ComponentImgproxy = ready.ComponentImgproxy
 	ComponentMailer   = ready.ComponentMailer
-	ComponentTemporal = ready.ComponentTemporal
 )
 
 // Pinger 定义组件可达性探测接口。
@@ -30,7 +29,6 @@ type Deps struct {
 	Realtime Pinger
 	Imgproxy Pinger
 	Mailer   Pinger
-	Temporal Pinger
 }
 
 // Service 协调调度底层 ready.Aggregator 评估实例能否接流量。
@@ -72,7 +70,6 @@ func NewService(deps Deps) *Service {
 		{ComponentRealtime, deps.Realtime, ""},
 		{ComponentImgproxy, deps.Imgproxy, ""},
 		{ComponentMailer, deps.Mailer, ""},
-		{ComponentTemporal, deps.Temporal, "temporal"},
 	}
 	for _, c := range optional {
 		if c.pinger != nil {

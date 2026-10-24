@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/platform/cache"
+	"cgin/internal/platform/cache"
 )
 
 func TestMemoryLocker_Exclusive(t *testing.T) {

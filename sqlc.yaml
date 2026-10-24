@@ -1,0 +1,51 @@
+version: "2"
+
+# sqlc 与 Atlas 共用同一份声明式 DDL 事实源：internal/database/schemas。
+# 查询只写在 internal/database/queries，生成物落在 internal/database/sqlc 且禁止手改。
+sql:
+  - engine: "postgresql"
+    schema: "internal/database/schemas"
+    queries: "internal/database/queries"
+    gen:
+      go:
+        package: "sqlc"
+        out: "internal/database/sqlc"
+        sql_package: "pgx/v5"
+        emit_interface: false
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+        omit_unused_structs: true
+        query_parameter_limit: 0
+        initialisms: ["id", "uuid", "url", "api", "jwt", "ip", "otp", "mime"]
+        overrides:
+          # 时间戳统一使用原生 time.Time，避免 pgtype 穿透到业务层与 OpenAPI 契约。
+          - db_type: "timestamptz"
+            go_type:
+              import: "time"
+              type: "Time"
+          - db_type: "timestamptz"
+            nullable: true
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+          # notifications.id 使用 text 表达，避免 pgtype.UUID 进入 DTO。
+          - db_type: "uuid"
+            go_type: "string"
+          # JSONB 统一收敛为 map[string]any，可空与非可空各一条。
+          - db_type: "jsonb"
+            go_type:
+              type: "map[string]any"
+          - db_type: "jsonb"
+            nullable: true
+            go_type:
+              type: "map[string]any"
+          # 角色与账号状态直接复用领域枚举。
+          - column: 'user.role'
+            go_type:
+              import: "cgin/internal/shared/enums"
+              type: "Role"
+          - column: 'user.status'
+            go_type:
+              import: "cgin/internal/shared/enums"
+              type: "Status"

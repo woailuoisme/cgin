@@ -1,13 +1,13 @@
 # OpenTelemetry Collector Contrib 与 OpenObserve 接入最佳实践
 
-本文档说明如何将本工程（Gin + Bun ORM）与已运行的 `otel/opentelemetry-collector-contrib` 以及 `OpenObserve` 可观测性平台联动配合。
+本文档说明如何将本工程（Gin + sqlc + pgx）与已运行的 `otel/opentelemetry-collector-contrib` 以及 `OpenObserve` 可观测性平台联动配合。
 
 ---
 
 ## 1. 架构总览 (Architecture)
 
 ```
-[ Gin Web API (bgin) ]
+[ Gin Web API (cgin) ]
         │
         ▼  OTLP/gRPC (默认 :4317，经单连接多路复用高效推流)
 [ otel/opentelemetry-collector-contrib ]
@@ -35,7 +35,7 @@ OpenObserve 的 OTLP 接入依赖 HTTP Basic 认证：
 
 ---
 
-## 3. 在 bgin 应用中开启遥测 (Application Activation)
+## 3. 在 cgin 应用中开启遥测 (Application Activation)
 
 在 `.env` 或容器环境变量中设置：
 
@@ -50,7 +50,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
 OTEL_INSECURE=true
 
 # 服务标识（在 OpenObserve 中呈现的服务名）
-OTEL_SERVICE_NAME=bgin
+OTEL_SERVICE_NAME=cgin
 
 # 追踪采样率（1.0 表示 100% 全量采样，生产高吞吐环境建议根据需要调整如 0.2）
 OTEL_TRACES_SAMPLE_RATIO=1.0
@@ -68,7 +68,7 @@ OTEL_METRIC_INTERVAL=15s
    - 在 OpenObserve 的 **Logs** 页面中，带有 `trace_id` 的日志行可以直接点击一键跳转到具体的调用链甘特图；
    - 在 OpenObserve 的 **Traces** 页面中，点击任一 Span 可以直接查看该 Span 产生的所有关联日志。
 2. **SQL 级深度下钻**：
-   - Bun ORM 执行的每一条 SQL 操作自动生成名为 `db.<operation>` 的子 Span，并在属性中记录 `db.statement`（SQL 模板或语句）及耗时，轻松定位慢查询瓶颈。
+   - pgx 执行的每一条 SQL 操作由 otelpgx 自动生成 `db.<operation>` 子 Span，并在属性中记录 `db.statement`（SQL 语句）及耗时，轻松定位慢查询瓶颈。
 3. **心跳探针自动过滤**：
    - `/livez`、`/readyz`、`/healthz` 等高频心跳路由默认不会生成 Span，不污染 OpenObserve 索引与存储。
 4. **Go 运行时指标 (Runtime Metrics)**：

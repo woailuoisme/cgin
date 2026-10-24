@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
+	"cgin/internal/config"
 )
 
 // newConfig 构造只填了模式相关字段的配置，避免依赖真实环境变量。

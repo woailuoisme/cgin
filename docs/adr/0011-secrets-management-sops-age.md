@@ -2,7 +2,7 @@
 
 ## 上下文与决策背景
 
-在 `bgin` 项目容器化与 Helm 部署体系演进过程中，生产与预发环境敏感凭证（如 `JWT_SECRET`、`DB_URL`、`REDIS_URL`、`AWS_*`、第三方 API Key）的管理面临两种主流路径的选型权衡：
+在 `cgin` 项目容器化与 Helm 部署体系演进过程中，生产与预发环境敏感凭证（如 `JWT_SECRET`、`DB_URL`、`REDIS_URL`、`AWS_*`、第三方 API Key）的管理面临两种主流路径的选型权衡：
 
 1. **中心化外部密钥系统 (External Secrets Operator + OpenBao / Vault)**：
    - 依赖集群内运行的 ESO Controller 与中心化 OpenBao/Vault 实例；
@@ -24,17 +24,17 @@
 ## 核心架构契约与落地规范
 
 1. **环境覆盖与 Values 合并架构 (Overlay Structure)**：
-   - 仓库提供未加密模板 [helm/bgin/secrets.example.yaml](file:///Users/seaside/Projects/go/gin-bun/helm/bgin/secrets.example.yaml) 作为参考事实源。
-   - 各环境真实凭证以 `helm/bgin/secrets.<env>.enc.yaml` 格式保存为 SOPS 密文。
+   - 仓库提供未加密模板 [helm/cgin/secrets.example.yaml](file:///Users/seaside/Projects/backend/go/gin-sqlc/helm/cgin/secrets.example.yaml) 作为参考事实源。
+   - 各环境真实凭证以 `helm/cgin/secrets.<env>.enc.yaml` 格式保存为 SOPS 密文。
    - 文件内部格式严格对齐 `values.yaml` 中的 `secrets:` 字典，部署时通过 Helm 多文件合并参数 `-f values.yaml -f <(sops -d secrets.<env>.enc.yaml)` 无缝覆盖注入。
 
 2. **声明式规则配置 (`.sops.yaml`)**：
-   - 根目录设立统一的 [.sops.yaml](file:///Users/seaside/Projects/go/gin-bun/.sops.yaml)，配置路径正则匹配 `^helm/.*secrets\..*\.ya?ml$`。
+   - 根目录设立统一的 [.sops.yaml](file:///Users/seaside/Projects/backend/go/gin-sqlc/.sops.yaml)，配置路径正则匹配 `^helm/.*secrets\..*\.ya?ml$`。
    - 启用 `encrypted_regex: "^(secrets|stringData)$"`，确保元数据与非敏感字段透明可读。
    - 授权 age 公钥透明提交至 Git，私钥绝对禁止入库。
 
 3. **双重防泄漏安全边界 (`.gitignore`)**：
-   - [.gitignore](file:///Users/seaside/Projects/go/gin-bun/.gitignore) 严格拦截所有未加密明文文件：
+   - [.gitignore](file:///Users/seaside/Projects/backend/go/gin-sqlc/.gitignore) 严格拦截所有未加密明文文件：
      ```gitignore
      helm/**/secrets.*.yaml
      !helm/**/secrets.example.yaml

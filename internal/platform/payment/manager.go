@@ -15,9 +15,9 @@ import (
 	"github.com/samber/oops"
 	"go.uber.org/zap"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/payment/enums"
+	"cgin/internal/config"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/payment/enums"
 )
 
 // DriverFactory 定义支付渠道驱动的构造工厂函数契约。

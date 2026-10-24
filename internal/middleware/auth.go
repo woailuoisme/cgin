@@ -7,9 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"bgin/internal/platform/authentication"
-	"bgin/internal/platform/errs"
-	platformsentry "bgin/internal/platform/sentry"
+	"cgin/internal/platform/authentication"
+	"cgin/internal/platform/errs"
 )
 
 // Auth 【路由/路由组中间件】仿照 Laravel auth 中间件设计，校验 Bearer 访问令牌并注入认证身份载荷。
@@ -24,13 +23,12 @@ func (m *Middleware) Auth(guardNames ...string) gin.HandlerFunc {
 			return
 		}
 
-		var reqCtx context.Context
-		if m.authManager != nil {
-			reqCtx, err = m.authenticateWithManager(c.Request.Context(), raw, guards)
-		} else {
-			reqCtx, err = m.authenticateFallback(c.Request.Context(), raw, guards)
+		if m.authManager == nil {
+			abortWithError(c, errs.Internal(errors.New("middleware: auth manager is required")))
+			return
 		}
 
+		reqCtx, err := m.authenticateWithManager(c.Request.Context(), raw, guards)
 		if err != nil {
 			abortWithError(c, err)
 			return
@@ -41,28 +39,8 @@ func (m *Middleware) Auth(guardNames ...string) gin.HandlerFunc {
 		}
 		c.Request = c.Request.WithContext(reqCtx)
 
-		enrichSentryUser(c, reqCtx)
-
 		c.Next()
 	}
-}
-
-// enrichSentryUser 将已认证用户身份与角色元信息同步绑定至 Sentry / GlitchTip 请求级作用域。
-func enrichSentryUser(c *gin.Context, reqCtx context.Context) {
-	id, ok := authentication.FromContext(reqCtx)
-	if !ok {
-		return
-	}
-
-	var email string
-	if id.Claims != nil {
-		if emailVal, found := id.Claims.GetClaim("email"); found {
-			email, _ = emailVal.(string)
-		}
-	}
-
-	platformsentry.SetUser(reqCtx, id.UserID, email, id.Role, c.ClientIP())
-	platformsentry.SetTag(reqCtx, "role", id.Role)
 }
 
 // authenticateWithManager 基于注入的 AuthManager 解析守卫并验证令牌，支持多守卫顺序降级匹配。
@@ -98,18 +76,6 @@ func (m *Middleware) authenticateWithManager(ctx context.Context, raw string, gu
 		lastErr = errs.Unauthorized(errs.CodeAuthTokenInvalid, "Authentication is required")
 	}
 	return nil, lastErr
-}
-
-// authenticateFallback 当未注入 AuthManager 时提供向下兼容的基础令牌校验。
-func (m *Middleware) authenticateFallback(ctx context.Context, raw string, guards []string) (context.Context, error) {
-	if len(guards) > 0 {
-		return nil, errs.Internal(errors.New("middleware: auth manager required for named guard"))
-	}
-	if m.tokens == nil {
-		return nil, errs.Internal(errors.New("middleware: token issuer not configured"))
-	}
-	newCtx, _, err := m.tokens.AuthenticateToken(ctx, raw)
-	return newCtx, err
 }
 
 // Can 【路由级中间件】仿照 Laravel can 中间件设计，基于令牌角色执行 Casbin RBAC 细粒度权限校验。

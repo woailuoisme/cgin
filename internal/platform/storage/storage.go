@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/errs"
+	"cgin/internal/config"
+	"cgin/internal/platform/errs"
 )
 
 // msgFileNotFound 是对象不存在时对外暴露的固定文案。对象键不进响应体，只留在因由里进日志。

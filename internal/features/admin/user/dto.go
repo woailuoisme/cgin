@@ -6,12 +6,12 @@ import (
 
 	"github.com/aarondl/opt/omitnull"
 
-	"bgin/internal/database"
-	"bgin/internal/database/models"
-	"bgin/internal/platform/response"
-	"bgin/internal/platform/validator"
-	"bgin/internal/shared/enums"
-	"bgin/internal/shared/user"
+	"cgin/internal/database"
+	"cgin/internal/database/sqlc"
+	"cgin/internal/platform/response"
+	"cgin/internal/platform/validator"
+	"cgin/internal/shared/enums"
+	"cgin/internal/shared/user"
 )
 
 func init() {
@@ -153,14 +153,14 @@ type ListUsersQueryParams struct {
 	Role Role `form:"role" json:"role" example:"user" enums:"user,admin" validate:"omitempty,oneof=user admin"`
 }
 
-// ToFilter 将 HTTP 查询参数投影为底层仓储过滤条件，内聚修剪与排序归一化规则。
-func (r ListUsersQueryParams) ToFilter() models.UserListFilter {
-	return models.UserListFilter{
-		Search: strings.TrimSpace(r.Search),
-		Status: enums.Status(strings.TrimSpace(string(r.Status))),
-		Role:   enums.Role(strings.TrimSpace(string(r.Role))),
-		Sort:   user.NormaliseSort(r.Sort),
-	}
+// ToFilter 将 HTTP 查询参数投影为底层过滤条件，内聚修剪与排序归一化规则。
+func (r ListUsersQueryParams) ToFilter() user.ListFilter {
+	return user.NewListFilter(
+		r.Search,
+		enums.Status(strings.TrimSpace(string(r.Status))),
+		enums.Role(strings.TrimSpace(string(r.Role))),
+		r.Sort,
+	)
 }
 
 // --- 响应资源 Resource ---
@@ -190,7 +190,7 @@ type UserPageResource struct {
 }
 
 // toUserResource 把模型投影为管理视角的响应资源。
-func toUserResource(entity *models.User) UserResource {
+func toUserResource(entity *sqlc.User) UserResource {
 	return UserResource{
 		Profile:         user.ProjectProfile(entity),
 		Banned:          entity.Banned,

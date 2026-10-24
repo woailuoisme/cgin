@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"bgin/internal/shared/apidocs"
+	"cgin/internal/shared/apidocs"
 )
 
 // 文档页面与 OpenAPI 规范路由路径常量。
@@ -22,8 +22,8 @@ const (
 )
 
 var (
-	clientReferencePage = []byte(buildReferencePage("bgin API", referenceSpecPath))
-	adminReferencePage  = []byte(buildReferencePage("bgin Admin API", adminReferenceSpecPath))
+	clientReferencePage = []byte(buildReferencePage("cgin API", referenceSpecPath))
+	adminReferencePage  = []byte(buildReferencePage("cgin Admin API", adminReferenceSpecPath))
 )
 
 // buildReferencePage 构建 Scalar API Reference 的宿主 HTML 页。

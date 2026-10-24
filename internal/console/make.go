@@ -9,7 +9,7 @@ import (
 	"charm.land/huh/v2"
 	"github.com/spf13/cobra"
 
-	"bgin/internal/console/core"
+	"cgin/internal/console/core"
 )
 
 const (
@@ -56,9 +56,9 @@ func (o *MakeCRUDOptions) Complete(_ *cobra.Command, args []string) error {
 func (o *MakeCRUDOptions) Validate() error {
 	if o.Name == "" {
 		if o.Delete {
-			return &ValidationError{Field: "name", Message: "accepts 1 arg(s), received 0. Usage: bgin make:crud <name> -d"}
+			return &ValidationError{Field: "name", Message: "accepts 1 arg(s), received 0. Usage: cgin make:crud <name> -d"}
 		}
-		return &ValidationError{Field: "name", Message: "accepts 1 arg(s), received 0. Usage: bgin make:crud <name>"}
+		return &ValidationError{Field: "name", Message: "accepts 1 arg(s), received 0. Usage: cgin make:crud <name>"}
 	}
 	return nil
 }
@@ -255,7 +255,7 @@ func (o *MakeCRUDOptions) promptForm(isDestroy bool) error {
 	return nil
 }
 
-// newMakeCRUDCmd 构建 CRUD 模块生成与删除回退命令 (bgin make:crud <name> [-d])。
+// newMakeCRUDCmd 构建 CRUD 模块生成与删除回退命令 (cgin make:crud <name> [-d])。
 func newMakeCRUDCmd(f Factory) *cobra.Command {
 	opts := NewMakeCRUDOptions(f)
 
@@ -273,29 +273,21 @@ Generates / Removes:
   - internal/features/[admin|client]/<name>/ (if directory is empty on delete)
 
 Examples:
-  bgin make:crud article
-  bgin make:crud article_category --tag "分类管理" --chinese "文章分类"
-  bgin make:crud post --client
-  bgin make:crud product --force
-  bgin make:crud order --dry-run
-  bgin make:crud article -d
-  bgin make:crud article --delete --force
-  bgin make:crud order -d --dry-run`,
+  cgin make:crud article
+  cgin make:crud article_category --tag "分类管理" --chinese "文章分类"
+  cgin make:crud post --client
+  cgin make:crud product --force
+  cgin make:crud order --dry-run
+  cgin make:crud article -d
+  cgin make:crud article --delete --force
+  cgin make:crud order -d --dry-run`,
 		Args: func(_ *cobra.Command, args []string) error {
 			if len(args) > 1 {
 				return fmt.Errorf("accepts at most 1 arg(s), received %d", len(args))
 			}
 			return nil
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := opts.Complete(cmd, args); err != nil {
-				return err
-			}
-			if err := opts.Validate(); err != nil {
-				return err
-			}
-			return opts.Run(cmd.Context())
-		},
+		RunE: runCommand(opts),
 	}
 
 	cmd.Flags().BoolVar(&opts.Client, "client", false, "Generate or delete in client namespace instead of admin")

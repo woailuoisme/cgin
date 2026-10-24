@@ -9,9 +9,9 @@ import (
 	"github.com/samber/lo"
 	"github.com/samber/oops"
 
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/mailer"
-	"bgin/internal/platform/notification/contract"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/mailer"
+	"cgin/internal/platform/notification/contract"
 )
 
 // Channel 邮件通知渠道实现，负责将通知渲染并分发给底层 Mailer 发送。

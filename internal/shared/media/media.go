@@ -2,10 +2,9 @@
 package media
 
 import (
-	"github.com/uptrace/bun"
-
-	"bgin/internal/config"
-	"bgin/internal/platform/storage"
+	"cgin/internal/config"
+	"cgin/internal/database"
+	"cgin/internal/platform/storage"
 )
 
 // New 根据配置与基础设施装配顶层多态媒体管理门面 Manager。
@@ -13,7 +12,7 @@ func New(
 	mediaCfg config.MediaConfig,
 	storageCfg config.StorageConfig,
 	disk storage.Disk,
-	db *bun.DB,
+	db *database.DB,
 ) *Manager {
 	imgClient := NewWithStorage(mediaCfg.Imgproxy, storageCfg)
 

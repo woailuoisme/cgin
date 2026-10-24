@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/uptrace/bun"
 
-	"bgin/internal/console/core"
-	"bgin/internal/database/seeders"
+	"cgin/internal/console/core"
+	"cgin/internal/database"
+	"cgin/internal/database/seeders"
 )
 
 // DBMigrateOptions 封装 db:migrate 命令的参数与依赖容器 (SRP & DIP)。
@@ -54,15 +54,7 @@ func newDBMigrateCmd(f Factory) *cobra.Command {
 		Use:   "db:migrate",
 		Short: "Apply database migrations via Atlas (atlas migrate apply)",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := opts.Complete(cmd, args); err != nil {
-				return err
-			}
-			if err := opts.Validate(); err != nil {
-				return err
-			}
-			return opts.Run(cmd.Context())
-		},
+		RunE:  runCommand(opts),
 	}
 
 	cmd.Flags().StringVar(&opts.Env, "env", "app", "Atlas environment name to apply")
@@ -135,15 +127,7 @@ func newDBSeedCmd(f Factory) *cobra.Command {
 		Use:   "db:seed",
 		Short: "Seed database with records (default: DatabaseSeeder)",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := opts.Complete(cmd, args); err != nil {
-				return err
-			}
-			if err := opts.Validate(); err != nil {
-				return err
-			}
-			return opts.Run(cmd.Context())
-		},
+		RunE:  runCommand(opts),
 	}
 
 	cmd.Flags().StringVarP(&opts.ClassName, "class", "c", "DatabaseSeeder", "The class name of the seeder to run")
@@ -204,10 +188,10 @@ func (o *DBFreshOptions) Run(ctx context.Context) error {
 	}
 
 	core.TitleTo(streams.Out, "Rebuilding public schema...")
-	if _, err := db.ExecContext(ctx, "DROP SCHEMA IF EXISTS public CASCADE"); err != nil {
+	if _, err := db.Pool().Exec(ctx, "DROP SCHEMA IF EXISTS public CASCADE"); err != nil {
 		return fmt.Errorf("failed to drop public schema: %w", err)
 	}
-	if _, err := db.ExecContext(ctx, "CREATE SCHEMA public"); err != nil {
+	if _, err := db.Pool().Exec(ctx, "CREATE SCHEMA public"); err != nil {
 		return fmt.Errorf("failed to recreate public schema: %w", err)
 	}
 
@@ -233,15 +217,7 @@ func newDBFreshCmd(f Factory) *cobra.Command {
 		Use:   "db:fresh",
 		Short: "Drop all tables, re-run migrations, and seed database (destructive)",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := opts.Complete(cmd, args); err != nil {
-				return err
-			}
-			if err := opts.Validate(); err != nil {
-				return err
-			}
-			return opts.Run(cmd.Context())
-		},
+		RunE:  runCommand(opts),
 	}
 
 	cmd.Flags().BoolVarP(&opts.Force, core.FlagForce, "f", false, core.UsageForceFlag)
@@ -263,7 +239,7 @@ func runAtlas(ctx context.Context, streams *core.IOStreams, args ...string) erro
 }
 
 // runSeederWithProgress 带有控制台步骤展示与细粒度进度条调度的 Seeder 执行函数。
-func runSeederWithProgress(ctx context.Context, streams *core.IOStreams, db *bun.DB, targetSeeder seeders.Seeder) error {
+func runSeederWithProgress(ctx context.Context, streams *core.IOStreams, db *database.DB, targetSeeder seeders.Seeder) error {
 	var subBar *core.ProgressBar
 
 	stepHook := func(name string, index, total int, duration time.Duration, done bool) {

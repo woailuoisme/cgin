@@ -8,71 +8,71 @@ import (
 // NotificationConfig 描述多渠道通知系统配置。
 type NotificationConfig struct {
 	// WorkerPool 异步通知消费工作协程数量 (默认 10)
-	WorkerPool int `mapstructure:"notification_worker_pool"`
+	WorkerPool int `env:"NOTIFICATION_WORKER_POOL" envDefault:"10"`
 	// QueueSize 异步通知缓冲队列容量 (默认 100)
-	QueueSize int `mapstructure:"notification_queue_size"`
+	QueueSize int `env:"NOTIFICATION_QUEUE_SIZE" envDefault:"100"`
 
 	// SMS 短信渠道配置
-	SMS NotificationSMSConfig `mapstructure:",squash"`
+	SMS NotificationSMSConfig
 	// Telegram 即时通讯渠道配置
-	Telegram NotificationTelegramConfig `mapstructure:",squash"`
+	Telegram NotificationTelegramConfig
 	// Gotify 推送通知渠道配置
-	Gotify NotificationGotifyConfig `mapstructure:",squash"`
+	Gotify NotificationGotifyConfig
 }
 
 // NotificationGotifyConfig Gotify 实时推送渠道配置。
 type NotificationGotifyConfig struct {
-	ServerURL string `mapstructure:"notification_gotify_server_url"`
-	AppToken  string `mapstructure:"notification_gotify_app_token"`
-	Priority  int    `mapstructure:"notification_gotify_priority"`
+	ServerURL string `env:"NOTIFICATION_GOTIFY_SERVER_URL"`
+	AppToken  string `env:"NOTIFICATION_GOTIFY_APP_TOKEN"`
+	Priority  int    `env:"NOTIFICATION_GOTIFY_PRIORITY" envDefault:"5"`
 }
 
 // NotificationSMSConfig 短信渠道驱动与云厂商配置。
 type NotificationSMSConfig struct {
 	// Driver 短信发送驱动 (log: 控制台日志, mock: 内存模拟, aliyun: 阿里云, tencent: 腾讯云, smsbao: 短信宝)
-	Driver string `mapstructure:"notification_sms_driver"`
+	Driver string `env:"NOTIFICATION_SMS_DRIVER"`
 	// DefaultSignName 默认全局短信签名
-	DefaultSignName string `mapstructure:"notification_sms_sign_name"`
+	DefaultSignName string `env:"NOTIFICATION_SMS_SIGN_NAME"`
 
 	// 阿里云短信配置
-	Aliyun NotificationAliyunSMSConfig `mapstructure:",squash"`
+	Aliyun NotificationAliyunSMSConfig
 	// 腾讯云短信配置
-	Tencent NotificationTencentSMSConfig `mapstructure:",squash"`
+	Tencent NotificationTencentSMSConfig
 	// 短信宝配置
-	SMSBao NotificationSMSBaoConfig `mapstructure:",squash"`
+	SMSBao NotificationSMSBaoConfig
 }
 
 // NotificationAliyunSMSConfig 阿里云短信访问凭据。
 type NotificationAliyunSMSConfig struct {
-	AccessKeyID     string `mapstructure:"notification_sms_aliyun_access_key_id"`
-	AccessKeySecret string `mapstructure:"notification_sms_aliyun_access_key_secret"`
-	SignName        string `mapstructure:"notification_sms_aliyun_sign_name"`
-	TemplateCode    string `mapstructure:"notification_sms_aliyun_template_code"`
+	AccessKeyID     string `env:"NOTIFICATION_SMS_ALIYUN_ACCESS_KEY_ID"`
+	AccessKeySecret string `env:"NOTIFICATION_SMS_ALIYUN_ACCESS_KEY_SECRET"`
+	SignName        string `env:"NOTIFICATION_SMS_ALIYUN_SIGN_NAME"`
+	TemplateCode    string `env:"NOTIFICATION_SMS_ALIYUN_TEMPLATE_CODE"`
 }
 
 // NotificationTencentSMSConfig 腾讯云短信访问凭据。
 type NotificationTencentSMSConfig struct {
-	SecretID   string `mapstructure:"notification_sms_tencent_secret_id"`
-	SecretKey  string `mapstructure:"notification_sms_tencent_secret_key"`
-	AppID      string `mapstructure:"notification_sms_tencent_app_id"`
-	SignName   string `mapstructure:"notification_sms_tencent_sign_name"`
-	TemplateID string `mapstructure:"notification_sms_tencent_template_id"`
-	Region     string `mapstructure:"notification_sms_tencent_region"`
+	SecretID   string `env:"NOTIFICATION_SMS_TENCENT_SECRET_ID"`
+	SecretKey  string `env:"NOTIFICATION_SMS_TENCENT_SECRET_KEY"`
+	AppID      string `env:"NOTIFICATION_SMS_TENCENT_APP_ID"`
+	SignName   string `env:"NOTIFICATION_SMS_TENCENT_SIGN_NAME"`
+	TemplateID string `env:"NOTIFICATION_SMS_TENCENT_TEMPLATE_ID"`
+	Region     string `env:"NOTIFICATION_SMS_TENCENT_REGION" envDefault:"ap-guangzhou"`
 }
 
 // NotificationSMSBaoConfig 短信宝访问凭据。
 type NotificationSMSBaoConfig struct {
-	Username string `mapstructure:"notification_sms_smsbao_username"`
-	APIKey   string `mapstructure:"notification_sms_smsbao_api_key"`
-	SignName string `mapstructure:"notification_sms_smsbao_sign_name"`
-	Template string `mapstructure:"notification_sms_smsbao_template"`
+	Username string `env:"NOTIFICATION_SMS_SMSBAO_USERNAME"`
+	APIKey   string `env:"NOTIFICATION_SMS_SMSBAO_API_KEY"`
+	SignName string `env:"NOTIFICATION_SMS_SMSBAO_SIGN_NAME"`
+	Template string `env:"NOTIFICATION_SMS_SMSBAO_TEMPLATE"`
 }
 
 // NotificationTelegramConfig Telegram 即时通讯渠道配置。
 type NotificationTelegramConfig struct {
-	BotToken string `mapstructure:"notification_telegram_bot_token"`
-	ChatID   string `mapstructure:"notification_telegram_chat_id"`
-	APIURL   string `mapstructure:"notification_telegram_api_url"`
+	BotToken string `env:"NOTIFICATION_TELEGRAM_BOT_TOKEN"`
+	ChatID   string `env:"NOTIFICATION_TELEGRAM_CHAT_ID"`
+	APIURL   string `env:"NOTIFICATION_TELEGRAM_API_URL" envDefault:"https://api.telegram.org"`
 }
 
 // debugSMSDrivers 是仅供开发调试的短信驱动集合。

@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/console"
-	"bgin/internal/console/core"
+	"cgin/internal/console"
+	"cgin/internal/console/core"
 )
 
 // TestNamingUtilities 测试命名转换与单复数处理。
@@ -98,7 +98,7 @@ func TestGenerateCRUD_Execution(t *testing.T) {
 	// 1. 初次生成
 	results, err := core.GenerateCRUD(opts)
 	require.NoError(t, err)
-	require.Len(t, results, 5)
+	require.Len(t, results, 6)
 
 	for _, r := range results {
 		assert.Equal(t, core.ActionCreated, r.Action)
@@ -133,16 +133,21 @@ func TestGenerateCRUD_Execution(t *testing.T) {
 	assert.Contains(t, string(routesContent), "RegisterAdminRoutes")
 	assert.Contains(t, string(routesContent), `mw.Can(authorization.Resource("articles")`)
 
-	modelPath := filepath.Join(tempDir, "internal", "database", "models", "article.go")
-	modelContent, err := os.ReadFile(modelPath)
+	queriesPath := filepath.Join(tempDir, "internal", "database", "queries", "articles.sql")
+	queriesContent, err := os.ReadFile(queriesPath)
 	require.NoError(t, err)
-	assert.Contains(t, string(modelContent), `bun:"table:articles,alias:a"`)
-	assert.Contains(t, string(modelContent), "type Article struct")
+	assert.Contains(t, string(queriesContent), "name: ListArticles :many")
+	assert.Contains(t, string(queriesContent), "sqlc.embed(a)")
+
+	schemaPath := filepath.Join(tempDir, "internal", "database", "schemas", "articles.sql")
+	schemaContent, err := os.ReadFile(schemaPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(schemaContent), "CREATE TABLE IF NOT EXISTS articles")
 
 	// 3. 不带 force 再次生成，应当被全部跳过
 	results2, err := core.GenerateCRUD(opts)
 	require.NoError(t, err)
-	require.Len(t, results2, 5)
+	require.Len(t, results2, 6)
 	for _, r := range results2 {
 		assert.Equal(t, core.ActionSkipped, r.Action)
 	}
@@ -151,7 +156,7 @@ func TestGenerateCRUD_Execution(t *testing.T) {
 	opts.Force = true
 	results3, err := core.GenerateCRUD(opts)
 	require.NoError(t, err)
-	require.Len(t, results3, 5)
+	require.Len(t, results3, 6)
 	for _, r := range results3 {
 		assert.Equal(t, core.ActionOverwritten, r.Action)
 	}
@@ -160,7 +165,7 @@ func TestGenerateCRUD_Execution(t *testing.T) {
 	opts.DryRun = true
 	results4, err := core.GenerateCRUD(opts)
 	require.NoError(t, err)
-	require.Len(t, results4, 5)
+	require.Len(t, results4, 6)
 	for _, r := range results4 {
 		assert.Equal(t, core.ActionDryRun, r.Action)
 	}
@@ -170,12 +175,12 @@ func TestGenerateCRUD_Execution(t *testing.T) {
 func TestMakeCommand_CLIExecution(t *testing.T) {
 	ctx := context.Background()
 
-	// 旧空格子命令格式已被废除，必须报错：bgin make crud article --dry-run
+	// 旧空格子命令格式已被废除，必须报错：cgin make crud article --dry-run
 	err := console.Execute(ctx, []string{"make", "crud", "article", "--dry-run"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unknown command "make"`)
 
-	// 测试 Artisan 冒号命令：bgin make:crud article --dry-run
+	// 测试 Artisan 冒号命令：cgin make:crud article --dry-run
 	err = console.Execute(ctx, []string{"make:crud", "article", "--dry-run"})
 	require.NoError(t, err)
 
@@ -199,13 +204,13 @@ func TestDestroyCRUD_Execution(t *testing.T) {
 	// 1. 先生成文件
 	results, err := core.GenerateCRUD(opts)
 	require.NoError(t, err)
-	require.Len(t, results, 5)
+	require.Len(t, results, 6)
 
 	// 2. Dry-run 回退删除
 	opts.DryRun = true
 	destroyDryRun, err := core.DestroyCRUD(opts)
 	require.NoError(t, err)
-	require.Len(t, destroyDryRun, 5)
+	require.Len(t, destroyDryRun, 6)
 	for _, r := range destroyDryRun {
 		assert.Equal(t, core.ActionDryRun, r.Action)
 	}
@@ -219,7 +224,7 @@ func TestDestroyCRUD_Execution(t *testing.T) {
 	opts.DryRun = false
 	destroyResults, err := core.DestroyCRUD(opts)
 	require.NoError(t, err)
-	require.Len(t, destroyResults, 5)
+	require.Len(t, destroyResults, 6)
 	for _, r := range destroyResults {
 		assert.Equal(t, core.ActionDeleted, r.Action)
 	}
@@ -239,7 +244,7 @@ func TestDestroyCRUD_Execution(t *testing.T) {
 	// 4. 重复执行回退删除，应安全跳过（ActionSkipped）
 	destroyAgain, err := core.DestroyCRUD(opts)
 	require.NoError(t, err)
-	require.Len(t, destroyAgain, 5)
+	require.Len(t, destroyAgain, 6)
 	for _, r := range destroyAgain {
 		assert.Equal(t, core.ActionSkipped, r.Action)
 	}
@@ -249,12 +254,12 @@ func TestDestroyCRUD_Execution(t *testing.T) {
 func TestMakeDestroyCommand_CLIExecution(t *testing.T) {
 	ctx := context.Background()
 
-	// 1. 旧空格子命令格式已被废除，必须报错：bgin make destroy article --dry-run
+	// 1. 旧空格子命令格式已被废除，必须报错：cgin make destroy article --dry-run
 	err := console.Execute(ctx, []string{"make", "destroy", "article", "--dry-run"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unknown command "make"`)
 
-	// 2. 原 make:destroy 命令已被彻底移除，必须报错：bgin make:destroy
+	// 2. 原 make:destroy 命令已被彻底移除，必须报错：cgin make:destroy
 	err = console.Execute(ctx, []string{"make:destroy", "article", "--dry-run"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unknown command "make:destroy"`)

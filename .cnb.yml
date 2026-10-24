@@ -1,6 +1,6 @@
 # ── 全局：手动触发 & 标签发布 ────────────────────────────────────────
-# 项目: bgin (Go Gin RESTful Web API)
-# Go 版本: 1.27.3 | 入口: ./cmd/api | 二进制: bgin
+# 项目: cgin (Go Gin RESTful Web API)
+# Go 版本: 1.27.3 | 入口: ./cmd/api | 二进制: cgin
 # Dockerfile 位于仓库根，基于 Alpine 极简镜像构建与运行
 # ── main 分支：代码推送与手动触发 ────────────────────────────────────
 main:
@@ -51,6 +51,6 @@ $:
             VERSION="${RAW_VERSION#v}"
             helm registry login -u "${CNB_TOKEN_USER_NAME}" -p "${CNB_TOKEN}" "${CNB_HELM_REGISTRY}"
             mkdir -p ./helm/dist
-            helm dependency build ./helm/bgin
-            helm package ./helm/bgin --version "${VERSION}" --app-version "${VERSION}" -d ./helm/dist
-            helm push "./helm/dist/bgin-${VERSION}.tgz" "oci://${CNB_HELM_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"
+            helm dependency build ./helm/cgin
+            helm package ./helm/cgin --version "${VERSION}" --app-version "${VERSION}" -d ./helm/dist
+            helm push "./helm/dist/cgin-${VERSION}.tgz" "oci://${CNB_HELM_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"

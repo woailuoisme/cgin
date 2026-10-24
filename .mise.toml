@@ -3,6 +3,7 @@
 go = "latest"
 air = "latest"                                     # 热重载工具（API 与 Worker 开发调试）
 golangci-lint = "2"                                # 静态检查与统一代码格式化
+"go:github.com/sqlc-dev/sqlc/cmd/sqlc" = "1.31.1"   # SQL 代码生成（固定版本保证生成结果可复现）
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"  # 官方依赖漏洞安全扫描
 "go:golang.org/x/tools/gopls" = "latest"
 gotestsum = "latest"                               # 测试结果高亮与摘要增强

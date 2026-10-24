@@ -8,7 +8,7 @@ import (
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
 
-	"bgin/internal/config"
+	"cgin/internal/config"
 )
 
 // Driver 代表支持的消息传输后端驱动类型。

@@ -6,8 +6,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"bgin/internal/platform/logger"
-	"bgin/internal/platform/notification/channel/sms"
+	"cgin/internal/platform/logger"
+	"cgin/internal/platform/notification/channel/sms"
 )
 
 // Driver 结构化日志短信驱动。

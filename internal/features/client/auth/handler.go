@@ -3,10 +3,10 @@ package auth
 import (
 	"github.com/gin-gonic/gin"
 
-	"bgin/internal/platform/authentication"
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/response"
-	"bgin/internal/platform/validator"
+	"cgin/internal/platform/authentication"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/response"
+	"cgin/internal/platform/validator"
 )
 
 // Handler 是认证端点的 HTTP 适配层：只做绑定、取身份、调用服务、写响应。
@@ -140,32 +140,14 @@ func (h *Handler) SignOut(c *gin.Context) {
 // @Success      200 {object} GetSessionResource "当前登录用户"
 // @x-order      4
 // @Router       /auth/get-session [get]
-func (h *Handler) currentUserID(c *gin.Context) (string, bool) {
-	id, ok := authentication.FromContext(c.Request.Context())
-	if !ok {
-		_ = c.Error(errs.Unauthorized(errs.CodeAuthTokenInvalid, "Authentication is required"))
-		return "", false
-	}
-	return id.UserID, true
-}
-
-// GetSession 处理 GET /v1/auth/get-session。
-//
-// @Summary      读取当前身份
-// @Description  纯只读、不续签：访问令牌过期即 401，客户端自行用 /auth/token/refresh 换新令牌（Q13）。
-// @Tags         认证中心
-// @Produce      json
-// @Security     BearerAuth
-// @Success      200 {object} GetSessionResource "当前登录用户"
-// @x-order      4
-// @Router       /auth/get-session [get]
 func (h *Handler) GetSession(c *gin.Context) {
-	userID, ok := h.currentUserID(c)
-	if !ok {
+	identity, err := authentication.RequireIdentity(c.Request.Context())
+	if err != nil {
+		_ = c.Error(err)
 		return
 	}
 
-	session, err := h.service.GetSession(c.Request.Context(), userID)
+	session, err := h.service.GetSession(c.Request.Context(), identity.UserID)
 	if err != nil {
 		_ = c.Error(err)
 		return
@@ -214,8 +196,9 @@ func (h *Handler) Refresh(c *gin.Context) {
 // @x-order      9
 // @Router       /auth/change-password [post]
 func (h *Handler) ChangePassword(c *gin.Context) {
-	userID, ok := h.currentUserID(c)
-	if !ok {
+	identity, err := authentication.RequireIdentity(c.Request.Context())
+	if err != nil {
+		_ = c.Error(err)
 		return
 	}
 
@@ -225,7 +208,7 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.ChangePassword(c.Request.Context(), userID, body); err != nil {
+	if err := h.service.ChangePassword(c.Request.Context(), identity.UserID, body); err != nil {
 		_ = c.Error(err)
 		return
 	}

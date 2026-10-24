@@ -14,11 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"bgin/internal/config"
-	featurePayment "bgin/internal/features/payment"
-	"bgin/internal/middleware/global"
-	platformPayment "bgin/internal/platform/payment"
-	"bgin/internal/platform/payment/enums"
+	"cgin/internal/config"
+	featurePayment "cgin/internal/features/payment"
+	"cgin/internal/middleware/global"
+	platformPayment "cgin/internal/platform/payment"
+	"cgin/internal/platform/payment/enums"
 )
 
 // setupPaymentTest 构造测试用的 Gin 引擎、服务实例与 Fake 支付管理器。

@@ -1,4 +1,4 @@
-// Package main 是 bgin 的唯一入口，只负责把控制权交给命令行层。
+// Package main 是 cgin 的唯一入口，只负责把控制权交给命令行层。
 package main
 
 import (
@@ -9,8 +9,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"bgin/internal/console"
-	"bgin/internal/platform/logger"
+	"cgin/internal/console"
+	"cgin/internal/platform/logger"
 )
 
 // 构建元信息，通过 -ldflags "-X main.version=..." 注入。
@@ -26,7 +26,7 @@ var (
 // 注意：@BasePath 是 /v1，因此各 handler 上的 @Router 路径均不含 /v1 前缀。
 // /livez 与 /readyz 是编排系统的存活与就绪探针，不在 /v1 之下，故不进入本文档。
 //
-// @title                      bgin API
+// @title                      cgin API
 // @version                    1.0
 // @description                基于 Better-Auth 端点命名的认证与用户管理接口。
 // @description                成功响应直接返回业务对象本身，只有分页列表带 items/meta 信封。
@@ -63,7 +63,7 @@ func main() {
 		if log.Core().Enabled(zap.DebugLevel) {
 			_, _ = fmt.Fprintf(os.Stderr, "\n\033[1;31m[FATAL ERROR]\033[0m %+v\n\n", err)
 		} else {
-			_, _ = fmt.Fprintf(os.Stderr, "bgin: %v\n", err)
+			_, _ = fmt.Fprintf(os.Stderr, "cgin: %v\n", err)
 		}
 		os.Exit(1)
 	}

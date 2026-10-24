@@ -7,9 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/database/models"
-	"bgin/internal/shared/enums"
-	"bgin/tests/testutil"
+	"cgin/internal/shared/enums"
+	"cgin/tests/testutil"
 )
 
 func TestUserFixtureBuilder(t *testing.T) {
@@ -92,7 +91,7 @@ func TestAccountFixtureBuilder(t *testing.T) {
 		assert.NotEmpty(t, acc.ID)
 		assert.NotEmpty(t, acc.UserID)
 		assert.NotEmpty(t, acc.AccountID)
-		assert.Equal(t, models.ProviderCredential, acc.ProviderID)
+		assert.Equal(t, string(enums.ProviderCredential), acc.ProviderID)
 		assert.NotNil(t, acc.Password)
 	})
 

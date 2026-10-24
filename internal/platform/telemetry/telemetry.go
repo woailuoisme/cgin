@@ -26,7 +26,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap/zapcore"
 
-	"bgin/internal/config"
+	"cgin/internal/config"
 )
 
 const defaultShutdownTimeout = 5 * time.Second

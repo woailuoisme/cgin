@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/middleware/global"
+	"cgin/internal/middleware/global"
 )
 
 // TestTimeoutMiddlewareWithinBudget 验证请求在超时预算内正常返回。

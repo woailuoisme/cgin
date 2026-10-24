@@ -6,9 +6,9 @@ import (
 
 	"github.com/samber/oops"
 
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/notification/contract"
-	"bgin/internal/platform/realtime"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/notification/contract"
+	"cgin/internal/platform/realtime"
 )
 
 // Message 表示实时广播通知载荷。

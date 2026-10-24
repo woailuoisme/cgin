@@ -21,8 +21,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/wechat"
+	"cgin/internal/config"
+	"cgin/internal/platform/wechat"
 )
 
 func TestWeChatClientCreationAndAccessors(t *testing.T) {

@@ -15,12 +15,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
-	"bgin/internal/middleware"
-	"bgin/internal/middleware/global"
-	"bgin/internal/platform/authentication"
-	"bgin/internal/platform/cache"
-	"bgin/internal/platform/errs"
+	"cgin/internal/config"
+	"cgin/internal/middleware"
+	"cgin/internal/middleware/global"
+	"cgin/internal/platform/authentication"
+	"cgin/internal/platform/cache"
+	"cgin/internal/platform/errs"
 )
 
 // mockRateLimitStore 模拟内存限流存储。

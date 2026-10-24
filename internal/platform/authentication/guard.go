@@ -2,14 +2,15 @@ package authentication
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"maps"
 	"reflect"
 	"strings"
 	"time"
 
-	"bgin/internal/platform/errs"
+	"github.com/jackc/pgx/v5"
+
+	"cgin/internal/platform/errs"
 )
 
 // 守卫常用错误定义。
@@ -21,18 +22,20 @@ var (
 )
 
 // Guard 是核心认证守卫泛型结构体，全面实现类似 Laravel / jwt-auth 的方法契约。
-type Guard[T Authenticatable] struct {
-	tokens        *TokenIssuer
-	provider      UserProvider[T]
-	policy        Policy[T]
-	defaultTTL    time.Duration
-	defaultClaims map[string]any
+type Guard[T any] struct {
+	tokens   *TokenIssuer
+	provider UserProvider[T]
+	policy   Policy[T]
+	identity func(T) Identity
 }
 
-var _ StatefulGuard = (*Guard[Authenticatable])(nil)
+var _ StatefulGuard = (*Guard[any])(nil)
 
 // NewGuard 构造通用泛型 Guard。
-func NewGuard[T Authenticatable](tokens *TokenIssuer, provider UserProvider[T], policy Policy[T]) *Guard[T] {
+//
+// identity 是平台与业务实体之间唯一的桥：平台只依赖它投影出的 Identity
+// （主体 ID、角色与自定义声明），不感知任何数据库行类型。
+func NewGuard[T any](tokens *TokenIssuer, provider UserProvider[T], policy Policy[T], identity func(T) Identity) *Guard[T] {
 	if policy == nil {
 		policy = AllowAllPolicy[T]{}
 	}
@@ -40,12 +43,16 @@ func NewGuard[T Authenticatable](tokens *TokenIssuer, provider UserProvider[T], 
 		tokens:   tokens,
 		provider: provider,
 		policy:   policy,
+		identity: identity,
 	}
 }
 
-// Tokens 返回底层 TokenIssuer。
-func (g *Guard[T]) Tokens() *TokenIssuer {
-	return g.tokens
+// identify 投影主体身份；未提供投影函数时返回零值身份。
+func (g *Guard[T]) identify(user T) Identity {
+	if g.identity == nil {
+		return Identity{}
+	}
+	return g.identity(user)
 }
 
 // Provider 返回底层 UserProvider。
@@ -77,7 +84,7 @@ func (g *Guard[T]) HasUser(ctx context.Context) bool {
 
 // SetUser 将指定实体显式绑定至当前请求上下文（对应 Laravel/jwt-auth 的 setUser）。
 func (g *Guard[T]) SetUser(ctx context.Context, user T) context.Context {
-	return WithUser(ctx, user)
+	return WithUser(ctx, user, g.identify(user))
 }
 
 // ID 从上下文中高速提取当前已认证用户的唯一标识（0 次数据库开销）。未认证时返回 401 错误。
@@ -107,7 +114,7 @@ func (g *Guard[T]) User(ctx context.Context) (T, error) {
 		}
 		user, err := g.provider.FindByID(ctx, cache.identity.UserID)
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
+			if errors.Is(err, pgx.ErrNoRows) {
 				cache.userErr = errs.Unauthorized(errs.CodeAuthTokenInvalid, "The token is invalid")
 				return
 			}
@@ -178,7 +185,7 @@ func (g *Guard[T]) Validate(ctx context.Context, creds Credentials) (T, error) {
 
 	user, err := g.provider.FindByCredentials(ctx, creds)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return zero, errs.InvalidCredentials()
 		}
 		return zero, errs.Internal(err)
@@ -201,37 +208,6 @@ func (g *Guard[T]) Validate(ctx context.Context, creds Credentials) (T, error) {
 	return user, nil
 }
 
-// Once 基于凭证对当前请求进行单次无状态认证（对应 Laravel 的 once）。不签发令牌，认证成功后将用户置入当前上下文。
-func (g *Guard[T]) Once(ctx context.Context, creds Credentials) (context.Context, T, error) {
-	user, err := g.Validate(ctx, creds)
-	if err != nil {
-		var zero T
-		return ctx, zero, err
-	}
-	return g.SetUser(ctx, user), user, nil
-}
-
-// OnceUsingID 基于用户标识对当前请求进行单次无状态认证（对应 Laravel 的 onceUsingId）。不签发令牌，将实体置入当前上下文。
-func (g *Guard[T]) OnceUsingID(ctx context.Context, userID string) (context.Context, T, error) {
-	var zero T
-	if g.provider == nil {
-		return ctx, zero, ErrProviderNotConfigured
-	}
-	user, err := g.provider.FindByID(ctx, userID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ctx, zero, errs.NotFound("The requested user does not exist")
-		}
-		return ctx, zero, errs.Internal(err)
-	}
-	if g.policy != nil {
-		if err := g.policy.ValidateUser(ctx, user); err != nil {
-			return ctx, zero, err
-		}
-	}
-	return g.SetUser(ctx, user), user, nil
-}
-
 // Attempt 尝试基于凭据认证并登录用户，成功后签发双令牌并自动记录登录审计。
 func (g *Guard[T]) Attempt(ctx context.Context, creds Credentials, opts ...Option) (T, Session, error) {
 	var zero T
@@ -246,7 +222,7 @@ func (g *Guard[T]) Attempt(ctx context.Context, creds Credentials, opts ...Optio
 	}
 
 	if recorder, ok := any(g.provider).(LoginRecorder); ok && recorder != nil {
-		_ = recorder.RecordLogin(ctx, user.GetAuthIdentifier(), "credential")
+		_ = recorder.RecordLogin(ctx, g.identify(user).UserID, "credential")
 	}
 	return user, sess, nil
 }
@@ -265,19 +241,17 @@ func (g *Guard[T]) Login(ctx context.Context, user T, opts ...Option) (Session, 
 // issueSession 提取用户自定义声明并签发会话令牌对。
 func (g *Guard[T]) issueSession(user T, opts ...Option) (Session, error) {
 	cfg := g.resolveOptions(opts...)
+	identity := g.identify(user)
 
-	// 自动合并实现 JWTSubject 契约实体的自定义声明 (对应 jwt-auth 的 getJWTCustomClaims)
-	if sub, ok := any(user).(JWTSubject); ok && sub != nil {
-		custom := sub.GetJWTCustomClaims()
-		if len(custom) > 0 {
-			if cfg.claims == nil {
-				cfg.claims = make(map[string]any, len(custom))
-			}
-			maps.Copy(cfg.claims, custom)
+	// 身份投影中的自定义声明对应 jwt-auth 的 getJWTCustomClaims。
+	if len(identity.CustomClaims) > 0 {
+		if cfg.claims == nil {
+			cfg.claims = make(map[string]any, len(identity.CustomClaims))
 		}
+		maps.Copy(cfg.claims, identity.CustomClaims)
 	}
 
-	pair, err := g.tokens.IssueWithCustom(user.GetAuthIdentifier(), user.GetAuthRole(), cfg.ttl, 0, cfg.claims)
+	pair, err := g.tokens.IssueWithCustom(identity.UserID, identity.Role, cfg.ttl, 0, cfg.claims)
 	if err != nil {
 		return Session{}, errs.Internal(err)
 	}
@@ -297,7 +271,7 @@ func (g *Guard[T]) LoginUsingID(ctx context.Context, userID string, opts ...Opti
 	}
 	user, err := g.provider.FindByID(ctx, userID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return zero, Session{}, errs.NotFound("The requested user does not exist")
 		}
 		return zero, Session{}, errs.Internal(err)
@@ -307,22 +281,6 @@ func (g *Guard[T]) LoginUsingID(ctx context.Context, userID string, opts ...Opti
 		return zero, Session{}, err
 	}
 	return user, sess, nil
-}
-
-// TokenByID 仅按用户 ID 直接签发令牌凭据，跳过守卫状态策略检查。
-func (g *Guard[T]) TokenByID(ctx context.Context, userID string, opts ...Option) (Session, error) {
-	if g.provider == nil {
-		return Session{}, ErrProviderNotConfigured
-	}
-	user, err := g.provider.FindByID(ctx, userID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return Session{}, errs.NotFound("The requested user does not exist")
-		}
-		return Session{}, errs.Internal(err)
-	}
-
-	return g.issueSession(user, opts...)
 }
 
 // Logout 作废当前请求上下文关联的访问令牌；若传入了刷新令牌则一并撤销。
@@ -373,7 +331,7 @@ func (g *Guard[T]) Refresh(ctx context.Context, refreshToken string, opts ...Opt
 	}
 	user, err := g.provider.FindByID(ctx, claims.Subject)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return zero, Session{}, errs.Unauthorized(errs.CodeAuthTokenInvalid, "The token is invalid")
 		}
 		return zero, Session{}, errs.Internal(err)
@@ -490,31 +448,9 @@ func (g *Guard[T]) Payload(ctx context.Context) (map[string]any, error) {
 	return claims.Payload(), nil
 }
 
-// SetTTL 链式克隆并设置默认有效期。
-func (g *Guard[T]) SetTTL(d time.Duration) *Guard[T] {
-	clone := *g
-	clone.defaultTTL = d
-	return &clone
-}
-
-// SetClaims 链式克隆并设置默认自定义声明。
-func (g *Guard[T]) SetClaims(claims map[string]any) *Guard[T] {
-	clone := *g
-	merged := make(map[string]any, len(g.defaultClaims)+len(claims))
-	maps.Copy(merged, g.defaultClaims)
-	maps.Copy(merged, claims)
-	clone.defaultClaims = merged
-	return &clone
-}
-
-// resolveOptions 解析合并 Guard 默认值与运行时 Functional Options。
+// resolveOptions 解析合并默认值与运行时 Functional Options。
 func (g *Guard[T]) resolveOptions(opts ...Option) *options {
 	res := defaultOptions()
-	res.ttl = g.defaultTTL
-	if len(g.defaultClaims) > 0 {
-		res.claims = make(map[string]any, len(g.defaultClaims))
-		maps.Copy(res.claims, g.defaultClaims)
-	}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(res)

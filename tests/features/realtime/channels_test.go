@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	featureRealtime "bgin/internal/features/realtime"
-	platformRealtime "bgin/internal/platform/realtime"
+	featureRealtime "cgin/internal/features/realtime"
+	platformRealtime "cgin/internal/platform/realtime"
 )
 
 func TestChannelHelpers(t *testing.T) {

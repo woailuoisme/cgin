@@ -3,7 +3,7 @@ package adminauth
 import (
 	"github.com/gin-gonic/gin"
 
-	"bgin/internal/middleware"
+	"cgin/internal/middleware"
 )
 
 // RegisterAdminAuthRoutes 注册后台管理员认证端点（/v1/admin/auth/*）。

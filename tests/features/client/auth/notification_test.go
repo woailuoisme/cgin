@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/features/client/auth"
-	"bgin/internal/platform/notification"
+	"cgin/internal/features/client/auth"
+	"cgin/internal/platform/notification"
 )
 
 func TestSignupVerificationNotification(t *testing.T) {

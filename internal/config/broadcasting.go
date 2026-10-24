@@ -11,22 +11,19 @@ import (
 // CentrifugoConfig 描述 Centrifugo 实时通信服务连接配置。
 type CentrifugoConfig struct {
 	// Enabled 控制是否启用实时通信服务。
-	Enabled bool `mapstructure:"centrifugo_enabled"`
+	Enabled bool `env:"CENTRIFUGO_ENABLED"`
 	// URL Centrifugo 服务端 HTTP API 地址。
-	URL string `mapstructure:"centrifugo_url"`
+	URL string `env:"CENTRIFUGO_URL"`
 	// APIKey 服务端调用 Centrifugo HTTP API 凭据。
-	APIKey string `mapstructure:"centrifugo_api_key"`
+	APIKey string `env:"CENTRIFUGO_API_KEY"`
 	// Secret 用于 HMAC-SHA256 签发客户端 Token 及校验请求签名的密钥。
-	Secret string `mapstructure:"centrifugo_secret"`
+	Secret string `env:"CENTRIFUGO_SECRET"`
 	// TokenTTL 签发给客户端的连接凭据有效期。
-	TokenTTL time.Duration `mapstructure:"centrifugo_token_ttl"`
+	TokenTTL time.Duration `env:"CENTRIFUGO_TOKEN_TTL" envDefault:"2h"`
 }
 
 // RealtimeConfig 为 CentrifugoConfig 别名。
 type RealtimeConfig = CentrifugoConfig
-
-// WebSocketConfig 兼容别名。
-type WebSocketConfig = CentrifugoConfig
 
 // validateRealtime 校验 Centrifugo 配置有效性。
 func (c *Config) validateRealtime() error {

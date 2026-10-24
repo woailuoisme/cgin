@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/platform/authentication"
-	"bgin/internal/platform/authorization"
+	"cgin/internal/platform/authentication"
+	"cgin/internal/platform/authorization"
 )
 
 func TestEnforcer_CanRole(t *testing.T) {

@@ -13,9 +13,9 @@ import (
 	"github.com/go-resty/resty/v2"
 	"golang.org/x/sync/singleflight"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/cache"
-	"bgin/internal/platform/errs"
+	"cgin/internal/config"
+	"cgin/internal/platform/cache"
+	"cgin/internal/platform/errs"
 )
 
 const (

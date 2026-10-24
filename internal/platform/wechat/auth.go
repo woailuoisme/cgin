@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"bgin/internal/platform/errs"
+	"cgin/internal/platform/errs"
 )
 
 // Session 是小程序登录成功后取得的用户身份。

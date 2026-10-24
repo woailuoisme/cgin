@@ -10,7 +10,7 @@ import (
 
 	"github.com/redis/rueidis/rueidislock"
 
-	"bgin/internal/config"
+	"cgin/internal/config"
 )
 
 var (

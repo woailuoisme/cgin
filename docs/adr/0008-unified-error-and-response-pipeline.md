@@ -2,7 +2,7 @@
 
 ## 上下文与决策
 
-为彻底杜绝框架级原生纯文本输出（如未匹配路由或方法时的 `404 page not found` 与 `405 method not allowed`），确保 100% 的 HTTP 响应严格满足 [api.md](file:///Users/seaside/Projects/go/gin-bun/api.md) 5.1（成功响应与分页信封）与 5.2（全局统一错误模型）契约规范，决定对 Web 引擎管道及响应接缝进行以下 4 项深化改造：
+为彻底杜绝框架级原生纯文本输出（如未匹配路由或方法时的 `404 page not found` 与 `405 method not allowed`），确保 100% 的 HTTP 响应严格满足 [api.md](file:///Users/seaside/Projects/backend/go/gin-sqlc/api.md) 5.1（成功响应与分页信封）与 5.2（全局统一错误模型）契约规范，决定对 Web 引擎管道及响应接缝进行以下 4 项深化改造：
 
 1. **引擎级 NoRoute 统一错误接缝 (Global NoRoute Seam)**：
    在 `internal/bootstrap/engine.go` 中注册 `engine.NoRoute` 回退处理函数，统一向当前请求上下文派发 `c.Error(errs.NotFound(""))` 并中止后续链条，交由后置 `middleware.ErrorHandler` 解析并渲染统一的 `{ "code": "NOT_FOUND", "message": "..." }` 扁平 JSON 结构，彻底根除框架纯文本泄漏。

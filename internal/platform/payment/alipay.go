@@ -13,9 +13,9 @@ import (
 	alipayv3 "github.com/go-pay/gopay/alipay/v3"
 	"go.uber.org/zap"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/payment/enums"
+	"cgin/internal/config"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/payment/enums"
 )
 
 // 支付宝交易状态常量，取值来自支付宝开放平台交易状态协议。

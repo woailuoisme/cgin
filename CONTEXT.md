@@ -1,4 +1,4 @@
-# bgin Core Domain
+# cgin Core Domain
 
 A high-concurrency enterprise web service domain managing identity, authentication, credential lifecycles, and user administration.
 
@@ -31,3 +31,11 @@ _Avoid_: Webhook body, Callback request, Notify model
 **Profile Scope**:
 An authorization boundary distinguishing personal self-service profile patches (`ScopeClient`) from privileged administrative modifications (`ScopeAdmin`).
 _Avoid_: Role tag, Admin flag
+
+**Credential Lifecycle**:
+The single unit that verifies, hashes, replaces, or resets a local password credential, including the rule that a missing credential is a distinct outcome from a wrong password.
+_Avoid_: Password repository, Credential CRUD
+
+**Public Profile**:
+The canonical client-facing projection of a User (identity, email, role, username, timestamps) from which the administrative Profile adds account status and moderation fields.
+_Avoid_: User DTO, User view model

@@ -3,7 +3,9 @@ package auth
 import (
 	"time"
 
-	"bgin/internal/database/models"
+	"cgin/internal/database/sqlc"
+	"cgin/internal/shared/enums"
+	shareduser "cgin/internal/shared/user"
 )
 
 // UserResource 是认证端点返回的用户档案资源视图。
@@ -19,7 +21,7 @@ type UserResource struct {
 	// 用户头像 URL
 	Image *string `json:"image" example:"https://example.com/avatar.png"`
 	// 用户权限角色 (user: 普通用户, admin: 系统管理员)
-	Role string `json:"role" example:"user" enums:"user,admin"`
+	Role enums.Role `json:"role" example:"user" enums:"user,admin"`
 	// 唯一登录用户名
 	Username *string `json:"username" example:"alexmercer"`
 	// 用户显示名称
@@ -145,20 +147,8 @@ type StatusResource struct {
 }
 
 // projectUser 把用户模型投影为认证端点的响应资源。
-func projectUser(u *models.User) UserResource {
-	return UserResource{
-		ID:              u.ID,
-		Name:            u.Name,
-		Email:           u.Email,
-		EmailVerified:   u.EmailVerified,
-		Image:           u.Image,
-		Role:            string(u.Role),
-		Username:        u.Username,
-		DisplayUsername: u.DisplayUsername,
-		PhoneNumber:     u.PhoneNumber,
-		CreatedAt:       u.CreatedAt.UTC(),
-		UpdatedAt:       u.UpdatedAt.UTC(),
-	}
+func projectUser(u *sqlc.User) UserResource {
+	return UserResource(shareduser.ProjectPublicProfile(u))
 }
 
 type (

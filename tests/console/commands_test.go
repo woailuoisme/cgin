@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/console"
-	"bgin/internal/console/core"
+	"cgin/internal/console"
+	"cgin/internal/console/core"
 )
 
 // TestRootCommand_Registration 验证所有预期的 CLI 命令均已按纯冒号方式注册，并正确分配到对应的命名空间分组。
@@ -34,8 +34,6 @@ func TestRootCommand_Registration(t *testing.T) {
 		"route:list",
 		"scout:import",
 		"scout:flush",
-		"sentry:test",
-		"temporal:work",
 	}
 
 	commandNames := lo.Map(cmd.Commands(), func(c *cobra.Command, _ int) string {
@@ -65,7 +63,7 @@ func TestRootCommand_Registration(t *testing.T) {
 	groupIDs := lo.Map(cmd.Groups(), func(g *cobra.Group, _ int) string {
 		return g.ID
 	})
-	assert.ElementsMatch(t, []string{"db", "geoip", "jwt", "make", "queue", "route", "scout", "sentry", "temporal"}, groupIDs)
+	assert.ElementsMatch(t, []string{"db", "geoip", "jwt", "make", "queue", "route", "scout"}, groupIDs)
 
 	cmdMap := lo.KeyBy(cmd.Commands(), func(c *cobra.Command) string {
 		return c.Name()
@@ -85,8 +83,6 @@ func TestRootCommand_Registration(t *testing.T) {
 	assert.Equal(t, "route", cmdMap["route:list"].GroupID)
 	assert.Equal(t, "scout", cmdMap["scout:import"].GroupID)
 	assert.Equal(t, "scout", cmdMap["scout:flush"].GroupID)
-	assert.Equal(t, "sentry", cmdMap["sentry:test"].GroupID)
-	assert.Equal(t, "temporal", cmdMap["temporal:work"].GroupID)
 }
 
 // TestParseQueueWeights 验证队列权重参数解析。

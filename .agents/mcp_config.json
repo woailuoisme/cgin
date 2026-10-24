@@ -49,7 +49,7 @@
       "command": "sh",
       "args": [
         "-c",
-        "DB_URL=$(grep -E '^DB_URL=' .env | head -n1 | cut -d= -f2- | tr -d '\"' | tr -d \"'\"); exec npx -y @modelcontextprotocol/server-postgres \"${DB_URL:-postgres://postgres:secret@127.0.0.1:5432/bgin?sslmode=disable}\""
+        "DB_URL=$(grep -E '^DB_URL=' .env | head -n1 | cut -d= -f2- | tr -d '\"' | tr -d \"'\"); exec npx -y @modelcontextprotocol/server-postgres \"${DB_URL:-postgres://postgres:secret@127.0.0.1:5432/cgin?sslmode=disable}\""
       ]
     },
     "dbx": {

@@ -16,8 +16,8 @@ import (
 	"github.com/pelletier/go-toml/v2"
 	"github.com/samber/lo"
 
-	"bgin/internal/config"
-	"bgin/lang"
+	"cgin/internal/config"
+	"cgin/lang"
 )
 
 // 语言包内的分节名，与 lang/<语言>/<分节>.toml 一一对应。

@@ -15,10 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
-	"bgin/internal/platform/authentication"
-	"bgin/internal/platform/realtime"
-	"bgin/internal/shared/enums"
+	"cgin/internal/config"
+	"cgin/internal/platform/realtime"
 )
 
 const testSecret = "centrifugo-test-secret-key-12345"
@@ -161,7 +159,9 @@ func TestRegistryChannelAuthorization(t *testing.T) {
 	require.Error(t, err)
 
 	// 显式白名单注册的公开广播频道允许订阅
-	realtime.AllowPublic(reg, "news.*")
+	reg.Register("news.*", func(_ context.Context, _ realtime.User, _ string, _ map[string]string) error {
+		return nil
+	})
 	err = reg.Authorize(ctx, realtime.User{ID: "1"}, "news.weather")
 	require.NoError(t, err)
 }
@@ -197,50 +197,6 @@ func TestRegistryPublishAndRPC(t *testing.T) {
 	// 未知 RPC
 	_, err = reg.HandleRPC(ctx, realtime.User{ID: "u1"}, "unknown", nil)
 	require.Error(t, err)
-}
-
-// TestDSLHelpers 验证声明式 DSL 语法糖。
-func TestDSLHelpers(t *testing.T) {
-	assert.Equal(t, "private:user:1", realtime.Private("user:%d", 1))
-	assert.Equal(t, "private:order", realtime.Private("private:order"))
-	assert.Equal(t, "presence:room:10", realtime.Presence("room:%d", 10))
-	assert.Equal(t, "presence:room", realtime.Presence("presence:room"))
-	assert.Equal(t, "public:news", realtime.Public("public:news"))
-
-	reg := realtime.NewRegistry()
-
-	// 注册 Channel 策略并使用 context 中 identity 认证主体
-	realtime.Channel(reg, "orders.{id}", func(_ context.Context, actor realtime.Authenticatable, id string) bool {
-		return actor != nil && actor.GetAuthIdentifier() == id
-	})
-
-	ctx := authentication.With(context.Background(), authentication.Identity{
-		UserID: "100",
-		Role:   string(enums.RoleUser),
-	})
-
-	err := reg.Authorize(ctx, realtime.User{}, "orders.100")
-	require.NoError(t, err)
-
-	err = reg.Authorize(ctx, realtime.User{}, "orders.200")
-	require.Error(t, err)
-
-	// ChannelGuard
-	realtime.ChannelGuard(reg, "admin.*", "admin")
-	require.NoError(t, reg.Authorize(context.Background(), realtime.User{GuardName: "admin"}, "admin.metrics"))
-	require.Error(t, reg.Authorize(context.Background(), realtime.User{GuardName: "api"}, "admin.metrics"))
-
-	// AllowUser 高阶助手
-	realtime.AllowUser(reg, "private:users.{id}")
-	require.NoError(t, reg.Authorize(ctx, realtime.User{}, "private:users.100"))
-	require.Error(t, reg.Authorize(ctx, realtime.User{}, "private:users.200"))
-
-	// AllowRole 高阶助手
-	realtime.AllowRole(reg, "internal:reports", "admin", "super_admin")
-	adminCtx := authentication.With(context.Background(), authentication.Identity{UserID: "admin_1", Role: "admin"})
-	userCtx := authentication.With(context.Background(), authentication.Identity{UserID: "user_1", Role: "user"})
-	require.NoError(t, reg.Authorize(adminCtx, realtime.User{}, "internal:reports"))
-	require.Error(t, reg.Authorize(userCtx, realtime.User{}, "internal:reports"))
 }
 
 // TestManagerWithMockServer 针对 Centrifugo HTTP 模拟服务验证 Manager 核心动作。

@@ -2,7 +2,7 @@
 package notification
 
 import (
-	"bgin/internal/platform/notification/contract"
+	"cgin/internal/platform/notification/contract"
 )
 
 const (

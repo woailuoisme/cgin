@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/config"
-	"bgin/internal/console"
-	"bgin/internal/console/core"
+	"cgin/internal/config"
+	"cgin/internal/console"
+	"cgin/internal/console/core"
 )
 
 // TestServeOptions_Validate 测试 HTTP 服务启动参数校验规则。
@@ -220,8 +220,8 @@ func TestScoutOptions_Validate(t *testing.T) {
 
 		opts.All = false
 		opts.Model = "non_existent_search_model"
-		err = opts.Validate()
-		require.Error(t, err)
+		// 模型是否已注册需在 Run 中拿到数据库后校验，此处仅做形态校验。
+		require.NoError(t, opts.Validate())
 
 		opts.ChunkSize = 0
 		opts.All = true

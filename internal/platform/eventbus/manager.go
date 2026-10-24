@@ -17,7 +17,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"bgin/internal/config"
+	"cgin/internal/config"
 )
 
 var (

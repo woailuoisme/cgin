@@ -6,10 +6,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"bgin/internal/platform/errs"
-	"bgin/internal/platform/logger"
-	platformPayment "bgin/internal/platform/payment"
-	"bgin/internal/platform/payment/enums"
+	"cgin/internal/platform/errs"
+	"cgin/internal/platform/logger"
+	platformPayment "cgin/internal/platform/payment"
+	"cgin/internal/platform/payment/enums"
 )
 
 // Handler 承接支付渠道的 Webhook 异步通知与客户端同步跳转。

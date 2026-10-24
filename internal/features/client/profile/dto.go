@@ -5,7 +5,7 @@ import (
 
 	"github.com/aarondl/opt/omitnull"
 
-	"bgin/internal/shared/user"
+	"cgin/internal/shared/user"
 )
 
 // ProfileResource 为共享内核用户档案视图的类型别名（供 Swagger 注解直接引用）。

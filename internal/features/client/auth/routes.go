@@ -3,7 +3,7 @@ package auth
 import (
 	"github.com/gin-gonic/gin"
 
-	"bgin/internal/middleware"
+	"cgin/internal/middleware"
 )
 
 // RegisterRoutes 在 /v1/auth 下注册全部认证端点。

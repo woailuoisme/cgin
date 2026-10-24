@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"bgin/internal/platform/money"
-	"bgin/internal/platform/payment/enums"
+	"cgin/internal/platform/money"
+	"cgin/internal/platform/payment/enums"
 )
 
 // ErrCapabilityNotSupported 表示渠道或 Provider 未实现请求的操作能力（如不支持退款或查单）。

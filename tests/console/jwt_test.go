@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/console"
+	"cgin/internal/console"
 )
 
 // TestGenerateRandomSecret 验证随机密钥生成的长度与有效性。
@@ -56,7 +56,7 @@ func TestJWTSecretCommand_Show(t *testing.T) {
 func TestJWTSecretCommand_WriteEnv(t *testing.T) {
 	dir := t.TempDir()
 	envPath := filepath.Join(dir, ".env")
-	initialContent := "APP_NAME=bgin\nJWT_SECRET=old-secret-value\nAPP_ENV=local\n"
+	initialContent := "APP_NAME=cgin\nJWT_SECRET=old-secret-value\nAPP_ENV=local\n"
 	require.NoError(t, os.WriteFile(envPath, []byte(initialContent), 0o600))
 
 	t.Chdir(dir)

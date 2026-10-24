@@ -3,7 +3,7 @@ package admin
 import (
 	"github.com/gin-gonic/gin"
 
-	"bgin/internal/platform/response"
+	"cgin/internal/platform/response"
 )
 
 // Handler 是管理端用户 CRUD 的 HTTP 适配层。
@@ -162,7 +162,7 @@ func (h *Handler) UpdateUser(c *gin.Context) {
 // DeleteUser 处理 DELETE /v1/admin/users/:id，返回 204。
 //
 // @Summary      注销删除用户
-// @Description  物理删除指定用户及其关联账号数据，并级联清理权限策略。
+// @Description  软删除指定用户，保留数据以支持审计与恢复；其关联凭据随账号状态一同失效。
 // @Tags         用户管理
 // @Accept       json
 // @Produce      json

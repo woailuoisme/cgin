@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"bgin/internal/platform/errs"
+	"cgin/internal/platform/errs"
 )
 
 // localDisk 用操作系统文件系统实现 Disk。

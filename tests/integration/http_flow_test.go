@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bgin/internal/platform/errs"
+	"cgin/internal/platform/errs"
 )
 
 // mailpitBaseURL 是本地 Mailpit 的 HTTP 接口，用于取回真实投递的验证码。
@@ -233,12 +233,12 @@ func TestProfilePatchThreeState(t *testing.T) {
 
 	t.Run("自助修改不接受邮箱与角色", func(t *testing.T) {
 		result := callJSON(t, engine, http.MethodPatch, "/v1/users/me", map[string]any{
-			"email": "attacker@bgin.local",
+			"email": "attacker@cgin.local",
 			"role":  "admin",
 		}, token)
 
 		require.Equal(t, http.StatusOK, result.Status, result.Raw)
-		assert.NotEqual(t, "attacker@bgin.local", str(result.Body, "email"))
+		assert.NotEqual(t, "attacker@cgin.local", str(result.Body, "email"))
 		assert.NotEqual(t, "admin", str(result.Body, "role"))
 	})
 }
@@ -507,7 +507,7 @@ func TestRateLimitHeaders(t *testing.T) {
 	engine := newEngine(t)
 
 	result := callJSON(t, engine, http.MethodPost, "/v1/auth/sign-in/email", map[string]any{
-		"email": "nobody@bgin.local", "password": "whatever1",
+		"email": "nobody@cgin.local", "password": "whatever1",
 	}, "")
 
 	assert.Equal(t, http.StatusUnauthorized, result.Status)
@@ -565,7 +565,7 @@ func TestEmailVerificationOTPFlow(t *testing.T) {
 func signInAdmin(t *testing.T, engine *gin.Engine) string {
 	t.Helper()
 
-	email := envOr("SEED_ADMIN_EMAIL", "admin@bgin.local")
+	email := envOr("SEED_ADMIN_EMAIL", "admin@cgin.local")
 	password := envOr("SEED_ADMIN_PASSWORD", "admin12345")
 
 	result := callJSON(t, engine, http.MethodPost, "/v1/auth/sign-in/email", map[string]any{
