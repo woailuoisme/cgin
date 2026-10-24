@@ -1,0 +1,46 @@
+{{ define "layout" }}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <style>
+        @media only screen and (max-width: 600px) {
+            .inner-body {
+                width: 100% !important;
+            }
+        }
+    </style>
+</head>
+<body style="box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: {{ if .ThemeBg }}{{ .ThemeBg }}{{ else }}#f8fafc{{ end }}; color: #475569; height: 100%; margin: 0; line-height: 1.6; width: 100% !important; -webkit-text-size-adjust: none;">
+    <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="box-sizing: border-box; background-color: {{ if .ThemeBg }}{{ .ThemeBg }}{{ else }}#f8fafc{{ end }}; margin: 0; padding: 0; width: 100%;">
+        <tr>
+            <td align="center" style="box-sizing: border-box; padding: 30px 15px;">
+                <table class="inner-body" width="100%" cellpadding="0" cellspacing="0" role="presentation" style="box-sizing: border-box; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; margin: 0 auto; padding: 0; width: 570px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);">
+                    <!-- Header -->
+                    <tr>
+                        <td style="box-sizing: border-box; padding: 35px 30px 15px 30px; text-align: center;">
+                            {{ template "header" . }}
+                        </td>
+                    </tr>
+
+                    <!-- Body Content -->
+                    <tr>
+                        <td style="box-sizing: border-box; padding: 15px 40px 35px 40px;">
+                            {{ template "content" . }}
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="box-sizing: border-box; padding: 25px 40px 25px 40px; text-align: center; border-top: 1px solid #f1f5f9;">
+                            {{ template "footer" . }}
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+{{ end }}

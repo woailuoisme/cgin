@@ -1,0 +1,160 @@
+# Centrifugo v6 统一生产级实时通信服务配置
+# 官方参考: https://centrifugal.dev/docs/server/configuration
+
+# ============================================
+# 1. 传输协议配置 (Transports)
+# ============================================
+websocket:
+  use_write_buffer_pool: true
+  message_size_limit: 65536  # 64KB 防恶意外包/DoS 上行大小限制
+
+uni_websocket:
+  enabled: true
+
+http_stream:
+  enabled: true
+
+sse:
+  enabled: true
+
+uni_sse:
+  enabled: true
+
+# ============================================
+# 2. 消息引擎配置 (Engine - Valkey / Redis)
+# ============================================
+engine:
+  type: redis
+  redis:
+    # 具体的连接地址可通过环境变量 CENTRIFUGO_ENGINE_REDIS_ADDRESS 动态注入
+    # 示例: redis://:redis_secret@valkey:6379/0
+    connect_timeout: "1s"
+    io_timeout: "4s"
+
+# ============================================
+# 3. 客户端连接与安全控制 (Client Options)
+# ============================================
+client:
+  token:
+    # 与应用配置中的 CENTRIFUGO_SECRET 保持一致，可通过环境变量 CENTRIFUGO_CLIENT_TOKEN_HMAC_SECRET_KEY 覆盖
+    hmac_secret_key: "768583f3-7205-4b36-aea3-32ca8dea4914"
+
+  # 默认禁止匿名连接，强制使用 JWT 凭证连接
+  allow_anonymous_connect_without_token: false
+
+  # 允许跨域来源列表（开发环境允许 *，可通过环境变量 CENTRIFUGO_CLIENT_ALLOWED_ORIGINS 覆盖）
+  allowed_origins:
+    - "*"
+
+  # 长连接心跳控制
+  ping_interval: 30s
+  pong_timeout: 8s
+
+  # 资源与并发防护
+  connection_limit: 10000
+  user_connection_limit: 10
+  queue_max_size: 1048576  # 1MB 客户端单连接发送缓冲区上限
+  stale_close_delay: "10s"
+
+# ============================================
+# 4. HTTP API 鉴权配置
+# ============================================
+http_api:
+  # 与应用配置中的 CENTRIFUGO_API_KEY 保持一致，可通过环境变量 CENTRIFUGO_HTTP_API_KEY 覆盖
+  key: "aef5a17a-fdeb-48aa-b2c1-d490c62ff950"
+
+# ============================================
+# 5. 反向代理 Webhook (频道订阅动态鉴权)
+# ============================================
+proxy:
+  subscribe:
+    enabled: true
+    # 后端 Gin 订阅鉴权端点地址 (容器网络内为 http://app:3300/v1/realtime/proxy/subscribe)
+    endpoint: "http://app:3300/v1/realtime/proxy/subscribe"
+    timeout: "2s"
+
+# ============================================
+# 6. 管理后台与健康检查 (Admin & Observability)
+# ============================================
+admin:
+  enabled: true
+  handler_prefix: "/admin"
+
+health:
+  enabled: true
+
+prometheus:
+  enabled: true
+
+# ============================================
+# 7. 系统日志配置 (Logging)
+# ============================================
+log:
+  level: info
+
+# ============================================
+# 8. 通道命名空间策略 (Channel Namespaces)
+# ============================================
+channel:
+  history_meta_ttl: "720h"
+
+  namespaces:
+    # ----------------------------------------------------
+    # public 公开命名空间：公共大厅、广播消息。
+    # 启用 recovery 保证弱网重连自动补发未读消息。
+    # 禁用客户端直接发布，所有消息必须通过后端统一下发。
+    # ----------------------------------------------------
+    - name: public
+      presence: true
+      join_leave: true
+      history_size: 100
+      history_ttl: "300s"
+      allow_recovery: true
+      force_recovery: true
+      allow_publish_for_subscriber: false
+      allow_subscribe_for_client: true
+      allow_subscribe_for_anonymous: false
+      allow_publish_for_anonymous: false
+
+    # ----------------------------------------------------
+    # private 私有命名空间：点对点私聊、群组与敏感业务。
+    # 必须经后端 HTTP Proxy 订阅鉴权或持有专属订阅 Token。
+    # ----------------------------------------------------
+    - name: private
+      proxy_subscribe: true
+      presence: true
+      join_leave: true
+      history_size: 50
+      history_ttl: "300s"
+      allow_recovery: true
+      force_recovery: true
+      allow_publish_for_subscriber: false
+      allow_subscribe_for_client: false
+
+    # ----------------------------------------------------
+    # user 用户个人频道命名空间：用于向特定用户推送个人通知。
+    # 禁用 presence 与 join_leave 节省内存。
+    # ----------------------------------------------------
+    - name: user
+      presence: false
+      join_leave: false
+      history_size: 50
+      history_ttl: "300s"
+      allow_recovery: true
+      force_recovery: true
+      allow_publish_for_subscriber: false
+      allow_subscribe_for_client: false
+
+    # ----------------------------------------------------
+    # notification 实时通知命名空间：高吞吐 Toast/提醒。
+    # 不启用历史恢复，降低持久化压力。
+    # ----------------------------------------------------
+    - name: notification
+      presence: false
+      join_leave: false
+      history_size: 10
+      history_ttl: "60s"
+      allow_recovery: false
+      force_recovery: false
+      allow_publish_for_subscriber: false
+      allow_subscribe_for_client: true

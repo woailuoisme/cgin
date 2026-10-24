@@ -1,0 +1,13 @@
+# SOPS 秘钥加密规则配置 (https://github.com/getsops/sops)
+# 作用：定义密文匹配路径、加密字段范围，以及授权解密的 age 公钥（Recipient Public Keys）。
+# 安全性：本文件仅声明公钥，可安全提交至 Git 仓库；私钥由各运维人员或 CI 密钥库独立保管。
+
+creation_rules:
+  # 匹配 Helm 目录下的所有环境敏感配置文件（如 secrets.prod.yaml / secrets.prod.enc.yaml）
+  - path_regex: ^helm/.*secrets\..*\.ya?ml$
+    # 仅加密 secrets/stringData 字典下的敏感数据，保留文件外层结构与注释明文以便审查
+    encrypted_regex: "^(secrets|stringData)$"
+    # age 授权接收者公钥列表（支持多个公钥，用逗号分隔，任何持有对应私钥的成员或 CI 均可独立解密）
+    # 提示：运行 `just sops-init` 生成本地私钥后，将输出的 public key 替换或追加至此处
+    age: >-
+      age1dedh8xntxl3ap4zdhrzaafkm4hfnrm2h9ga9khyg2uysk72m4s6snkx7w0

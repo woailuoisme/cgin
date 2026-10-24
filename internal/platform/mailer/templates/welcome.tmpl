@@ -1,0 +1,21 @@
+{{ define "content" }}
+<h1 style="box-sizing: border-box; color: #0f172a; font-size: 20px; font-weight: 700; margin-top: 0; text-align: left;">
+    Welcome to {{ .AppName }}!
+</h1>
+<p style="box-sizing: border-box; color: #475569; font-size: 15px; line-height: 1.6; margin-top: 0; text-align: left;">
+    Hello{{ if .Name }}, {{ .Name }}{{ else }}!{{ end }} We're thrilled to have you here. Your account has been successfully created.
+</p>
+<p style="box-sizing: border-box; color: #475569; font-size: 15px; line-height: 1.6; text-align: left;">
+    To get started, please click the button below to explore your dashboard:
+</p>
+
+{{ template "button" .Button }}
+
+<p style="box-sizing: border-box; color: #475569; font-size: 15px; line-height: 1.6; text-align: left;">
+    If you have any questions or need help setting things up, just reply to this email. We're always here to support you.
+</p>
+<p style="box-sizing: border-box; color: #475569; font-size: 15px; line-height: 1.6; margin-bottom: 0; text-align: left;">
+    Cheers,<br />
+    The {{ .AppName }} Team
+</p>
+{{ end }}

@@ -1,0 +1,81 @@
+# rumdl 配置文件
+# 文档: https://github.com/ysuzuki19/rumdl
+
+[global]
+# Markdown 语法方言 (支持 MDX 组件语法)
+flavor = "mdx"
+
+# 自动继承 .gitignore 的忽略规则
+respect-gitignore = true
+
+# 包含检查的文件类型
+include = [
+  "**/*.md",
+  "**/*.mdx",
+]
+
+# 忽略检查的目录与文件路径
+exclude = [
+  ".git/**",
+  ".idea/**",
+  ".vscode/**",
+  ".cache/**",
+  "build/**",
+  "tmp/**",
+  "vendor/**",
+  "storage/**",
+  "node_modules/**",
+  ".next/**",
+]
+
+# 禁用的规则列表
+disable = [
+  # MD010/no-hard-tabs: 允许在 Markdown 文件中使用制表符 (Tab)
+  # 部分编辑器或代码生成工具会使用制表符，禁用此规则可提高兼容性
+  "MD010",
+
+  # MD013/line-length: 禁用单行字数限制 (默认 80 字)
+  # 现代编辑器普遍支持自动换行 (soft wrap)，限制单行长度在协作时容易因换行导致冲突
+  "MD013",
+
+  # MD029/ol-prefix: 允许有序列表序号不强制为 1, 2, 3... 顺序或全为 1
+  # 支持全 1 风格（1. 1. 1.）或自然递增风格（1. 2. 3.），便于后续列表项的插入和重排
+  "MD029",
+
+  # MD031/blanks-around-fenced-code: 允许代码块上下没有空行
+  # 允许不带空行以适应紧凑的书写风格
+  "MD031",
+
+  # MD032/blanks-around-lists: 允许列表前后没有空行
+  # 允许在紧凑的段落中直接书写列表，避免不必要的垂直空白
+  "MD032",
+
+  # MD033/no-inline-html: 允许在 Markdown 中混合编写原生 HTML
+  # 在编写复杂文档（如居中对齐、锚点定位、details 折叠面板等）时需要使用原生 HTML 标签
+  "MD033",
+
+  # MD034/no-bare-urls: 允许直接写入裸 URL 链接 (例如 https://example.com)
+  # 禁用此规则可使得直接粘贴链接更加方便
+  "MD034",
+
+  # MD040/fenced-code-language: 允许代码块不指定语言
+  # 编写简单演示或无需语法高亮的文本块时，不强求指定语言类别
+  "MD040",
+
+  # MD041/first-line-h1: 允许 Markdown 文件第一行不是一级标题 (H1)
+  # 很多文档（例如带有 YAML Front Matter 头部元数据的文件）第一行可能不是 H1
+  "MD041",
+
+  # MD047/single-trailing-newline: 允许文件结尾没有或有多行空行
+  # 不强制要求文件末尾必须有且仅有单行换行符，减少 Git 提交时的格式冲突
+  "MD047",
+
+  # MD060/list-indent: 列表缩进检查
+  # 禁用此规则，以防某些编辑器缩进风格不一致导致的校验失败
+  "MD060",
+]
+
+# MD024/no-duplicate-heading: 允许在不同父级标题下拥有相同的子标题
+# 仅在同一个父级标题的直接子标题间检查重复，这在文档结构中很常见
+[MD024]
+siblings_only = true

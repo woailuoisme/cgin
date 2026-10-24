@@ -1,0 +1,63 @@
+{
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp@latest"
+      ]
+    },
+    "exa": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.exa.ai/mcp"
+      ]
+    },
+    "ast-grep": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/ast-grep/ast-grep-mcp",
+        "ast-grep-server"
+      ]
+    },
+    "codegraph": {
+      "command": "codegraph",
+      "args": [
+        "serve",
+        "--mcp"
+      ]
+    },
+    "godig": {
+      "command": "godig",
+      "args": [
+        "mcp"
+      ]
+    },
+    "gopls": {
+      "command": "mise",
+      "args": [
+        "x",
+        "--",
+        "gopls",
+        "mcp"
+      ]
+    },
+    "postgres": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "DB_URL=$(grep -E '^DB_URL=' .env | head -n1 | cut -d= -f2- | tr -d '\"' | tr -d \"'\"); exec npx -y @modelcontextprotocol/server-postgres \"${DB_URL:-postgres://postgres:secret@127.0.0.1:5432/bgin?sslmode=disable}\""
+      ]
+    },
+    "dbx": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@dbx-app/mcp-server"
+      ]
+    }
+  }
+}

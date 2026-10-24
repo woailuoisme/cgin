@@ -1,0 +1,86 @@
+# 多环境部署配置
+# 文档: https://docs.cnb.cool/zh/build/deploy.html
+# 项目: bgin | 端口: 3300 | 健康检查: /healthz
+#
+# 流程：推送 v* 标签 → .cnb.yml 的 tag_push 构建镜像 → 分支页「部署」按钮 → 执行下方环境
+
+environments:
+  # ── 预发布环境 ──────────────────────────────────────────────────────
+  - name: staging
+    description: Staging environment
+    env:
+      name: staging
+      tag_name: $CNB_BRANCH
+    deploy:
+      - name: Deploy to staging
+        description: "Pull image and restart staging services"
+        script: |
+          set -euo pipefail
+
+          REGISTRY="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"
+          VERSION="${CNB_BRANCH##*/}"
+          IMAGE="${REGISTRY}:${VERSION}"
+
+          echo ">>> Deploying staging: ${IMAGE}"
+
+          # === 方式一：SSH 到目标服务器 ===
+          # 替换为你的预发布服务器地址
+          # ssh deploy@staging.your-domain.com "
+          #   docker pull ${IMAGE}
+          #   docker compose -f /opt/bgin/docker-compose.yml up -d
+          # "
+
+          echo ">>> Fill in the deploy script based on your infrastructure"
+
+      - name: Post-deploy verification
+        description: "Confirm health check endpoint"
+        script: |
+          # 等待服务就绪后验证 /healthz（端口 3300）
+          # for i in {1..30}; do
+          #   curl -sf http://staging.your-domain.com:3300/healthz && break
+          #   sleep 2
+          # done
+
+  # ── 生产环境 ────────────────────────────────────────────────────────
+  - name: production
+    description: Production environment
+    env:
+      name: production
+      tag_name: $CNB_BRANCH
+    require:
+      - environmentName: staging       # 预发布需先部署成功
+      - approver:                       # 需 Owner/Master 审批
+          roles:
+            - owner
+            - master
+        title: "Production approval: deploy ${CNB_BRANCH} to production?"
+    permissions:
+      roles:
+        - owner
+        - master
+    deploy:
+      - name: Deploy to production
+        description: "Pull image and rolling-update production services"
+        script: |
+          set -euo pipefail
+
+          REGISTRY="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"
+          VERSION="${CNB_BRANCH##*/}"
+          IMAGE="${REGISTRY}:${VERSION}"
+
+          echo ">>> Deploying production: ${IMAGE}"
+
+          # === 方式一：SSH 到生产服务器 ===
+          # 替换为你的生产服务器地址
+          # ssh deploy@prod.your-domain.com "
+          #   docker pull ${IMAGE}
+          #   docker compose -f /opt/bgin/docker-compose.yml up -d
+          # "
+
+          echo ">>> Fill in the deploy script based on your infrastructure"
+
+      - name: Post-deploy verification
+        description: "Confirm health check endpoint"
+        script: |
+          # 生产验证逻辑（端口 3300）
+          # curl -sf http://prod.your-domain.com:3300/healthz || exit 1

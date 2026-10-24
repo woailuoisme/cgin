@@ -1,0 +1,24 @@
+# English invoice/settlement template copy. Keys must match the Chinese bundle exactly;
+# a missing key falls back to the default language.
+# Placeholders use the {{.Key}} form and are substituted by i18n.Translator.Invoice.
+title = 'Electronic Invoice / Statement'
+number = 'Reference No.: {{.Number}}'
+
+seller = 'Seller'
+buyer = 'Buyer'
+tax_id = 'Tax ID'
+issue_date = 'Issue Date'
+due_date = 'Due Date'
+
+item_description = 'Item & Service Description'
+quantity = 'Quantity'
+unit_price = 'Unit Price'
+amount = 'Amount'
+
+subtotal = 'Subtotal'
+tax = 'VAT'
+total_due = 'Total Due'
+
+payment_qr = 'Scan to pay:'
+notes = 'Notes: {{.Notes}}'
+signature = 'Authorized Stamp'

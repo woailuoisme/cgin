@@ -1,0 +1,30 @@
+x-app: &app
+  build: .
+  image: bgin:local
+  pull_policy: build
+  restart: unless-stopped
+  env_file:
+    - path: .env.production
+  volumes:
+    - ./storage:/app/storage
+
+services:
+  api:
+    <<: *app
+    container_name: bgin-api
+    command: ["serve"]
+    ports:
+      - "${APP_PORT:-3300}:3300"
+
+  worker:
+    <<: *app
+    container_name: bgin-worker
+    command: ["queue:work"]
+    depends_on:
+      - api
+
+networks:
+  default:
+    name: backend
+    external: true
+

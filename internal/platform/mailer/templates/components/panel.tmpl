@@ -1,0 +1,11 @@
+{{ define "panel" }}
+<table class="panel" width="100%" cellpadding="0" cellspacing="0" role="presentation" style="box-sizing: border-box; margin: 25px 0; width: 100%;">
+    <tr>
+        <td style="box-sizing: border-box; background-color: {{ if .ThemeBg }}{{ .ThemeBg }}{{ else }}#f8fafc{{ end }}; border-left: 4px solid {{ if eq .Color "success" }}{{ if .ThemeSuccess }}{{ .ThemeSuccess }}{{ else }}#10b981{{ end }}{{ else if eq .Color "danger" }}{{ if .ThemeDanger }}{{ .ThemeDanger }}{{ else }}#f43f5e{{ end }}{{ else if eq .Color "warning" }}{{ if .ThemeWarning }}{{ .ThemeWarning }}{{ else }}#f59e0b{{ end }}{{ else }}{{ if .ThemePrimary }}{{ .ThemePrimary }}{{ else }}#4f46e5{{ end }}{{ end }}; padding: 16px; border-radius: 0 6px 6px 0;">
+            <p style="box-sizing: border-box; color: #475569; font-size: 14px; line-height: 1.6; margin: 0;">
+                {{ .Text }}
+            </p>
+        </td>
+    </tr>
+</table>
+{{ end }}

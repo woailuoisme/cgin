@@ -1,0 +1,69 @@
+# .editorconfig
+# https://editorconfig.org
+
+# 顶级配置文件，停止向上寻找
+root = true
+
+# ------------------------------------------
+# 全局默认
+# ------------------------------------------
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# ------------------------------------------
+# Go：必须用 Tab
+#
+# 这里不能用空格：gofmt/goimports 强制 Tab 缩进，编辑器若按空格写入，
+# 每次保存都会被格式化器整篇重写，产生大量无意义 diff。
+# indent_size 只影响 Tab 的显示宽度，与 .vscode/settings.json 的 tabSize 保持一致。
+# ------------------------------------------
+[*.go]
+indent_style = tab
+indent_size = 4
+
+[*.{mod,sum}]
+indent_style = tab
+
+# ------------------------------------------
+# 配置与数据文件
+# ------------------------------------------
+[*.{json,jsonc,yaml,yml,toml,html,css,js,ts,sql}]
+indent_style = space
+indent_size = 2
+
+[*.{csv,conf}]
+indent_style = space
+indent_size = 2
+
+# ------------------------------------------
+# Shell 脚本
+# ------------------------------------------
+[*.{sh,bash,zsh}]
+indent_style = space
+indent_size = 2
+
+# ------------------------------------------
+# Markdown：保留行尾双空格的换行语义
+# ------------------------------------------
+[*.md]
+trim_trailing_whitespace = false
+
+# ------------------------------------------
+# 必须使用 Tab 的格式
+# ------------------------------------------
+[Makefile]
+indent_style = tab
+
+[justfile]
+indent_style = tab
+
+# ------------------------------------------
+# Windows 平台脚本
+# ------------------------------------------
+[*.{bat,cmd,ps1}]
+end_of_line = crlf

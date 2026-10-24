@@ -1,0 +1,85 @@
+# ==============================================================================
+# OpenTelemetry Collector Contrib -> OpenObserve 生产级最佳实践配置
+# ==============================================================================
+# 本配置适用于 otel/opentelemetry-collector-contrib (v0.110+) 容器。
+# 数据流向：
+#   Gin Web API -> (OTLP gRPC :4317 / HTTP :4318) -> OTel Collector
+#   -> [内存保护 memory_limiter] -> [环境/主机信息富化 resource_detection] -> [批聚合 batch]
+#   -> (OTLP/HTTP + 5000 缓冲队列 + 失败指数重试) -> OpenObserve (:5080)
+# ==============================================================================
+
+extensions:
+  # 健康探针端点（供容器编排存活与就绪检查使用，如 http://localhost:13133）
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  # 统一统一遥测摄取入口：gRPC 4317（推荐，SDK 单连接多路复用）+ HTTP 4318（浏览器/受限环境）
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # 【首位拦截】内存熔断保护：根据容器配额（建议 512MB）严格限制内存，杜绝突发洪峰导致 OOM 崩溃
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 384
+    spike_limit_mib: 128
+
+  # 资源维度富化：自动提取宿主/容器系统环境信息（如 host.name / os.type），便于在看板中按实例聚合筛选
+  resource_detection:
+    detectors: [env, system]
+    timeout: 2s
+
+  # 批量缓冲聚合：降低网络往返 I/O 损耗与 OpenObserve 写入压力（攒满 1024 条或满 5 秒即刻刷盘）
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+
+exporters:
+  otlp_http/openobserve:
+    # OpenObserve 标准 OTLP HTTP 端点约定：/api/<组织名>，导出器自动追加 /v1/traces|metrics|logs
+    endpoint: http://openobserve:5080/api/default
+    headers:
+      # "Basic " + base64("账号:密码")，由环境变量注入，避免密码明文硬编码
+      Authorization: ${env:O2_AUTH}
+      stream-name: default
+    # 【关键韧性保障】发送缓冲区队列 + 重试：OpenObserve 短暂抖动、重启或维护期间本地排队，不丢监控数据
+    sending_queue:
+      enabled: true
+      queue_size: 5000
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 5m
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: info
+    # Collector 自身性能指标暴露（供 Prometheus / vmagent 内部抓取 :8888 监控网关水位）
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource_detection, batch]
+      exporters: [otlp_http/openobserve]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource_detection, batch]
+      exporters: [otlp_http/openobserve]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource_detection, batch]
+      exporters: [otlp_http/openobserve]

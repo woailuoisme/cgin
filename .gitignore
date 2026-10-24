@@ -1,0 +1,164 @@
+# ==========================================
+# Go bgin Project - .gitignore
+# ==========================================
+
+# ------------------------------------------
+# Binaries & Execution
+# ------------------------------------------
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+debug
+debug.test
+__debug_bin
+/bin/
+/bgin
+/bgin-cli
+
+# ------------------------------------------
+# OS Generated Files
+# ------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# ------------------------------------------
+# IDEs, Editors & Tooling
+# ------------------------------------------
+.idea/
+*.swp
+*.swo
+*~
+*.iml
+.project
+.settings/
+
+# ------------------------------------------
+# Environment & Secrets (SECURITY)
+# ------------------------------------------
+.env
+.env.*
+.env*
+!.env.example
+
+secrets.ini
+helm/**/secrets.*.yaml
+!helm/**/secrets.example.yaml
+!helm/**/secrets.*.enc.yaml
+*.pem
+*.key
+*.cert
+*.crt
+
+# ------------------------------------------
+# Dependencies & Workspaces
+# ------------------------------------------
+/vendor/
+go.work
+go.work.sum
+
+# ------------------------------------------
+# Logs
+# ------------------------------------------
+*.log
+
+# ------------------------------------------
+# Databases
+# ------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite3-journal
+
+# ------------------------------------------
+# Caches & Temporary Files
+# ------------------------------------------
+/tmp/
+.temp/
+.cache/
+.gocache/
+.gopath/
+.go/
+.golangci-lint-cache/
+
+# ------------------------------------------
+# Build & Distribution Outputs
+# ------------------------------------------
+/dist/
+/build/
+
+# ------------------------------------------
+# Testing & Coverage
+# ------------------------------------------
+coverage.txt
+coverage.html
+coverage.out
+coverage.xml
+/coverage/
+/test-results/
+/.test-results/
+*.prof
+*.pprof
+*.cpu
+*.mem
+
+# ------------------------------------------
+# Merge & Patch Leftovers
+# ------------------------------------------
+*.orig
+*.rej
+
+# ------------------------------------------
+# Infrastructure & Deployment
+# ------------------------------------------
+*.tfstate
+*.tfstate.*
+.terraform/
+*.kubeconfig
+helm/dist/
+helm/**/charts/*.tgz
+
+# ------------------------------------------
+# Local Development
+# ------------------------------------------
+.local/
+/scratch/
+.mise.local.toml
+
+# ------------------------------------------
+# AI & Agent Tools
+# ------------------------------------------
+.claude/
+.gemini/
+.trae/
+.kiro/
+.cursor/
+.antigravitycli/
+.specify/
+.agent/
+.agents/skills/
+specs/
+.code-review-graph/
+.codegraph/
+.rtk/
+.rumdl_cache/
+skills-lock.json
+.codebuddy
+.workbuddy
+.workbuddy-ai
+
+# ------------------------------------------
+# Docs: 只跟踪 ADR，其余不入库
+# 注意：这里不能再出现 `docs/adr` 之类的规则，否则会把上面的例外重新忽略掉。
+# ------------------------------------------
+/docs/*
+!/docs/adr/

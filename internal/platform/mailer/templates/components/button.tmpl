@@ -1,0 +1,17 @@
+{{ define "button" }}
+<table width="100%" border="0" cellpadding="0" cellspacing="0" role="presentation" style="box-sizing: border-box; margin: 25px 0; text-align: center;">
+    <tr>
+        <td align="center" style="box-sizing: border-box;">
+            <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="box-sizing: border-box;">
+                <tr>
+                    <td style="box-sizing: border-box; border-radius: 6px; background-color: {{ if eq .Color "success" }}{{ if .ThemeSuccess }}{{ .ThemeSuccess }}{{ else }}#10b981{{ end }}{{ else if eq .Color "danger" }}{{ if .ThemeDanger }}{{ .ThemeDanger }}{{ else }}#f43f5e{{ end }}{{ else }}{{ if .ThemePrimary }}{{ .ThemePrimary }}{{ else }}#4f46e5{{ end }}{{ end }};">
+                        <a href="{{ .Url }}" target="_blank" rel="noopener noreferrer" style="box-sizing: border-box; border: 1px solid {{ if eq .Color "success" }}{{ if .ThemeSuccess }}{{ .ThemeSuccess }}{{ else }}#10b981{{ end }}{{ else if eq .Color "danger" }}{{ if .ThemeDanger }}{{ .ThemeDanger }}{{ else }}#f43f5e{{ end }}{{ else }}{{ if .ThemePrimary }}{{ .ThemePrimary }}{{ else }}#4f46e5{{ end }}{{ end }}; border-radius: 6px; color: #ffffff; display: inline-block; font-size: 14px; font-weight: 600; padding: 10px 24px; text-decoration: none; -webkit-text-size-adjust: none;">
+                            {{ .Text }}
+                        </a>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+{{ end }}

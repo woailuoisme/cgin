@@ -1,0 +1,64 @@
+{
+  // ==========================================
+  // 编辑器与文件管理优化 (性能与搜索加速)
+  // ==========================================
+  "git.ignoreLimitWarning": true,
+  "search.useIgnoreFiles": true,
+  "files.exclude": {
+    "**/.git": true,
+    "**/.cache": true,
+    "**/tmp": true,
+    "**/coverage.out": true
+  },
+
+  // ==========================================
+  // Go 语言特化配置 (格式化、缩进与导包)
+  // ==========================================
+  "[go]": {
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    },
+    "editor.suggest.snippetsPreventQuickSuggestions": false,
+    "editor.tabSize": 4,
+    "editor.insertSpaces": false
+  },
+  "[gotmpl]": {
+    "editor.tabSize": 4,
+    "editor.insertSpaces": false
+  },
+
+  // ==========================================
+  // 代码诊断与 Linter 配置 (golangci-lint 联动)
+  // ==========================================
+  "go.lintTool": "golangci-lint",
+  "go.lintOnSave": "package",
+  "go.lintFlags": [
+    "--fast"
+  ],
+
+  // ==========================================
+  // 构建标签与语言服务器 (gopls 深度静态分析)
+  // ==========================================
+  "go.buildTags": "integration",
+  "gopls": {
+    "build.buildFlags": [
+      "-tags=integration"
+    ],
+    "formatting.gofumpt": true,
+    "ui.semanticTokens": true,
+    "ui.completion.usePlaceholders": true,
+    "ui.diagnostic.staticcheck": true,
+    "ui.diagnostic.analyses": {
+      "fieldalignment": false, // 禁用结构体内存对齐警告，避免常规开发繁琐调整
+      "shadow": true,         // 检测变量覆盖/影子变量(shadowing)隐患
+      "nilness": true,        // 检测可能的空指针解引用
+      "modernize": true,      // 提示现代 Go 特性与最佳惯用法
+      "unusedparams": true,   // 标记未使用的函数参数
+      "unusedwrite": true,    // 标记未使用的写操作
+      "useany": true,         // 建议使用 any 代替 interface{}
+      "ST1000": false,        // 禁用强制每个包必须提供包注释检查 (避免大量内部子包报错)
+      "SA4006": false         // 禁用未使用赋值检测 (消除 ORM 生成代码中 AfterQueryHook 的 ctx 重新赋值警告)
+    }
+  }
+}

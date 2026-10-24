@@ -1,0 +1,32 @@
+# Air 热重载配置 (对应 just dev)
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/api ./cmd/api"
+  entrypoint = ["./tmp/api", "serve"]
+  delay = 300
+  stop_on_error = true
+  kill_delay = "3s"
+
+  # 监听 Go 源码、TOML 配置与 Casbin 权限规则文件
+  include_ext = ["go", "toml", "csv", "conf"]
+
+  # 排除非运行态与生成物目录
+  exclude_dir = [
+    "bin", "tmp", "vendor", "node_modules",
+    "tests", "apidocs", "docs", "migrations",
+    ".git", ".code-review-graph", ".codegraph",
+  ]
+  exclude_regex = ["_test\\.go$"]
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true
+
+[screen]
+  clear_on_rebuild = false
+  keep_scroll = true

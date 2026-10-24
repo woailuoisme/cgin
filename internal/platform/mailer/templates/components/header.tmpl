@@ -1,0 +1,9 @@
+{{ define "header" }}
+<a href="{{ if .AppUrl }}{{ .AppUrl }}{{ else }}#{{ end }}" style="box-sizing: border-box; color: {{ if .ThemePrimary }}{{ .ThemePrimary }}{{ else }}#0f172a{{ end }}; font-size: 20px; font-weight: 800; text-decoration: none; display: inline-block; letter-spacing: -0.5px;">
+    {{ if .AppName }}
+        {{ .AppName }}
+    {{ else }}
+        Go Fiber App
+    {{ end }}
+</a>
+{{ end }}

@@ -1,0 +1,156 @@
+package {{ .PackageName }}
+
+import (
+	"github.com/gin-gonic/gin"
+
+	"bgin/internal/platform/response"
+)
+
+// Handler 负责处理 {{ .ChineseName }} 相关的 HTTP 交互。
+type Handler struct {
+	service Service
+}
+
+// NewHandler 实例化 {{ .ChineseName }} 控制器。
+func NewHandler(service Service) *Handler {
+	return &Handler{service: service}
+}
+
+// List 获取{{ .ChineseName }}分页列表
+// @Summary      获取{{ .ChineseName }}列表
+// @Description  根据分页、排序和过滤条件查询{{ .ChineseName }}列表数据。
+// @Tags         {{ .TagName }}
+// @Accept       json
+// @Produce      json
+// @Param        query query List{{ .PascalName }}QueryParams false "分页查询条件"
+// @Success      200 {object} {{ .PascalName }}PageResource "查询成功并返回分页列表"
+// @x-order      1
+// @Router       {{ .RoutePath }} [get]
+func (h *Handler) List(c *gin.Context) {
+	var query List{{ .PascalName }}QueryParams
+	if err := c.ShouldBindQuery(&query); err != nil {
+		_ = c.Error(err)
+		return
+	}
+	query.Normalize()
+
+	items, meta, err := h.service.List(c.Request.Context(), query)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	response.Paginated(c, items, meta)
+}
+
+// Create 创建{{ .ChineseName }}
+// @Summary      创建{{ .ChineseName }}
+// @Description  提交载荷创建新的{{ .ChineseName }}实体。
+// @Tags         {{ .TagName }}
+// @Accept       json
+// @Produce      json
+// @Param        payload body Create{{ .PascalName }}Body true "创建数据载荷"
+// @Success      201 {object} {{ .PascalName }}Resource "创建成功"
+// @x-order      2
+// @Router       {{ .RoutePath }} [post]
+func (h *Handler) Create(c *gin.Context) {
+	var body Create{{ .PascalName }}Body
+	if err := c.ShouldBindJSON(&body); err != nil {
+		_ = c.Error(err)
+		return
+	}
+	body.Normalize()
+
+	res, err := h.service.Create(c.Request.Context(), body)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	response.Created(c, res)
+}
+
+// GetByID 获取{{ .ChineseName }}详情
+// @Summary      获取{{ .ChineseName }}详情
+// @Description  根据指定 ID 获取对应{{ .ChineseName }}的完整详情信息。
+// @Tags         {{ .TagName }}
+// @Accept       json
+// @Produce      json
+// @Param        id path string true "{{ .ChineseName }} ID"
+// @Success      200 {object} {{ .PascalName }}Resource "获取成功"
+// @x-order      3
+// @Router       {{ .RoutePath }}/{id} [get]
+func (h *Handler) GetByID(c *gin.Context) {
+	var pathParams {{ .PascalName }}PathParams
+	if err := c.ShouldBindUri(&pathParams); err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	res, err := h.service.GetByID(c.Request.Context(), pathParams.ID)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	response.OK(c, res)
+}
+
+// Update 更新{{ .ChineseName }}
+// @Summary      更新{{ .ChineseName }}
+// @Description  根据指定 ID 局部修改{{ .ChineseName }}属性字段。
+// @Tags         {{ .TagName }}
+// @Accept       json
+// @Produce      json
+// @Param        id path string true "{{ .ChineseName }} ID"
+// @Param        payload body Update{{ .PascalName }}Body true "更新字段载荷"
+// @Success      200 {object} {{ .PascalName }}Resource "更新成功"
+// @x-order      4
+// @Router       {{ .RoutePath }}/{id} [patch]
+func (h *Handler) Update(c *gin.Context) {
+	var pathParams {{ .PascalName }}PathParams
+	if err := c.ShouldBindUri(&pathParams); err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	var body Update{{ .PascalName }}Body
+	if err := c.ShouldBindJSON(&body); err != nil {
+		_ = c.Error(err)
+		return
+	}
+	body.Normalize()
+
+	res, err := h.service.Update(c.Request.Context(), pathParams.ID, body)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	response.OK(c, res)
+}
+
+// Delete 删除{{ .ChineseName }}
+// @Summary      删除{{ .ChineseName }}
+// @Description  根据指定 ID 物理或逻辑移除对应的{{ .ChineseName }}记录。
+// @Tags         {{ .TagName }}
+// @Accept       json
+// @Produce      json
+// @Param        id path string true "{{ .ChineseName }} ID"
+// @Success      204 "删除成功无内容返回"
+// @x-order      5
+// @Router       {{ .RoutePath }}/{id} [delete]
+func (h *Handler) Delete(c *gin.Context) {
+	var pathParams {{ .PascalName }}PathParams
+	if err := c.ShouldBindUri(&pathParams); err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	if err := h.service.Delete(c.Request.Context(), pathParams.ID); err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	response.NoContent(c)
+}

@@ -1,0 +1,32 @@
+package {{ .PackageName }}
+
+import (
+	"github.com/gin-gonic/gin"
+
+	"bgin/internal/middleware"
+	"bgin/internal/platform/authorization"
+)
+
+{{ if .IsAdmin }}
+// RegisterAdminRoutes 注册管理端点 ({{ .RoutePath }})。
+func RegisterAdminRoutes(router *gin.RouterGroup, handler *Handler, mw *middleware.Middleware) {
+	group := router.Group("{{ .RoutePath }}", mw.Throttle(middleware.TierAuthenticated), mw.Auth())
+
+	group.GET("", mw.Can(authorization.Resource("{{ .PluralSnake }}"), authorization.ActionList), handler.List)
+	group.POST("", mw.Can(authorization.Resource("{{ .PluralSnake }}"), authorization.ActionCreate), handler.Create)
+	group.GET("/:id", mw.Can(authorization.Resource("{{ .PluralSnake }}"), authorization.ActionRead), handler.GetByID)
+	group.PATCH("/:id", mw.Can(authorization.Resource("{{ .PluralSnake }}"), authorization.ActionUpdate), handler.Update)
+	group.DELETE("/:id", mw.Can(authorization.Resource("{{ .PluralSnake }}"), authorization.ActionDelete), handler.Delete)
+}
+{{ else }}
+// RegisterRoutes 注册业务路由端点 ({{ .RoutePath }})。
+func RegisterRoutes(router *gin.RouterGroup, handler *Handler, mw *middleware.Middleware) {
+	group := router.Group("{{ .RoutePath }}", mw.Throttle(middleware.TierAuthenticated), mw.Auth())
+
+	group.GET("", handler.List)
+	group.POST("", handler.Create)
+	group.GET("/:id", handler.GetByID)
+	group.PATCH("/:id", handler.Update)
+	group.DELETE("/:id", handler.Delete)
+}
+{{ end }}

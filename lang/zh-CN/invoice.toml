@@ -1,0 +1,23 @@
+# 中文发票/结算凭据模板文案。键必须与英文版完全一致，缺键会回退默认语言。
+# 占位符用 {{.Key}} 形式，由 i18n.Translator.Invoice 替换。
+title = '电子发票 / 结算凭据'
+number = '凭据编号: {{.Number}}'
+
+seller = '开票方'
+buyer = '购买方'
+tax_id = '纳税人识别号'
+issue_date = '开票日期'
+due_date = '到期日期'
+
+item_description = '项目与服务描述'
+quantity = '数量'
+unit_price = '单价'
+amount = '金额小计'
+
+subtotal = '明细总计'
+tax = '增值税税额'
+total_due = '应付总额'
+
+payment_qr = '快速扫码核销 / 支付:'
+notes = '备注说明: {{.Notes}}'
+signature = '财务专用章'

@@ -1,0 +1,8 @@
+# 手动触发按钮 — 显示在分支详情页
+# 文档: https://docs.cnb.cool/zh/build/web-trigger.html
+
+branch:
+  - buttons:
+      - name: Docker build (Alpine amd64)
+        description: Build and push Alpine image (linux/amd64 only)
+        event: web_trigger_amd64

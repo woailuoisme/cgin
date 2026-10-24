@@ -1,0 +1,136 @@
+package {{ .PackageName }}
+
+import (
+	"strings"
+	"time"
+
+	"bgin/internal/platform/response"
+	"bgin/internal/database/models"
+)
+
+// {{ .PascalName }}PathParams 路径中的{{ .ChineseName }}唯一标识。
+type {{ .PascalName }}PathParams struct {
+	// 记录唯一标识符 (UUID)
+	ID string `uri:"id" json:"id" example:"019550b7-3b2d-7041-8c43-26154388e36e" validate:"required"`
+}
+
+// List{{ .PascalName }}QueryParams {{ .ChineseName }}分页列表查询参数。
+type List{{ .PascalName }}QueryParams struct {
+	// 当前页码 (默认: 1)
+	Page int `form:"page" json:"page" example:"1" validate:"omitempty,min=1"`
+	// 每页条数 (默认: 20, 最大: 100)
+	PageSize int `form:"pageSize" json:"pageSize" example:"20" validate:"omitempty,min=1,max=100"`
+	// 关键字搜索
+	Search string `form:"search" json:"search" example:"{{ .PascalName }}" validate:"omitempty,max=100"`
+	// 状态过滤 (active: 正常, inactive: 停用)
+	Status string `form:"status" json:"status" example:"active" enums:"active,inactive" validate:"omitempty,oneof=active inactive"`
+	// 排序规则 (字段名前加 - 表示倒序，如: -createdAt, createdAt)
+	Sort string `form:"sort" json:"sort" example:"-createdAt" validate:"omitempty,max=50"`
+}
+
+// Normalize 规范化并清洗查询参数。
+func (q *List{{ .PascalName }}QueryParams) Normalize() {
+	if q.Page <= 0 {
+		q.Page = 1
+	}
+	if q.PageSize <= 0 {
+		q.PageSize = 20
+	}
+	q.Search = strings.TrimSpace(q.Search)
+	q.Status = strings.TrimSpace(q.Status)
+	q.Sort = strings.TrimSpace(q.Sort)
+}
+
+// Create{{ .PascalName }}Body 创建{{ .ChineseName }}请求载荷。
+type Create{{ .PascalName }}Body struct {
+	// 业务名称
+	Name string `json:"name" example:"示例名称" validate:"required,min=1,max=100"`
+	// 详细描述
+	Description string `json:"description" example:"这是详细的业务描述" validate:"omitempty,max=500"`
+	// 状态 (active: 正常, inactive: 停用)
+	Status string `json:"status" example:"active" enums:"active,inactive" validate:"omitempty,oneof=active inactive"`
+}
+
+// Normalize 规范化创建入参。
+func (b *Create{{ .PascalName }}Body) Normalize() {
+	b.Name = strings.TrimSpace(b.Name)
+	b.Description = strings.TrimSpace(b.Description)
+	if b.Status == "" {
+		b.Status = "active"
+	}
+}
+
+// Update{{ .PascalName }}Body 更新{{ .ChineseName }}请求载荷。
+type Update{{ .PascalName }}Body struct {
+	// 业务名称
+	Name *string `json:"name" example:"更新后的名称" validate:"omitempty,min=1,max=100"`
+	// 详细描述
+	Description *string `json:"description" example:"更新后的业务描述" validate:"omitempty,max=500"`
+	// 状态 (active: 正常, inactive: 停用)
+	Status *string `json:"status" example:"inactive" enums:"active,inactive" validate:"omitempty,oneof=active inactive"`
+}
+
+// Normalize 规范化更新入参。
+func (b *Update{{ .PascalName }}Body) Normalize() {
+	if b.Name != nil {
+		trimmed := strings.TrimSpace(*b.Name)
+		b.Name = &trimmed
+	}
+	if b.Description != nil {
+		trimmed := strings.TrimSpace(*b.Description)
+		b.Description = &trimmed
+	}
+	if b.Status != nil {
+		trimmed := strings.TrimSpace(*b.Status)
+		b.Status = &trimmed
+	}
+}
+
+// {{ .PascalName }}Resource {{ .ChineseName }}对外暴露的视图响应资源。
+type {{ .PascalName }}Resource struct {
+	// 唯一标识符 (UUID)
+	ID string `json:"id" example:"019550b7-3b2d-7041-8c43-26154388e36e"`
+	// 业务名称
+	Name string `json:"name" example:"示例名称"`
+	// 详细描述
+	Description *string `json:"description,omitempty" example:"业务描述说明"`
+	// 状态 (active: 正常, inactive: 停用)
+	Status string `json:"status" example:"active" enums:"active,inactive"`
+	// 创建时间 (RFC3339 UTC)
+	CreatedAt time.Time `json:"createdAt" example:"2026-01-01T00:00:00Z"`
+	// 更新时间 (RFC3339 UTC)
+	UpdatedAt time.Time `json:"updatedAt" example:"2026-01-01T00:00:00Z"`
+}
+
+// {{ .PascalName }}PageResource {{ .ChineseName }}分页列表响应结构。
+type {{ .PascalName }}PageResource struct {
+	// 数据项列表
+	Items []{{ .PascalName }}Resource `json:"items"`
+	// 分页元数据
+	Meta response.Meta `json:"meta"`
+}
+
+// To{{ .PascalName }}Resource 将数据库实体转换为外部响应资源。
+func To{{ .PascalName }}Resource(entity *models.{{ .PascalName }}) {{ .PascalName }}Resource {
+	if entity == nil {
+		return {{ .PascalName }}Resource{}
+	}
+
+	return {{ .PascalName }}Resource{
+		ID:          entity.ID,
+		Name:        entity.Name,
+		Description: entity.Description,
+		Status:      entity.Status,
+		CreatedAt:   entity.CreatedAt.UTC(),
+		UpdatedAt:   entity.UpdatedAt.UTC(),
+	}
+}
+
+type (
+	IDURI                      = {{ .PascalName }}PathParams
+	List{{ .PascalName }}Query    = List{{ .PascalName }}QueryParams
+	Create{{ .PascalName }}Request = Create{{ .PascalName }}Body
+	Update{{ .PascalName }}Request = Update{{ .PascalName }}Body
+	{{ .PascalName }}Response    = {{ .PascalName }}Resource
+	{{ .PascalName }}Page        = {{ .PascalName }}PageResource
+)

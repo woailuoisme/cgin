@@ -1,0 +1,26 @@
+# 英文邮件模板。<key>_subject / <key>_body 成对使用。
+verify_email_subject = 'Verify your bgin email address'
+verify_email_body = '''Hi {{.Name}},
+
+Your verification code is {{.Code}}.
+
+It expires in {{.TTL}} minutes. If you did not request this, you can ignore this email.
+'''
+
+reset_link_subject = 'Reset your bgin password'
+reset_link_body = '''Hi {{.Name}},
+
+Open the link below to choose a new password:
+
+{{.Link}}
+
+The link expires in {{.TTL}} minutes. If you did not request this, you can ignore this email.
+'''
+
+reset_otp_subject = 'Your bgin password reset code'
+reset_otp_body = '''Hi {{.Name}},
+
+Your password reset code is {{.Code}}.
+
+It expires in {{.TTL}} minutes. If you did not request this, you can ignore this email.
+'''

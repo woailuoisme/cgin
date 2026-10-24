@@ -1,0 +1,8 @@
+{{ define "footer" }}
+<p style="box-sizing: border-box; color: #94a3b8; font-size: 12px; line-height: 1.5; margin: 0; text-align: center;">
+    &copy; {{ if .Year }}{{ .Year }}{{ else }}2026{{ end }} {{ if .AppName }}{{ .AppName }}{{ else }}Go Fiber App{{ end }}. All rights reserved.
+</p>
+<p style="box-sizing: border-box; color: #cbd5e1; font-size: 11px; line-height: 1.5; margin: 8px 0 0 0; text-align: center;">
+    If you have any questions, please contact our support team.
+</p>
+{{ end }}

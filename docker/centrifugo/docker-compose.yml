@@ -1,0 +1,35 @@
+services:
+  centrifugo:
+    image: centrifugo/centrifugo:v6
+    container_name: centrifugo
+    restart: unless-stopped
+    command: ["centrifugo", "-c", "/centrifugo/config.yaml"]
+    volumes:
+      - ./config.yaml:/centrifugo/config.yaml:ro
+    ports:
+      - "${CENTRIFUGO_PORT:-48000}:8000"
+    environment:
+      # 服务端 HTTP API 调用凭据（与 Gin 后端 CENTRIFUGO_API_KEY 一致）
+      CENTRIFUGO_HTTP_API_KEY: "${CENTRIFUGO_API_KEY:-aef5a17a-fdeb-48aa-b2c1-d490c62ff950}"
+      # 客户端连接 Token HMAC 签名密钥（与 Gin 后端 CENTRIFUGO_SECRET 一致）
+      CENTRIFUGO_CLIENT_TOKEN_HMAC_SECRET_KEY: "${CENTRIFUGO_SECRET:-768583f3-7205-4b36-aea3-32ca8dea4914}"
+      # 高性能引擎配置 (对接 Valkey / Redis)
+      CENTRIFUGO_ENGINE_TYPE: "redis"
+      CENTRIFUGO_ENGINE_REDIS_ADDRESS: "${CENTRIFUGO_REDIS_ADDRESS:-redis://:redis_secret@valkey:6379/0}"
+      # 跨域与连接安全
+      CENTRIFUGO_CLIENT_ALLOWED_ORIGINS: '["*"]'
+      CENTRIFUGO_CLIENT_ALLOW_ANONYMOUS_CONNECT_WITHOUT_TOKEN: "false"
+      CENTRIFUGO_LOG_LEVEL: "info"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - default
+
+networks:
+  default:
+    name: backend
+    external: true

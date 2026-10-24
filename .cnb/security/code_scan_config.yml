@@ -1,0 +1,38 @@
+# 代码安全扫描配置
+# 文档: https://docs.cnb.cool/zh/build/configuration.html
+# 项目: bgin (Go Gin Application)
+#
+# 规范: https://docs.cnb.cool/code-security-conf-schema-zh.json
+# 所有扫描能力默认开启，可通过 ignoreFrom 指向 .scanignore 文件来禁用
+
+# 密钥检测
+secrets:
+  scan:
+    paths:
+      - "**"
+    ignoreFrom: ".scanignore"
+  rules:
+    - name: "Ignore fake secrets in test data"
+      when:
+        paths: ["**/tests/**"]
+        severity: ["low"]
+      then:
+        ignore: true
+        reason: "Sample credentials in test fixtures"
+
+# 软件成分分析（依赖漏洞）
+software-composition-analysis:
+  scan:
+    ignoreFrom: ".scanignore"
+
+# 代码分析（TCA）
+tca:
+  scan:
+    paths:
+      - "cmd/**"
+      - "internal/**"
+      - "pkg/**"
+      - "configs/**"
+      - "database/**"
+      - "tests/**"
+    ignoreFrom: ".scanignore"

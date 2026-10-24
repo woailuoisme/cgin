@@ -1,0 +1,23 @@
+[tools]
+# Go 运行时与核心开发
+go = "latest"
+air = "latest"                                     # 热重载工具（API 与 Worker 开发调试）
+golangci-lint = "2"                                # 静态检查与统一代码格式化
+"go:golang.org/x/vuln/cmd/govulncheck" = "latest"  # 官方依赖漏洞安全扫描
+"go:golang.org/x/tools/gopls" = "latest"
+gotestsum = "latest"                               # 测试结果高亮与摘要增强
+swag = "1.16.6"                                    # 钉稳定版本保证 OpenAPI 文档契约一致
+
+# 数据库迁移
+atlas = "latest"                                   # 声明式 schema 迁移管理
+
+# 质量门禁与任务编排
+lefthook = "latest"                                # Git Hooks 管理器（驱动 pre-commit / pre-push）
+actionlint = "latest"                              # GitHub Actions 流程校验
+"npm:concurrently" = "latest"                      # 多任务并发执行（just dev）
+
+[settings]
+npm.package_manager = "bun"
+
+[env]
+_.file = ".env"

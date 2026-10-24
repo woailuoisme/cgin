@@ -1,0 +1,26 @@
+# 中文邮件模板。键必须与英文版完全一致。
+verify_email_subject = '验证你的 bgin 邮箱'
+verify_email_body = '''{{.Name}} 你好，
+
+你的邮箱验证码是 {{.Code}}。
+
+验证码 {{.TTL}} 分钟后失效。若非本人操作，忽略本邮件即可。
+'''
+
+reset_link_subject = '重置你的 bgin 密码'
+reset_link_body = '''{{.Name}} 你好，
+
+点击下面的链接设置新密码：
+
+{{.Link}}
+
+链接 {{.TTL}} 分钟后失效。若非本人操作，忽略本邮件即可。
+'''
+
+reset_otp_subject = '你的 bgin 密码重置验证码'
+reset_otp_body = '''{{.Name}} 你好，
+
+你的密码重置验证码是 {{.Code}}。
+
+验证码 {{.TTL}} 分钟后失效。若非本人操作，忽略本邮件即可。
+'''

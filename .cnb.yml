@@ -1,0 +1,56 @@
+# ── 全局：手动触发 & 标签发布 ────────────────────────────────────────
+# 项目: bgin (Go Gin RESTful Web API)
+# Go 版本: 1.27.3 | 入口: ./cmd/api | 二进制: bgin
+# Dockerfile 位于仓库根，基于 Alpine 极简镜像构建与运行
+# ── main 分支：代码推送与手动触发 ────────────────────────────────────
+main:
+  # 推送 main 自动触发：构建并推送 Alpine (linux/amd64) 镜像与构建缓存
+  push: &docker_build
+    - services:
+        - docker
+      stages:
+        - name: Docker build and push
+          script: |
+            set -euo pipefail
+            REGISTRY="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"
+            docker buildx build \
+              --platform linux/amd64 \
+              --cache-from type=registry,ref=${REGISTRY}:cache \
+              --cache-to type=registry,ref=${REGISTRY}:cache,mode=max,image-manifest=true,oci-mediatypes=true \
+              -t "${REGISTRY}:latest" \
+              --push .
+
+  # 网页手动触发：与 main 推送流水线保持一致
+  web_trigger: *docker_build
+
+# ── 版本发布：仅在推送 v* 标签时执行 ──────────────────────────────────
+$:
+  # 推送 v* 标签：复用 main 缓存，构建并推送版本镜像与 Helm Chart
+  tag_push:
+    - services:
+        - docker
+      stages:
+        - name: Build and push release image
+          script: |
+            set -euo pipefail
+            REGISTRY="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"
+            VERSION="${CNB_BRANCH##*/}"
+            docker buildx build \
+              --platform linux/amd64 \
+              --cache-from type=registry,ref=${REGISTRY}:cache \
+              --cache-to type=registry,ref=${REGISTRY}:cache,mode=max,image-manifest=true,oci-mediatypes=true \
+              -t "${REGISTRY}:${VERSION}" \
+              -t "${REGISTRY}:latest" \
+              --push .
+
+        - name: Package and push Helm chart (OCI)
+          image: alpine/helm:4
+          script: |
+            set -euo pipefail
+            RAW_VERSION="${CNB_BRANCH##*/}"
+            VERSION="${RAW_VERSION#v}"
+            helm registry login -u "${CNB_TOKEN_USER_NAME}" -p "${CNB_TOKEN}" "${CNB_HELM_REGISTRY}"
+            mkdir -p ./helm/dist
+            helm dependency build ./helm/bgin
+            helm package ./helm/bgin --version "${VERSION}" --app-version "${VERSION}" -d ./helm/dist
+            helm push "./helm/dist/bgin-${VERSION}.tgz" "oci://${CNB_HELM_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"

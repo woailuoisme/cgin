@@ -1,0 +1,32 @@
+# bgin - Git Hooks 配置 (Lefthook)
+# 参考文档: https://lefthook.dev/configuration/
+
+# 提交前检查 (Pre-commit)
+pre-commit:
+  piped: true
+  jobs:
+    - name: fmt
+      glob: "*.go"
+      run: just fmt
+      stage_fixed: true
+
+    - name: lint
+      glob: "*.go"
+      run: just lint
+
+    - name: migrate-hash
+      glob: "migrations/*.sql"
+      run: just migrate-hash
+      stage_fixed: true
+
+    - name: docs
+      glob: "{cmd/api/**/*.go,internal/features/**/*.go,internal/shared/**/*.go}"
+      run: just docs
+      stage_fixed: true
+
+# 推送前完整验证 (Pre-push)
+pre-push:
+  jobs:
+    - name: test
+      glob: "*.go"
+      run: just test

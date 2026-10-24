@@ -1,0 +1,7 @@
+# 本目录不是 bgin 的对象存储根目录：bgin 的对象写在 uploads/（见 STORAGE_LOCAL_ROOT）。
+#
+# 下面的 saml/（含 sp.key 私钥）、certs/ 与 ip2region_v4.xdb 是从 lunchbox（fiber-bun /
+# PHP 那套）拷进来的遗留文件，仓库代码零引用，也不参与构建、运行与文档生成。
+# 保留原位，仅此标注；若将来要对外提供静态访问，务必只指向 uploads/，不要指向本目录。
+*
+!.gitignore
