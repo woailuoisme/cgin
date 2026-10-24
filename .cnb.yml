@@ -25,7 +25,7 @@ main:
 
 # ── 版本发布：仅在推送 v* 标签时执行 ──────────────────────────────────
 $:
-  # 推送 v* 标签：复用 main 缓存，构建并推送版本镜像与 Helm Chart
+  # 推送 v* 标签：复用 main 缓存，构建并推送版本镜像
   tag_push:
     - services:
         - docker
@@ -42,15 +42,3 @@ $:
               -t "${REGISTRY}:${VERSION}" \
               -t "${REGISTRY}:latest" \
               --push .
-
-        - name: Package and push Helm chart (OCI)
-          image: alpine/helm:4
-          script: |
-            set -euo pipefail
-            RAW_VERSION="${CNB_BRANCH##*/}"
-            VERSION="${RAW_VERSION#v}"
-            helm registry login -u "${CNB_TOKEN_USER_NAME}" -p "${CNB_TOKEN}" "${CNB_HELM_REGISTRY}"
-            mkdir -p ./helm/dist
-            helm dependency build ./helm/cgin
-            helm package ./helm/cgin --version "${VERSION}" --app-version "${VERSION}" -d ./helm/dist
-            helm push "./helm/dist/cgin-${VERSION}.tgz" "oci://${CNB_HELM_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"
