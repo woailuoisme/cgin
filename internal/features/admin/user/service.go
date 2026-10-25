@@ -1,4 +1,4 @@
-package admin
+package adminuser
 
 import (
 	"context"
@@ -12,18 +12,28 @@ import (
 	"cgin/internal/shared/user"
 )
 
+// userStore 声明后台用户管理所需的用户读写能力（接口由消费方定义）。
+type userStore interface {
+	List(ctx context.Context, filter user.ListFilter, page, pageSize int) ([]sqlc.User, int, error)
+	ListAfter(ctx context.Context, filter user.ListFilter, afterID string, limit int) ([]sqlc.User, error)
+	Get(ctx context.Context, id string) (*sqlc.User, error)
+	Register(ctx context.Context, params user.RegisterParams) (*sqlc.User, error)
+	UpdateAdminUser(ctx context.Context, id string, fields user.AdminFieldSet) (*sqlc.User, error)
+	Delete(ctx context.Context, id string) error
+}
+
 // Deps 声明用户管理服务的外部依赖。
 type Deps struct {
-	UserService *user.Service
+	UserService userStore
 }
 
 // Service 实现后台用户管理用例。
 type Service struct {
-	userService *user.Service
+	userService userStore
 }
 
-// NewService 构造管理服务；UserService 为装配方必须提供的硬依赖。
-func NewService(deps Deps) *Service {
+// MustNewService 构造管理服务；UserService 为装配方必须提供的硬依赖。
+func MustNewService(deps Deps) *Service {
 	if deps.UserService == nil {
 		panic("admin: user service requires a non-nil UserService")
 	}
@@ -44,9 +54,9 @@ func (s *Service) ListUsers(ctx context.Context, query ListUsersQueryParams) ([]
 	return items, response.NewMeta(page, pageSize, total), nil
 }
 
-// ExportUsers 流式导出匹配条件的所有用户数据至目标 io.Writer，采用物理分块拉取杜绝 OOM。
+// ExportUsers 流式导出匹配条件的所有用户数据至目标 io.Writer，采用键集游标分块拉取杜绝 OOM。
 func (s *Service) ExportUsers(ctx context.Context, query ListUsersQueryParams, w io.Writer) error {
-	return writeUsersXLSX(ctx, w, s.userService.ListChunk, query.ToFilter())
+	return writeUsersXLSX(ctx, w, s.userService.ListAfter, query.ToFilter())
 }
 
 // GetUser 返回管理视角的单个用户。

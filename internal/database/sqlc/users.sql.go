@@ -415,7 +415,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 	return items, nil
 }
 
-const listUsersChunk = `-- name: ListUsersChunk :many
+const listUsersAfter = `-- name: ListUsersAfter :many
 SELECT id, name, email, email_verified, image, role, status, banned, two_factor_enabled, username, display_username, phone_number, phone_number_verified, is_anonymous, last_login_method, ban_reason, ban_expires, last_login_at, created_at, updated_at, deleted_at
 FROM "user" AS u
 WHERE u.deleted_at IS NULL
@@ -427,41 +427,27 @@ WHERE u.deleted_at IS NULL
     OR u.email ILIKE $3::text
     OR u.username ILIKE $3::text
   )
-ORDER BY
-  CASE WHEN $4::text = 'createdAt' AND NOT $5::bool THEN u.created_at END ASC NULLS LAST,
-  CASE WHEN $4::text = 'createdAt' AND $5::bool THEN u.created_at END DESC NULLS LAST,
-  CASE WHEN $4::text = 'updatedAt' AND NOT $5::bool THEN u.updated_at END ASC NULLS LAST,
-  CASE WHEN $4::text = 'updatedAt' AND $5::bool THEN u.updated_at END DESC NULLS LAST,
-  CASE WHEN $4::text = 'email' AND NOT $5::bool THEN lower(u.email) END ASC NULLS LAST,
-  CASE WHEN $4::text = 'email' AND $5::bool THEN lower(u.email) END DESC NULLS LAST,
-  CASE WHEN $4::text = 'name' AND NOT $5::bool THEN lower(u.name) END ASC NULLS LAST,
-  CASE WHEN $4::text = 'name' AND $5::bool THEN lower(u.name) END DESC NULLS LAST,
-  CASE WHEN $4::text = 'lastLoginAt' AND NOT $5::bool THEN u.last_login_at END ASC NULLS LAST,
-  CASE WHEN $4::text = 'lastLoginAt' AND $5::bool THEN u.last_login_at END DESC NULLS LAST,
-  u.id DESC
-LIMIT $7::bigint
-OFFSET $6::bigint
+  AND ($4::text = '' OR u.id > $4::text)
+ORDER BY u.id ASC
+LIMIT $5::bigint
 `
 
-type ListUsersChunkParams struct {
-	Status     *string
-	Role       *string
-	Search     *string
-	SortKey    string
-	SortDesc   bool
-	PageOffset int64
-	PageLimit  int64
+type ListUsersAfterParams struct {
+	Status    *string
+	Role      *string
+	Search    *string
+	AfterID   string
+	PageLimit int64
 }
 
-// 流式导出分块：与 ListUsers 共用过滤与排序，不计算总数。
-func (q *Queries) ListUsersChunk(ctx context.Context, arg ListUsersChunkParams) ([]User, error) {
-	rows, err := q.db.Query(ctx, listUsersChunk,
+// 流式导出分块：按主键键集推进，单页成本与已翻页深度无关，避免深 OFFSET 的线性扫描。
+// 导出固定按 id 升序：这是导出的稳定遍历顺序，与列表页的排序参数无关。
+func (q *Queries) ListUsersAfter(ctx context.Context, arg ListUsersAfterParams) ([]User, error) {
+	rows, err := q.db.Query(ctx, listUsersAfter,
 		arg.Status,
 		arg.Role,
 		arg.Search,
-		arg.SortKey,
-		arg.SortDesc,
-		arg.PageOffset,
+		arg.AfterID,
 		arg.PageLimit,
 	)
 	if err != nil {

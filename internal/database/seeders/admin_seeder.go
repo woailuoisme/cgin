@@ -18,10 +18,6 @@ import (
 	"cgin/internal/shared/enums"
 )
 
-func init() {
-	Register(&AdminSeeder{})
-}
-
 // AdminSeeder 负责初始超级管理员账号的幂等播种。
 type AdminSeeder struct {
 	Cfg *config.Config

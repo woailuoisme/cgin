@@ -54,10 +54,18 @@ type AttachConfig struct {
 	Manipulations    map[string]any // 图片处理指令与参数元数据（JSONB）
 	OrderColumn      *int           // 多附件排序号
 	DiskName         string         // 显式指定的存储磁盘名称
+	link             LinkFunc       // 事务内宿主回写回调（非导出，仅由 WithLink 设置）
 }
 
 // AttachOption 定义附加选项函数。
 type AttachOption func(*AttachConfig)
+
+// WithLink 登记事务内的宿主回写回调。
+func WithLink(link LinkFunc) AttachOption {
+	return func(c *AttachConfig) {
+		c.link = link
+	}
+}
 
 // WithName 设置媒体附件的展示名称。
 func WithName(name string) AttachOption {
@@ -120,16 +128,6 @@ func NewManager(
 	}
 }
 
-// Pipeline 返回底层的无状态媒体处理与上传管道。
-func (m *Manager) Pipeline() Pipeline {
-	return m.pipeline
-}
-
-// Image 返回底层 Imgproxy 图像处理器。
-func (m *Manager) Image() Client {
-	return m.image
-}
-
 // Ping 执行底层 imgproxy 连通性探测（满足 ready.Pinger 契约）。
 func (m *Manager) Ping(ctx context.Context) error {
 	if m.image == nil {
@@ -148,18 +146,25 @@ func (m *Manager) Enabled() bool {
 	return m.image != nil && m.image.Enabled()
 }
 
-// Disk 返回底层的存储磁盘驱动句柄。
-func (m *Manager) Disk() storage.Disk {
-	return m.disk
-}
-
-// DB 返回底层数据访问入口。
-func (m *Manager) DB() *database.DB {
-	return m.db
-}
+// LinkFunc 在一个媒体事务内把生成后的访问 URL 回写到宿主模型。
+//
+// 返回错误即让整笔事务回滚：媒体行与宿主字段要么一起成立，要么都不成立。
+// 回调只允许做数据库写入，事务提交后才会执行的回调应改用 database.AfterCommit。
+type LinkFunc func(ctx context.Context, media *database.Media) error
 
 // Attach 将文件或流上传并关联至指定业务模型的多态集合中。
 func (m *Manager) Attach(
+	ctx context.Context,
+	owner Owner,
+	collection string,
+	source any,
+	opts ...AttachOption,
+) (*database.Media, error) {
+	return m.attach(ctx, owner, collection, source, opts...)
+}
+
+// attach 是 Attach 的实现，可选地在同一事务内回写宿主模型。
+func (m *Manager) attach(
 	ctx context.Context,
 	owner Owner,
 	collection string,
@@ -180,6 +185,7 @@ func (m *Manager) Attach(
 			opt(&conf)
 		}
 	}
+	link := conf.link
 
 	// 1. 上传文件到底层存储并获取元数据
 	fileInfo, err := m.uploadSource(ctx, source, collection, conf.DiskName)
@@ -228,6 +234,13 @@ func (m *Manager) Attach(
 			return err
 		}
 		created = row
+
+		// 宿主回写与媒体写入共享同一事务：回写失败时媒体行一并回滚。
+		if link != nil {
+			if err := link(txCtx, &created); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 	if err != nil {
@@ -288,14 +301,25 @@ func (m *Manager) deleteFiles(ctx context.Context, names []string) {
 	}
 }
 
+// ensureDB 报告数据访问入口是否已装配。
+//
+// 除构造函数外，所有访问数据库的方法都先过这道守卫：未装配时返回
+// CodeDatabaseUnavailable，避免把 nil 指针错误暴露成 500 堆栈。
+func (m *Manager) ensureDB() error {
+	if m.db == nil {
+		return oops.Code(errs.CodeDatabaseUnavailable).Errorf("media: database connection is not available")
+	}
+	return nil
+}
+
 // Get 查询指定宿主下某个集合（或全部集合）的所有媒体附件。
 func (m *Manager) Get(ctx context.Context, owner Owner, collection ...string) ([]database.Media, error) {
 	if !owner.valid() {
 		return nil, oops.Code(errs.CodeBadRequest).Errorf("media: owner id cannot be empty")
 	}
 
-	if m.db == nil {
-		return nil, oops.Code(errs.CodeDatabaseUnavailable).Errorf("media: database connection is not available")
+	if err := m.ensureDB(); err != nil {
+		return nil, err
 	}
 
 	params := sqlc.ListMediaByModelParams{
@@ -320,8 +344,8 @@ func (m *Manager) GetFirst(ctx context.Context, owner Owner, collection string) 
 	if !owner.valid() {
 		return nil, oops.Code(errs.CodeBadRequest).Errorf("media: owner id cannot be empty")
 	}
-	if m.db == nil {
-		return nil, oops.Code(errs.CodeDatabaseUnavailable).Errorf("media: database connection is not available")
+	if err := m.ensureDB(); err != nil {
+		return nil, err
 	}
 
 	item, err := m.db.Queries(ctx).GetFirstMedia(ctx, sqlc.GetFirstMediaParams{
@@ -343,8 +367,8 @@ func (m *Manager) FindByUUID(ctx context.Context, uuid string) (*database.Media,
 	if strings.TrimSpace(uuid) == "" {
 		return nil, oops.Code(errs.CodeBadRequest).Errorf("media: uuid cannot be empty")
 	}
-	if m.db == nil {
-		return nil, oops.Code(errs.CodeDatabaseUnavailable).Errorf("media: database connection is not available")
+	if err := m.ensureDB(); err != nil {
+		return nil, err
 	}
 
 	item, err := m.db.Queries(ctx).GetMediaByUUID(ctx, sqlc.GetMediaByUUIDParams{UUID: strings.TrimSpace(uuid)})
@@ -359,8 +383,8 @@ func (m *Manager) FindByUUID(ctx context.Context, uuid string) (*database.Media,
 
 // FindByID 根据自增物理主键 ID 查询媒体附件记录。
 func (m *Manager) FindByID(ctx context.Context, id int64) (*database.Media, error) {
-	if m.db == nil {
-		return nil, oops.Code(errs.CodeDatabaseUnavailable).Errorf("media: database connection is not available")
+	if err := m.ensureDB(); err != nil {
+		return nil, err
 	}
 
 	item, err := m.db.Queries(ctx).GetMediaByID(ctx, sqlc.GetMediaByIDParams{ID: id})
@@ -397,8 +421,8 @@ func (m *Manager) ClearCollection(ctx context.Context, owner Owner, collection s
 	if !owner.valid() {
 		return oops.Code(errs.CodeBadRequest).Errorf("media: owner id cannot be empty")
 	}
-	if m.db == nil {
-		return oops.Code(errs.CodeDatabaseUnavailable).Errorf("media: database connection is not available")
+	if err := m.ensureDB(); err != nil {
+		return err
 	}
 
 	return m.clearOldFiles(ctx, owner.Type, owner.ID, strings.TrimSpace(collection))
@@ -479,9 +503,19 @@ func ValidateAvatarFile(file *multipart.FileHeader) error {
 	}
 }
 
-// AttachAvatar 校验头像文件规格（魔数嗅探、格式白名单、尺寸限制），
-// 将其原子上传并以单文件模式绑定至用户模型，返回解析后的签名访问 URL。
-func (m *Manager) AttachAvatar(ctx context.Context, userID string, file *multipart.FileHeader) (string, error) {
+// avatarSize 是头像签名 URL 的边长（像素）。
+const avatarSize = 256
+
+// ChangeAvatar 校验头像规格（魔数嗅探、格式白名单、尺寸限制），以单文件模式
+// 原子替换用户头像，并在同一事务内通过 link 把访问 URL 回写给宿主模型。
+//
+// link 为 nil 时只替换媒体记录，不改宿主字段。
+func (m *Manager) ChangeAvatar(
+	ctx context.Context,
+	userID string,
+	file *multipart.FileHeader,
+	link func(ctx context.Context, url string) error,
+) (string, error) {
 	if err := ValidateAvatarFile(file); err != nil {
 		return "", err
 	}
@@ -489,16 +523,24 @@ func (m *Manager) AttachAvatar(ctx context.Context, userID string, file *multipa
 		return "", oops.Code(errs.CodeInternal).Errorf("media: manager is not configured")
 	}
 
-	mediaRecord, err := m.Attach(
+	var url string
+	record, err := m.attach(
 		ctx,
 		NewOwner("user", userID),
 		"avatar",
 		file,
 		WithSingleFile(),
+		WithLink(func(txCtx context.Context, media *database.Media) error {
+			url = cmp.Or(m.Avatar(media, avatarSize), m.URL(media), media.FileName)
+			if link == nil {
+				return nil
+			}
+			return link(txCtx, url)
+		}),
 	)
 	if err != nil {
 		return "", err
 	}
 
-	return cmp.Or(m.Avatar(mediaRecord, 256), m.URL(mediaRecord), mediaRecord.FileName), nil
+	return cmp.Or(url, m.Avatar(record, avatarSize), m.URL(record), record.FileName), nil
 }

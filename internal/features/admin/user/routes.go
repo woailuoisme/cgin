@@ -1,5 +1,5 @@
 // Package admin 实现后台系统用户管理模块 (/v1/admin/users)。
-package admin
+package adminuser
 
 import (
 	"github.com/gin-gonic/gin"

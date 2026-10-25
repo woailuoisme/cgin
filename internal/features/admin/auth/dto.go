@@ -52,12 +52,3 @@ type GetSessionResource struct {
 	// 当前登录管理员身份资料投影
 	User Profile `json:"user"`
 }
-
-type (
-	SignInEmailRequest    = SignInEmailBody
-	RefreshTokenRequest   = RefreshTokenBody
-	SignOutRequest        = SignOutBody
-	ChangePasswordRequest = ChangePasswordBody
-	SessionResponse       = SessionResource
-	GetSessionResponse    = GetSessionResource
-)

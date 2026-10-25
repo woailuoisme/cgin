@@ -1,27 +1,20 @@
 package profile
 
 import (
-	"github.com/aarondl/opt/omitnull"
 	"github.com/gin-gonic/gin"
 
 	"cgin/internal/platform/authentication"
 	"cgin/internal/platform/response"
-	"cgin/internal/shared/media"
-	"cgin/internal/shared/user"
 )
 
 // Handler 是本人档案端点的 HTTP 适配层。
 type Handler struct {
-	userService  *user.Service
-	mediaManager *media.Manager
+	service *Service
 }
 
 // NewHandler 构造 Handler。
-func NewHandler(userService *user.Service, mediaManager *media.Manager) *Handler {
-	return &Handler{
-		userService:  userService,
-		mediaManager: mediaManager,
-	}
+func NewHandler(service *Service) *Handler {
+	return &Handler{service: service}
 }
 
 // GetProfile 处理 GET /v1/users/me。
@@ -42,7 +35,7 @@ func (h *Handler) GetProfile(c *gin.Context) {
 	}
 	userID := identity.UserID
 
-	profile, err := h.userService.GetProfile(c.Request.Context(), userID)
+	profile, err := h.service.Get(c.Request.Context(), userID)
 	if err != nil {
 		_ = c.Error(err)
 		return
@@ -76,7 +69,7 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	profile, err := h.userService.UpdateProfile(c.Request.Context(), userID, body.fieldSet(), user.ScopeClient)
+	profile, err := h.service.Update(c.Request.Context(), userID, body.fieldSet())
 	if err != nil {
 		_ = c.Error(err)
 		return
@@ -112,20 +105,7 @@ func (h *Handler) UploadAvatar(c *gin.Context) {
 		return
 	}
 
-	avatarURL, err := h.mediaManager.AttachAvatar(c.Request.Context(), userID, body.Avatar)
-	if err != nil {
-		_ = c.Error(err)
-		return
-	}
-
-	profile, err := h.userService.UpdateProfile(
-		c.Request.Context(),
-		userID,
-		user.FieldSet{
-			Image: omitnull.From(avatarURL),
-		},
-		user.ScopeClient,
-	)
+	profile, err := h.service.UploadAvatar(c.Request.Context(), userID, body.Avatar)
 	if err != nil {
 		_ = c.Error(err)
 		return

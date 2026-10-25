@@ -20,7 +20,6 @@ import (
 	"github.com/samber/oops"
 	"go.uber.org/zap"
 
-	"cgin/internal/platform/i18n"
 	"cgin/internal/platform/logger"
 )
 
@@ -39,11 +38,14 @@ type Response struct {
 	Errors  map[string][]string `json:"errors,omitempty"`
 }
 
-// 敏感词特征，用于安全脱敏防止底层 SQL、连接信息与凭证外泄。
+// 敏感特征：只匹配底层驱动前缀、凭证赋值与连接串。
+//
+// 不按 SQL 关键字（select / update 等）匹配：校验文案完全可能包含这些词，
+// 把它们换成 internal 文案会丢掉对调用方有用的信息。
 var sensitivePatterns = []string{
-	"password=", "secret=", "token=", "authorization:",
-	"select ", "insert into", "update ", "delete from", "drop table",
-	"pq: ", "pgx: ", "sql: ",
+	"password=", "password_hash=", "secret=", "token=", "api_key=",
+	"authorization:", "bearer ", "pq: ", "pgx: ", "sql: ",
+	"postgres://", "postgresql://", "redis://", "rediss://",
 }
 
 // SanitizeMessage 对对外输出的错误描述进行脱敏与安全清洗。
@@ -86,9 +88,9 @@ func ErrorCodeFromContext(c *gin.Context) string {
 
 // Render 映射统一错误响应并写回客户端。
 //
-// 5xx 记录错误根因与调用堆栈；4xx 由外层 AccessLog 统一输出访问日志，避免重复告警。
-// 可选接收 *i18n.Translator 实例以优先进行业务字段级错误翻译，未传入时兜底使用 i18n.Default()。
-func Render(c *gin.Context, err error, customTranslator ...*i18n.Translator) {
+// 本函数只负责“映射 + 写回 + 5xx 日志”：字段级翻译由中间件在调用前完成，
+// 这里不再持有 i18n，避免同一条翻译规则在两处各写一遍。
+func Render(c *gin.Context, err error) {
 	if err == nil {
 		return
 	}
@@ -97,13 +99,6 @@ func Render(c *gin.Context, err error, customTranslator ...*i18n.Translator) {
 
 	// 敏感错误信息脱敏保护
 	resp.Message = SanitizeMessage(resp.Message)
-
-	// 针对携带待翻译 fieldKeys 的业务错误，自动尝试使用注入的 i18n 或全局默认与请求头 Accept-Language 完成翻译
-	if len(resp.Errors) == 0 {
-		if translated := resolveTranslatedFieldKeys(c, err, customTranslator...); translated != nil {
-			resp.Errors = translated
-		}
-	}
 
 	SetErrorCodeContext(c, resp.Code)
 	if len(c.Errors) == 0 {
@@ -128,8 +123,12 @@ func Render(c *gin.Context, err error, customTranslator ...*i18n.Translator) {
 	c.AbortWithStatusJSON(status, resp)
 }
 
+// 敏感键名：密码、凭证、令牌与密钥。
+//
+// 不包含单独出现的 "key" / "auth"：sortKey、idempotencyKey、author 这类字段名
+// 对排障有价值，误遮蔽只会让日志更难用。
 var sensitiveKeyFragments = []string{
-	"password", "secret", "token", "credential", "auth", "key",
+	"password", "secret", "token", "credential", "api_key", "authorization",
 }
 
 func isSensitiveKey(k string) bool {
@@ -277,38 +276,4 @@ func mapPgError(err *pgconn.PgError) (int, Response) {
 	default:
 		return http.StatusInternalServerError, Response{Code: string(CodeInternal), Message: msgInternal}
 	}
-}
-
-// resolveTranslatedFieldKeys 针对携带待翻译 fieldKeys 的业务错误，自动使用注入的 translator 或全局 i18n 完成翻译。
-func resolveTranslatedFieldKeys(c *gin.Context, err error, customTranslator ...*i18n.Translator) map[string][]string {
-	bizErr, ok := As(err)
-	if !ok || len(bizErr.fieldKeys) == 0 {
-		return nil
-	}
-
-	var translator *i18n.Translator
-	if len(customTranslator) > 0 && customTranslator[0] != nil {
-		translator = customTranslator[0]
-	} else {
-		translator = i18n.Default()
-	}
-	if translator == nil {
-		return nil
-	}
-
-	lang := translator.Language(c.GetHeader("Accept-Language"))
-	translated := make(map[string][]string, len(bizErr.fieldKeys))
-	for field, msgKeys := range bizErr.fieldKeys {
-		for _, mk := range msgKeys {
-			rendered := translator.ValidationMessage(lang, mk.Key, field, mk.Param)
-			if rendered != "" {
-				translated[field] = append(translated[field], rendered)
-			}
-		}
-	}
-
-	if len(translated) == 0 {
-		return nil
-	}
-	return translated
 }

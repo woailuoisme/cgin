@@ -17,10 +17,6 @@ import (
 	"cgin/internal/platform/errs"
 	"cgin/internal/platform/logger"
 	"cgin/internal/platform/notification/async"
-	"cgin/internal/platform/notification/channel/chat"
-	"cgin/internal/platform/notification/channel/mail"
-	"cgin/internal/platform/notification/channel/realtime"
-	"cgin/internal/platform/notification/channel/sms"
 	"cgin/internal/platform/notification/contract"
 	"cgin/internal/platform/queue"
 )
@@ -37,9 +33,6 @@ type Notifier struct {
 	middlewares     []Middleware
 	parallelTargets int
 }
-
-// Manager 为 Notifier 提供语义等同的类型别名以保持向后兼容。
-type Manager = Notifier
 
 // NewNotifier 创建统一通知引擎实例。
 func NewNotifier(workers, queueSize int) *Notifier {
@@ -96,30 +89,6 @@ func (n *Notifier) Channel(name string) Channel {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 	return n.channels[name]
-}
-
-// Mail 返回邮件渠道专用实例。
-func (n *Notifier) Mail() *mail.Channel {
-	ch, _ := n.Channel("mail").(*mail.Channel)
-	return ch
-}
-
-// SMS 返回短信渠道专用实例。
-func (n *Notifier) SMS() *sms.Channel {
-	ch, _ := n.Channel("sms").(*sms.Channel)
-	return ch
-}
-
-// Chat 返回即时通讯渠道专用实例。
-func (n *Notifier) Chat() *chat.Channel {
-	ch, _ := n.Channel("chat").(*chat.Channel)
-	return ch
-}
-
-// Realtime 返回实时广播渠道专用实例。
-func (n *Notifier) Realtime() *realtime.Channel {
-	ch, _ := n.Channel("realtime").(*realtime.Channel)
-	return ch
 }
 
 // Close 优雅停止通知引擎及其异步 Worker 池。

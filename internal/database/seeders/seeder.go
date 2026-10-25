@@ -32,8 +32,10 @@ type StepHook func(name string, index, total int, duration time.Duration, done b
 // SubProgressHook 定义在单个 Seeder 内部进行大批量数据生成时的记录进度回调。
 type SubProgressHook func(current, total int64)
 
-type progressHookKey struct{}
-type subProgressHookKey struct{}
+type (
+	progressHookKey    struct{}
+	subProgressHookKey struct{}
+)
 
 // WithProgressHook 将 Seeder 步骤回调存入上下文。
 func WithProgressHook(ctx context.Context, hook StepHook) context.Context {
@@ -131,41 +133,37 @@ func (r *Runner) Call(ctx context.Context, seeders ...Seeder) error {
 	return nil
 }
 
-// 全局 Seeder 注册表。
-var (
-	registryMu sync.RWMutex
-	registry   = make(map[string]Seeder)
+// catalog 是内置播种器的只读索引；构造后不再变化。
+//
+// 不再依赖各文件 init() 自我注册：谁能被 db:seed 调用，在这一处就能读全。
+var catalog = buildCatalog(
+	&DatabaseSeeder{},
+	&AdminSeeder{},
+	&UserSeeder{},
 )
 
-// Register 向全局注册表注册一个 Seeder 实例与其别名。
-func Register(s Seeder, aliases ...string) {
-	registryMu.Lock()
-	defer registryMu.Unlock()
-
-	name := seederName(s)
-	registry[name] = s
-	for _, alias := range aliases {
-		if alias != "" {
-			registry[alias] = s
-		}
-	}
-}
-
-// Get 从注册表中按名称或别名查找 Seeder。
+// Get 按名称查找内置播种器。
 func Get(name string) (Seeder, bool) {
-	registryMu.RLock()
-	defer registryMu.RUnlock()
-
-	s, ok := registry[name]
+	s, ok := catalog[name]
 	return s, ok
 }
 
-// List 返回注册表中所有已注册的 Seeder 名称列表（已排序）。
+// List 返回全部内置播种器名称（已排序）。
 func List() []string {
-	registryMu.RLock()
-	defer registryMu.RUnlock()
+	return slices.Sorted(maps.Keys(catalog))
+}
 
-	return slices.Sorted(maps.Keys(registry))
+// buildCatalog 按类名索引播种器；重名属于启动期编程错误，直接失败。
+func buildCatalog(seeders ...Seeder) map[string]Seeder {
+	index := make(map[string]Seeder, len(seeders))
+	for _, s := range seeders {
+		name := seederName(s)
+		if _, exists := index[name]; exists {
+			panic("seeders: duplicate seeder name: " + name)
+		}
+		index[name] = s
+	}
+	return index
 }
 
 // seederName 解析 Seeder 的类型名称。

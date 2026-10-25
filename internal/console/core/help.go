@@ -26,11 +26,10 @@ var (
 	flagLineRegex = regexp.MustCompile(`^(\s+)(-[a-zA-Z0-9], --[a-zA-Z0-9_-]+|--[a-zA-Z0-9_-]+|-[a-zA-Z0-9])(?: ([^\s]+))?(\s{2,})(.*)$`)
 )
 
-func init() {
-	registerTemplateFuncs()
-}
-
-func registerTemplateFuncs() {
+// RegisterTemplateFuncs 把帮助模板用的样式函数注入 cobra。
+//
+// 由根命令构造时显式调用：模板函数属于框架级全局，挂载时机应当可追踪。
+func RegisterTemplateFuncs() {
 	cobra.AddTemplateFunc("styleHeader", StyleHeader)
 	cobra.AddTemplateFunc("styleCmd", StyleCmd)
 	cobra.AddTemplateFunc("styleUseLine", StyleUseLine)
@@ -211,6 +210,6 @@ func SetupColoredHelp(cmd *cobra.Command) {
 	if cmd == nil {
 		return
 	}
-	registerTemplateFuncs()
+	RegisterTemplateFuncs()
 	cmd.SetUsageTemplate(coloredUsageTemplate)
 }

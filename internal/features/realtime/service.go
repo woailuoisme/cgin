@@ -4,17 +4,18 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
-	"errors"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
 	"cgin/internal/config"
-	"cgin/internal/database"
 	"cgin/internal/database/sqlc"
 	"cgin/internal/platform/errs"
 	platformRealtime "cgin/internal/platform/realtime"
 )
+
+// userRoleReader 声明签发连接凭据所需的用户角色读取能力。
+type userRoleReader interface {
+	Get(ctx context.Context, id string) (*sqlc.User, error)
+}
 
 // Deps 汇总实时通信服务的装配依赖。
 type Deps struct {
@@ -24,8 +25,8 @@ type Deps struct {
 	Cfg *config.Config
 	// Secret Centrifugo 反向代理请求的 HMAC 签名密钥。
 	Secret string
-	// DB 数据库连接，注入后签发的连接凭据以库中最新角色为准；未注入时沿用调用方传入的角色。
-	DB *database.DB
+	// Users 注入后签发的连接凭据以库中最新角色为准；未注入时沿用调用方传入的角色。
+	Users userRoleReader
 }
 
 // Service 承载实时通信业务规则与鉴权编排。
@@ -34,8 +35,8 @@ type Service struct {
 	cfg     *config.Config
 	// secret 是 Centrifugo 反向代理请求的 HMAC 签名密钥。
 	secret string
-	// db 用于签发前核对账号当前角色；未注入时退回调用方传入的角色。
-	db *database.DB
+	// users 用于签发前核对账号当前角色；未注入时退回调用方传入的角色。
+	users userRoleReader
 }
 
 // NewService 创建实时通信服务。
@@ -44,7 +45,7 @@ func NewService(deps Deps) *Service {
 		gateway: deps.Gateway,
 		cfg:     deps.Cfg,
 		secret:  deps.Secret,
-		db:      deps.DB,
+		users:   deps.Users,
 	}
 }
 
@@ -58,13 +59,10 @@ func (s *Service) IssueToken(ctx context.Context, userID, role string) (*TokenRe
 		return nil, errs.BadRequest("Realtime service is disabled")
 	}
 
-	if s.db != nil {
-		entity, err := s.db.Queries(ctx).GetUserByID(ctx, sqlc.GetUserByIDParams{ID: userID})
+	if s.users != nil {
+		entity, err := s.users.Get(ctx, userID)
 		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return nil, errs.NotFound("The requested user does not exist")
-			}
-			return nil, errs.Internal(err)
+			return nil, err
 		}
 		role = string(entity.Role)
 	}

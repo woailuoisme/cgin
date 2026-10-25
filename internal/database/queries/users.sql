@@ -59,8 +59,9 @@ ORDER BY
 LIMIT @page_limit::bigint
 OFFSET @page_offset::bigint;
 
--- name: ListUsersChunk :many
--- 流式导出分块：与 ListUsers 共用过滤与排序，不计算总数。
+-- name: ListUsersAfter :many
+-- 流式导出分块：按主键键集推进，单页成本与已翻页深度无关，避免深 OFFSET 的线性扫描。
+-- 导出固定按 id 升序：这是导出的稳定遍历顺序，与列表页的排序参数无关。
 SELECT *
 FROM "user" AS u
 WHERE u.deleted_at IS NULL
@@ -72,20 +73,9 @@ WHERE u.deleted_at IS NULL
     OR u.email ILIKE sqlc.narg('search')::text
     OR u.username ILIKE sqlc.narg('search')::text
   )
-ORDER BY
-  CASE WHEN @sort_key::text = 'createdAt' AND NOT @sort_desc::bool THEN u.created_at END ASC NULLS LAST,
-  CASE WHEN @sort_key::text = 'createdAt' AND @sort_desc::bool THEN u.created_at END DESC NULLS LAST,
-  CASE WHEN @sort_key::text = 'updatedAt' AND NOT @sort_desc::bool THEN u.updated_at END ASC NULLS LAST,
-  CASE WHEN @sort_key::text = 'updatedAt' AND @sort_desc::bool THEN u.updated_at END DESC NULLS LAST,
-  CASE WHEN @sort_key::text = 'email' AND NOT @sort_desc::bool THEN lower(u.email) END ASC NULLS LAST,
-  CASE WHEN @sort_key::text = 'email' AND @sort_desc::bool THEN lower(u.email) END DESC NULLS LAST,
-  CASE WHEN @sort_key::text = 'name' AND NOT @sort_desc::bool THEN lower(u.name) END ASC NULLS LAST,
-  CASE WHEN @sort_key::text = 'name' AND @sort_desc::bool THEN lower(u.name) END DESC NULLS LAST,
-  CASE WHEN @sort_key::text = 'lastLoginAt' AND NOT @sort_desc::bool THEN u.last_login_at END ASC NULLS LAST,
-  CASE WHEN @sort_key::text = 'lastLoginAt' AND @sort_desc::bool THEN u.last_login_at END DESC NULLS LAST,
-  u.id DESC
-LIMIT @page_limit::bigint
-OFFSET @page_offset::bigint;
+  AND (@after_id::text = '' OR u.id > @after_id::text)
+ORDER BY u.id ASC
+LIMIT @page_limit::bigint;
 
 -- name: ListUsersForSearch :many
 -- 搜索索引导入使用 id 键集分页，避免深 OFFSET 的线性扫描。

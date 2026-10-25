@@ -30,8 +30,8 @@ type Service struct {
 	passwords passwordChanger
 }
 
-// NewService 构造 Service；Guard 与 Passwords 均为装配方必须提供的硬依赖。
-func NewService(deps Deps) *Service {
+// MustNewService 构造 Service；Guard 与 Passwords 均为装配方必须提供的硬依赖。
+func MustNewService(deps Deps) *Service {
 	if deps.Guard == nil {
 		panic("adminauth: service requires a non-nil Guard")
 	}

@@ -421,12 +421,15 @@ func TestStackIsAvailableForLogging(t *testing.T) {
 	assert.NotEmpty(t, errs.Stack(err))
 }
 
-// TestSanitizeMessage 校验错误文案脱敏机制，确保 SQL、密码等敏感特征被置换为安全文案。
+// TestSanitizeMessage 校验错误文案脱敏机制：只抹掉凭证、驱动前缀与连接串，不误伤业务文案。
 func TestSanitizeMessage(t *testing.T) {
 	assert.Equal(t, "Safe user message", errs.SanitizeMessage("Safe user message"))
 	assert.Equal(t, "An unexpected error occurred", errs.SanitizeMessage("pq: relation users not found"))
 	assert.Equal(t, "An unexpected error occurred", errs.SanitizeMessage("failed with password=123456"))
-	assert.Equal(t, "An unexpected error occurred", errs.SanitizeMessage("syntax error at SELECT * FROM secret"))
+	assert.Equal(t, "An unexpected error occurred", errs.SanitizeMessage("dial postgres://user:pw@db:5432/app failed"))
+
+	// 业务文案里出现 SQL 关键字不能被替换成 internal 文案。
+	assert.Equal(t, "The sort field cannot be updated", errs.SanitizeMessage("The sort field cannot be updated"))
 }
 
 // TestRender_Sanitization 验证 Render 执行时敏感信息被安全清洗。

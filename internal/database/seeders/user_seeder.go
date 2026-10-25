@@ -24,10 +24,6 @@ import (
 // FixturePassword 是本地开发演示账号统一使用的明文口令。
 const FixturePassword = "Password123!"
 
-func init() {
-	Register(&UserSeeder{})
-}
-
 // UserSeeder 负责研发与测试环境的用户数据批量播种。
 type UserSeeder struct {
 	Count int // 自定义播种数量，默认 20 条

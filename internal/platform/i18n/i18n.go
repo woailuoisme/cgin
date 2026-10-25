@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"unicode"
 
 	"github.com/pelletier/go-toml/v2"
@@ -70,25 +69,6 @@ func NewWithFS(defaultLanguage string, fsys fs.FS) (*Translator, error) {
 // New 装载内嵌的全部语言包，保持现有配置签名兼容。
 func New(cfg *config.Config) (*Translator, error) {
 	return NewWithFS(cfg.I18n.DefaultLanguage, lang.FS)
-}
-
-var (
-	defaultMu         sync.RWMutex
-	defaultTranslator *Translator
-)
-
-// SetDefault 注册全局默认翻译器。
-func SetDefault(translator *Translator) {
-	defaultMu.Lock()
-	defer defaultMu.Unlock()
-	defaultTranslator = translator
-}
-
-// Default 返回全局默认翻译器；未注册时为 nil，调用方须自行判断。
-func Default() *Translator {
-	defaultMu.RLock()
-	defer defaultMu.RUnlock()
-	return defaultTranslator
 }
 
 // loadBundle 动态遍历并读取单门语言目录下的全部 TOML 文案文件。

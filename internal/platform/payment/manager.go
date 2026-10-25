@@ -247,6 +247,20 @@ func (m *Manager) Enabled() bool {
 	return m.enabled
 }
 
+// capability 取出 provider 的指定能力；该渠道应用未实现时返回统一的「能力不支持」错误。
+func capability[T any](provider Provider, channel enums.PaymentChannel) (T, error) {
+	impl, ok := any(provider).(T)
+	if ok {
+		return impl, nil
+	}
+
+	var zero T
+	return zero, oops.Code(errs.CodePaymentCapabilityNotSupported).
+		With("channel", channel.String()).
+		With("application", provider.Application()).
+		Wrap(ErrCapabilityNotSupported)
+}
+
 // Create 发起一次收款，内部自动根据 req.Scene 路由到声明了该场景的渠道应用。
 func (m *Manager) Create(ctx context.Context, req CreateRequest) (*Instruction, error) {
 	if m == nil || !m.enabled {
@@ -261,12 +275,9 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*Instruction, 
 		return nil, err
 	}
 
-	payable, ok := provider.(Payable)
-	if !ok {
-		return nil, oops.Code(errs.CodePaymentCapabilityNotSupported).
-			With("channel", req.Scene.Channel().String()).
-			With("application", provider.Application()).
-			Wrap(ErrCapabilityNotSupported)
+	payable, err := capability[Payable](provider, req.Scene.Channel())
+	if err != nil {
+		return nil, err
 	}
 
 	return payable.Create(ctx, req)
@@ -284,12 +295,9 @@ func (m *Manager) Query(
 		return nil, err
 	}
 
-	queryable, ok := provider.(Queryable)
-	if !ok {
-		return nil, oops.Code(errs.CodePaymentCapabilityNotSupported).
-			With("channel", channel.String()).
-			With("application", provider.Application()).
-			Wrap(ErrCapabilityNotSupported)
+	queryable, err := capability[Queryable](provider, channel)
+	if err != nil {
+		return nil, err
 	}
 
 	return queryable.Query(ctx, req)
@@ -307,12 +315,9 @@ func (m *Manager) Close(
 		return err
 	}
 
-	payable, ok := provider.(Payable)
-	if !ok {
-		return oops.Code(errs.CodePaymentCapabilityNotSupported).
-			With("channel", channel.String()).
-			With("application", provider.Application()).
-			Wrap(ErrCapabilityNotSupported)
+	payable, err := capability[Payable](provider, channel)
+	if err != nil {
+		return err
 	}
 
 	return payable.Close(ctx, req)
@@ -330,12 +335,9 @@ func (m *Manager) Refund(
 		return nil, err
 	}
 
-	refundable, ok := provider.(Refundable)
-	if !ok {
-		return nil, oops.Code(errs.CodePaymentCapabilityNotSupported).
-			With("channel", channel.String()).
-			With("application", provider.Application()).
-			Wrap(ErrCapabilityNotSupported)
+	refundable, err := capability[Refundable](provider, channel)
+	if err != nil {
+		return nil, err
 	}
 
 	return refundable.Refund(ctx, req)
@@ -353,12 +355,9 @@ func (m *Manager) QueryRefund(
 		return nil, err
 	}
 
-	refundable, ok := provider.(Refundable)
-	if !ok {
-		return nil, oops.Code(errs.CodePaymentCapabilityNotSupported).
-			With("channel", channel.String()).
-			With("application", provider.Application()).
-			Wrap(ErrCapabilityNotSupported)
+	refundable, err := capability[Refundable](provider, channel)
+	if err != nil {
+		return nil, err
 	}
 
 	return refundable.QueryRefund(ctx, req)
@@ -376,12 +375,9 @@ func (m *Manager) ParseNotification(
 		return nil, err
 	}
 
-	verifier, ok := provider.(WebhookVerifiable)
-	if !ok {
-		return nil, oops.Code(errs.CodePaymentCapabilityNotSupported).
-			With("channel", channel.String()).
-			With("application", provider.Application()).
-			Wrap(ErrCapabilityNotSupported)
+	verifier, err := capability[WebhookVerifiable](provider, channel)
+	if err != nil {
+		return nil, err
 	}
 
 	return verifier.ParseNotification(req)

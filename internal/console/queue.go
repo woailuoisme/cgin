@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"cgin/internal/console/core"
-	"cgin/internal/features/client/auth"
+	clientauth "cgin/internal/features/client/auth"
 	"cgin/internal/platform/cache"
 	"cgin/internal/platform/mailer"
 	"cgin/internal/platform/queue"
@@ -65,7 +65,7 @@ func (o *QueueWorkOptions) Run(ctx context.Context) error {
 	defer func() { _ = mailerClient.Close() }()
 
 	reg := queue.DefaultRegistry()
-	auth.RegisterJobs(reg, mailerClient)
+	clientauth.RegisterJobs(reg, mailerClient)
 
 	var locker queue.Locker
 	if cacheLocker, err := cache.NewRedisLocker(cfg.Cache); err == nil {

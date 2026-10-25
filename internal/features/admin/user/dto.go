@@ -1,4 +1,4 @@
-package admin
+package adminuser
 
 import (
 	"strings"
@@ -14,11 +14,11 @@ import (
 	"cgin/internal/shared/user"
 )
 
-func init() {
-	validator.RegisterOmitNullTypes(
-		omitnull.Val[Role]{},
-		omitnull.Val[Status]{},
-	)
+// ValidationOptions 返回用户管理模块贡献给校验器的自定义类型解包函数。
+func ValidationOptions() []validator.Option {
+	return []validator.Option{
+		validator.WithOmitNullTypes(omitnull.Val[Role]{}, omitnull.Val[Status]{}),
+	}
 }
 
 // 分页默认值与上限，对应 api.md 6.1。
@@ -35,9 +35,6 @@ type Role = enums.Role
 
 // Status 是账号状态枚举的本地类型别名，规避 swag 跨包解析缺陷。
 type Status = enums.Status
-
-// Profile 是共享内核档案视图的类型别名，供本模块的响应体与 Swagger 注解引用。
-type Profile = user.Profile
 
 // --- 路径参数 PathParams ---
 
@@ -119,19 +116,17 @@ func (r UpdateUserBody) Validate() error {
 // adminFieldSet 将请求中的档案与管理受控字段投影为共享内核管理字段集。
 func (r UpdateUserBody) adminFieldSet() user.AdminFieldSet {
 	return user.AdminFieldSet{
-		FieldSet: user.FieldSet{
-			Name:            r.Name,
-			Image:           r.Image,
-			Username:        r.Username,
-			DisplayUsername: r.DisplayUsername,
-			PhoneNumber:     r.PhoneNumber,
-		},
-		EmailVerified: r.EmailVerified,
-		Role:          r.Role,
-		Status:        r.Status,
-		Banned:        r.Banned,
-		BanReason:     r.BanReason,
-		BanExpires:    r.BanExpires,
+		Name:            r.Name,
+		Image:           r.Image,
+		Username:        r.Username,
+		DisplayUsername: r.DisplayUsername,
+		PhoneNumber:     r.PhoneNumber,
+		EmailVerified:   r.EmailVerified,
+		Role:            r.Role,
+		Status:          r.Status,
+		Banned:          r.Banned,
+		BanReason:       r.BanReason,
+		BanExpires:      r.BanExpires,
 	}
 }
 
@@ -166,9 +161,33 @@ func (r ListUsersQueryParams) ToFilter() user.ListFilter {
 // --- 响应资源 Resource ---
 
 // UserResource 是管理端视角的系统用户视图模型。
+//
+// 字段逐项声明：JSON 与 OpenAPI 契约就在这里，不再通过嵌入共享视图“继承”字段。
 type UserResource struct {
-	Profile
-
+	// 用户唯一标识
+	ID string `json:"id" example:"usr_01J9X4N8Y0ABCD"`
+	// 用户展示昵称
+	Name string `json:"name" example:"Alex Mercer"`
+	// 用户电子邮箱
+	Email string `json:"email" example:"alex@example.com"`
+	// 邮箱是否已验证
+	EmailVerified bool `json:"emailVerified" example:"true"`
+	// 用户头像 URL
+	Image *string `json:"image" example:"https://example.com/avatar.png"`
+	// 用户权限角色 (user: 普通用户, admin: 系统管理员)
+	Role Role `json:"role" example:"user" enums:"user,admin"`
+	// 唯一登录用户名
+	Username *string `json:"username" example:"alexmercer"`
+	// 用户显示名称
+	DisplayUsername *string `json:"displayUsername" example:"Alex Mercer"`
+	// E.164 格式手机号
+	PhoneNumber *string `json:"phoneNumber" example:"+8613800138000"`
+	// 账号创建时间 (ISO 8601 UTC)
+	CreatedAt time.Time `json:"createdAt" example:"2026-09-27T10:00:00Z"`
+	// 账号更新时间 (ISO 8601 UTC)
+	UpdatedAt time.Time `json:"updatedAt" example:"2026-09-27T10:00:00Z"`
+	// 账号状态 (active: 正常活跃, inactive: 未激活, banned: 已封禁)
+	Status Status `json:"status" example:"active" enums:"active,inactive,banned"`
 	// 账号是否已被封禁
 	Banned bool `json:"banned" example:"false"`
 	// 封禁原因说明
@@ -191,8 +210,20 @@ type UserPageResource struct {
 
 // toUserResource 把模型投影为管理视角的响应资源。
 func toUserResource(entity *sqlc.User) UserResource {
+	profile := user.ProjectProfile(entity)
 	return UserResource{
-		Profile:         user.ProjectProfile(entity),
+		ID:              profile.ID,
+		Name:            profile.Name,
+		Email:           profile.Email,
+		EmailVerified:   profile.EmailVerified,
+		Image:           profile.Image,
+		Role:            profile.Role,
+		Username:        profile.Username,
+		DisplayUsername: profile.DisplayUsername,
+		PhoneNumber:     profile.PhoneNumber,
+		CreatedAt:       profile.CreatedAt,
+		UpdatedAt:       profile.UpdatedAt,
+		Status:          profile.Status,
 		Banned:          entity.Banned,
 		BanReason:       entity.BanReason,
 		BanExpires:      database.UTCPtr(entity.BanExpires),
@@ -200,11 +231,3 @@ func toUserResource(entity *sqlc.User) UserResource {
 		LastLoginMethod: entity.LastLoginMethod,
 	}
 }
-
-type (
-	CreateUserRequest = CreateUserBody
-	UpdateUserRequest = UpdateUserBody
-	ListUsersQuery    = ListUsersQueryParams
-	User              = UserResource
-	UserPage          = UserPageResource
-)

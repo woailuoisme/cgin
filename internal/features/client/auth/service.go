@@ -1,5 +1,5 @@
 // Package auth 实现注册、登录、登出、令牌续签与密码重置等认证用例。
-package auth
+package clientauth
 
 import (
 	"context"
@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 
 	"cgin/internal/config"
@@ -44,10 +43,23 @@ type credentialManager interface {
 	ResetPassword(ctx context.Context, userID, newPassword string) error
 }
 
+// userStore 声明认证用例所需的用户账号读写能力（接口由消费方定义）。
+//
+// 认证不再直接拼接 sqlc 查询：读写路径全部经由共享内核的用户 module，
+// 用例因此可以脱离 PostgreSQL 被驱动。
+type userStore interface {
+	Register(ctx context.Context, params shareduser.RegisterParams) (*sqlc.User, error)
+	Get(ctx context.Context, userID string) (*sqlc.User, error)
+	ByEmail(ctx context.Context, email string) (*sqlc.User, error)
+	ByUsername(ctx context.Context, username string) (*sqlc.User, error)
+	MarkEmailVerified(ctx context.Context, userID string) (*sqlc.User, error)
+	RecordLogin(ctx context.Context, userID, method string) error
+}
+
 // Deps 是认证服务所需的依赖，由 main 装配后注入。
 type Deps struct {
 	DB          *database.DB
-	Users       *shareduser.Service
+	Users       userStore
 	Credentials credentialManager
 	Guard       *platformauth.Guard[*sqlc.User]
 	Hasher      *hasher.Hasher
@@ -61,8 +73,7 @@ type Deps struct {
 
 // Service 实现认证用例。
 type Service struct {
-	db          *database.DB
-	users       *shareduser.Service
+	users       userStore
 	credentials credentialManager
 	guard       *platformauth.Guard[*sqlc.User]
 	hasher      *hasher.Hasher
@@ -74,8 +85,8 @@ type Service struct {
 	publisher   eventbus.Publisher
 }
 
-// NewService 构造认证服务；DB/Users/Credentials/Guard 为装配方必须提供的硬依赖。
-func NewService(deps Deps) *Service {
+// MustNewService 构造认证服务；DB/Users/Credentials/Guard 为装配方必须提供的硬依赖。
+func MustNewService(deps Deps) *Service {
 	if deps.DB == nil {
 		panic("clientauth: service requires a non-nil DB")
 	}
@@ -89,7 +100,6 @@ func NewService(deps Deps) *Service {
 		panic("clientauth: service requires a non-nil Guard")
 	}
 	return &Service{
-		db:          deps.DB,
 		users:       deps.Users,
 		credentials: deps.Credentials,
 		guard:       deps.Guard,
@@ -104,7 +114,7 @@ func NewService(deps Deps) *Service {
 }
 
 // SignUpEmail 注册邮箱密码账号，并按 Q15 的约定直接完成登录。
-func (s *Service) SignUpEmail(ctx context.Context, req SignUpEmailRequest) (SessionResponse, error) {
+func (s *Service) SignUpEmail(ctx context.Context, req SignUpEmailBody) (SessionResource, error) {
 	created, err := s.users.Register(ctx, shareduser.RegisterParams{
 		Name:     req.Name,
 		Email:    req.Email,
@@ -113,7 +123,7 @@ func (s *Service) SignUpEmail(ctx context.Context, req SignUpEmailRequest) (Sess
 		Password: req.Password,
 	})
 	if err != nil {
-		return SessionResponse{}, err
+		return SessionResource{}, err
 	}
 
 	if s.publisher != nil {
@@ -127,7 +137,7 @@ func (s *Service) SignUpEmail(ctx context.Context, req SignUpEmailRequest) (Sess
 
 	session, err := s.issueSession(ctx, created)
 	if err != nil {
-		return SessionResponse{}, err
+		return SessionResource{}, err
 	}
 	s.recordLogin(ctx, created.ID, string(enums.ProviderCredential))
 
@@ -135,29 +145,25 @@ func (s *Service) SignUpEmail(ctx context.Context, req SignUpEmailRequest) (Sess
 }
 
 // SignInEmail 邮箱密码登录。
-func (s *Service) SignInEmail(ctx context.Context, req SignInEmailRequest) (SessionResponse, error) {
-	user, err := s.db.Queries(ctx).GetUserByEmail(ctx, sqlc.GetUserByEmailParams{
-		Email: shareduser.NormaliseEmail(req.Email),
-	})
+func (s *Service) SignInEmail(ctx context.Context, req SignInEmailBody) (SessionResource, error) {
+	user, err := s.users.ByEmail(ctx, req.Email)
 	if err != nil {
-		return SessionResponse{}, s.translateLookupFailure(ctx, err, req.Email)
+		return SessionResource{}, s.translateLookupFailure(ctx, err, req.Email)
 	}
-	return s.signInWithCredentials(ctx, &user, req.Password)
+	return s.signInWithCredentials(ctx, user, req.Password)
 }
 
 // SignInUsername 用户名密码登录。
-func (s *Service) SignInUsername(ctx context.Context, req SignInUsernameRequest) (SessionResponse, error) {
-	user, err := s.db.Queries(ctx).GetUserByUsername(ctx, sqlc.GetUserByUsernameParams{
-		Username: shareduser.NormaliseUsername(req.Username),
-	})
+func (s *Service) SignInUsername(ctx context.Context, req SignInUsernameBody) (SessionResource, error) {
+	user, err := s.users.ByUsername(ctx, req.Username)
 	if err != nil {
-		return SessionResponse{}, s.translateLookupFailure(ctx, err, req.Username)
+		return SessionResource{}, s.translateLookupFailure(ctx, err, req.Username)
 	}
-	return s.signInWithCredentials(ctx, &user, req.Password)
+	return s.signInWithCredentials(ctx, user, req.Password)
 }
 
 // SignOut 作废当前访问令牌；同时传入刷新令牌时一并作废，否则续签通道仍然敞开。
-func (s *Service) SignOut(ctx context.Context, req SignOutRequest) error {
+func (s *Service) SignOut(ctx context.Context, req SignOutBody) error {
 	if req.RefreshToken != nil {
 		return s.guard.Logout(ctx, *req.RefreshToken)
 	}
@@ -165,48 +171,48 @@ func (s *Service) SignOut(ctx context.Context, req SignOutRequest) error {
 }
 
 // GetSession 返回当前用户。纯只读、不续签，令牌过期即 401（Q13）。
-func (s *Service) GetSession(ctx context.Context, userID string) (GetSessionResponse, error) {
+func (s *Service) GetSession(ctx context.Context, userID string) (GetSessionResource, error) {
 	user, err := s.guard.UserOrFail(ctx)
 	if err != nil {
 		loaded, loadErr := s.loadUser(ctx, userID)
 		if loadErr != nil {
-			return GetSessionResponse{}, loadErr
+			return GetSessionResource{}, loadErr
 		}
 		user = loaded
 	}
-	return GetSessionResponse{User: projectUser(user)}, nil
+	return GetSessionResource{User: projectUser(user)}, nil
 }
 
-// loadUser 兜底从数据库加载用户实体并进行状态校验。
+// loadUser 兜底从共享内核加载用户实体并进行状态校验。
 func (s *Service) loadUser(ctx context.Context, userID string) (*sqlc.User, error) {
-	u, err := s.db.Queries(ctx).GetUserByID(ctx, sqlc.GetUserByIDParams{ID: userID})
+	u, err := s.users.Get(ctx, userID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if isNotFound(err) {
 			return nil, errs.Unauthorized(errs.CodeAuthTokenInvalid, "The token is invalid")
 		}
-		return nil, errs.Internal(err)
-	}
-	if err := s.guardAccountState(&u); err != nil {
 		return nil, err
 	}
-	return &u, nil
+	if err := s.guardAccountState(u); err != nil {
+		return nil, err
+	}
+	return u, nil
 }
 
 // Refresh 用刷新令牌换取新的一对令牌，旧的刷新令牌立即失效（轮换）。
-func (s *Service) Refresh(ctx context.Context, req RefreshTokenRequest) (SessionResponse, error) {
+func (s *Service) Refresh(ctx context.Context, req RefreshTokenBody) (SessionResource, error) {
 	user, sess, err := s.guard.Refresh(ctx, req.RefreshToken)
 	if err != nil {
-		return SessionResponse{}, err
+		return SessionResource{}, err
 	}
 	if err := s.guardAccountState(user); err != nil {
-		return SessionResponse{}, err
+		return SessionResource{}, err
 	}
 
-	return toSessionResponse(sess, user), nil
+	return toSessionResource(sess, user), nil
 }
 
 // ChangePassword 校验当前口令后写入新口令。
-func (s *Service) ChangePassword(ctx context.Context, userID string, req ChangePasswordRequest) error {
+func (s *Service) ChangePassword(ctx context.Context, userID string, req ChangePasswordBody) error {
 	if err := s.credentials.ChangePassword(ctx, userID, req.CurrentPassword, req.NewPassword); err != nil {
 		if errors.Is(err, shareduser.ErrNoCredential) {
 			return noCredentialError()
@@ -219,31 +225,31 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, req ChangeP
 }
 
 // ForgetPassword 发送携带一次性令牌的重置链接。
-func (s *Service) ForgetPassword(ctx context.Context, language string, req ForgetPasswordRequest) (StatusResponse, error) {
+func (s *Service) ForgetPassword(ctx context.Context, language string, req ForgetPasswordBody) (StatusResource, error) {
 	return s.sendResetCredential(ctx, language, purposeResetLink, req.Email)
 }
 
 // RequestPasswordReset 发送 6 位重置验证码。
-func (s *Service) RequestPasswordReset(ctx context.Context, language string, req RequestPasswordResetRequest) (StatusResponse, error) {
+func (s *Service) RequestPasswordReset(ctx context.Context, language string, req RequestPasswordResetBody) (StatusResource, error) {
 	return s.sendResetCredential(ctx, language, purposeResetOTP, req.Email)
 }
 
 // ResetPassword 处理链接令牌与验证码两条互斥的重置路径。
-func (s *Service) ResetPassword(ctx context.Context, req ResetPasswordRequest) (StatusResponse, error) {
+func (s *Service) ResetPassword(ctx context.Context, req ResetPasswordBody) (StatusResource, error) {
 	if err := shareduser.ValidatePassword("newPassword", req.NewPassword); err != nil {
-		return StatusResponse{}, err
+		return StatusResource{}, err
 	}
 
 	user, err := s.resolveResetTarget(ctx, req)
 	if err != nil {
-		return StatusResponse{}, err
+		return StatusResource{}, err
 	}
 
 	if err := s.credentials.ResetPassword(ctx, user.ID, req.NewPassword); err != nil {
 		if errors.Is(err, shareduser.ErrNoCredential) {
-			return StatusResponse{}, noCredentialError()
+			return StatusResource{}, noCredentialError()
 		}
-		return StatusResponse{}, err
+		return StatusResource{}, err
 	}
 
 	if s.publisher != nil {
@@ -256,57 +262,55 @@ func (s *Service) ResetPassword(ctx context.Context, req ResetPasswordRequest) (
 	// 重置密码成功后作废该用户在此之前签发的所有会话令牌
 	_ = s.guard.InvalidateAll(ctx, user.ID)
 
-	return StatusResponse{Status: true}, nil
+	return StatusResource{Status: true}, nil
 }
 
 // SendVerificationOTP 发送邮箱验证码。
-func (s *Service) SendVerificationOTP(ctx context.Context, language string, req SendVerificationOTPRequest) (StatusResponse, error) {
-	user, err := s.db.Queries(ctx).GetUserByEmail(ctx, sqlc.GetUserByEmailParams{
-		Email: shareduser.NormaliseEmail(req.Email),
-	})
+func (s *Service) SendVerificationOTP(ctx context.Context, language string, req SendVerificationOTPBody) (StatusResource, error) {
+	user, err := s.users.ByEmail(ctx, req.Email)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if isNotFound(err) {
 			// 静默成功：不向未认证调用方暴露邮箱是否已注册。
 			logger.FromContext(ctx).Info("verification requested for non-existent email, ignored")
-			return StatusResponse{Status: true}, nil
+			return StatusResource{Status: true}, nil
 		}
-		return StatusResponse{}, errs.Internal(err)
+		return StatusResource{}, err
 	}
 	if user.EmailVerified {
-		return StatusResponse{Status: true}, nil
+		return StatusResource{Status: true}, nil
 	}
 
 	ttl := s.cfg.Auth.OTPTTL
 	code, err := s.verifier.issueCode(ctx, purposeEmailVerify, user.Email, ttl)
 	if err != nil {
-		return StatusResponse{}, errs.Internal(err)
+		return StatusResource{}, errs.Internal(err)
 	}
 	notif := NewSignupVerificationNotification(user.Name, code)
 	notif.ExpiresIn = ttl
-	if err := s.notifyUser(ctx, language, &user, notif, mailKeyVerifyEmail, code, ttl); err != nil {
-		return StatusResponse{}, errs.Internal(err)
+	if err := s.notifyUser(ctx, language, user, notif, mailKeyVerifyEmail, code, ttl); err != nil {
+		return StatusResource{}, errs.Internal(err)
 	}
-	return StatusResponse{Status: true}, nil
+	return StatusResource{Status: true}, nil
 }
 
 // VerifyEmail 核销验证码并置位邮箱验证状态。
-func (s *Service) VerifyEmail(ctx context.Context, req VerifyEmailRequest) (StatusResponse, error) {
+func (s *Service) VerifyEmail(ctx context.Context, req VerifyEmailBody) (StatusResource, error) {
 	email := shareduser.NormaliseEmail(req.Email)
 	if err := s.verifier.consume(ctx, purposeEmailVerify, email, strings.TrimSpace(req.OTP)); err != nil {
-		return StatusResponse{}, err
+		return StatusResource{}, err
 	}
 
-	user, err := s.db.Queries(ctx).GetUserByEmail(ctx, sqlc.GetUserByEmailParams{Email: email})
+	user, err := s.users.ByEmail(ctx, email)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return StatusResponse{}, errs.NotFound("No account is associated with this email address")
+		if isNotFound(err) {
+			return StatusResource{}, errs.NotFound("No account is associated with this email address")
 		}
-		return StatusResponse{}, errs.Internal(err)
+		return StatusResource{}, err
 	}
-	if _, err := s.db.Queries(ctx).SetUserEmailVerified(ctx, sqlc.SetUserEmailVerifiedParams{ID: user.ID}); err != nil {
-		return StatusResponse{}, errs.Internal(err)
+	if _, err := s.users.MarkEmailVerified(ctx, user.ID); err != nil {
+		return StatusResource{}, err
 	}
-	return StatusResponse{Status: true}, nil
+	return StatusResource{Status: true}, nil
 }
 
 // 邮件模板键，与 lang/<语言>/mail.toml 中的键前缀一一对应。
@@ -317,39 +321,39 @@ const (
 )
 
 // signInWithCredentials 校验本地密码凭据并签发令牌。
-func (s *Service) signInWithCredentials(ctx context.Context, user *sqlc.User, password string) (SessionResponse, error) {
+func (s *Service) signInWithCredentials(ctx context.Context, user *sqlc.User, password string) (SessionResource, error) {
 	matched, err := s.credentials.VerifyPassword(ctx, user.ID, password)
 	if err != nil {
-		return SessionResponse{}, errs.Internal(err)
+		return SessionResource{}, errs.Internal(err)
 	}
 	if !matched {
-		return SessionResponse{}, errs.InvalidCredentials()
+		return SessionResource{}, errs.InvalidCredentials()
 	}
 
 	session, err := s.issueSession(ctx, user)
 	if err != nil {
-		return SessionResponse{}, err
+		return SessionResource{}, err
 	}
 	s.recordLogin(ctx, user.ID, string(enums.ProviderCredential))
 	return session, nil
 }
 
 // issueSession 校验账号状态后签发双令牌并组装响应体，不写库。
-func (s *Service) issueSession(ctx context.Context, user *sqlc.User) (SessionResponse, error) {
+func (s *Service) issueSession(ctx context.Context, user *sqlc.User) (SessionResource, error) {
 	if err := s.guardAccountState(user); err != nil {
-		return SessionResponse{}, err
+		return SessionResource{}, err
 	}
 
 	sess, err := s.guard.Login(ctx, user)
 	if err != nil {
-		return SessionResponse{}, err
+		return SessionResource{}, err
 	}
 
-	return toSessionResponse(sess, user), nil
+	return toSessionResource(sess, user), nil
 }
 
-func toSessionResponse(sess platformauth.Session, user *sqlc.User) SessionResponse {
-	return SessionResponse{
+func toSessionResource(sess platformauth.Session, user *sqlc.User) SessionResource {
+	return SessionResource{
 		Token:        sess.Token,
 		RefreshToken: sess.RefreshToken,
 		ExpiresIn:    sess.ExpiresIn,
@@ -370,12 +374,18 @@ func (s *Service) guardAccountState(user *sqlc.User) error {
 
 // translateLookupFailure 把"账号不存在"统一翻译为凭证错误，避免泄漏账号是否存在。
 func (s *Service) translateLookupFailure(ctx context.Context, err error, identifier string) error {
-	if errors.Is(err, pgx.ErrNoRows) {
+	if isNotFound(err) {
 		s.equaliseLookupTiming(identifier)
 		logger.FromContext(ctx).Info("login failed: account not found", zap.String("identifier", identifier))
 		return errs.InvalidCredentials()
 	}
-	return errs.Internal(err)
+	return err
+}
+
+// isNotFound 报告错误是否为 404 语义（共享内核把底层空结果翻译后的稳定形式）。
+func isNotFound(err error) bool {
+	bizErr, ok := errs.As(err)
+	return ok && bizErr.Code() == errs.CodeNotFound
 }
 
 // dummyPasswordHash 是时序对齐用的固定哈希载荷，进程内只生成一次。
@@ -400,34 +410,32 @@ func (s *Service) equaliseLookupTiming(identifier string) {
 
 // recordLogin 记录最近登录信息；失败不影响登录本身。
 func (s *Service) recordLogin(ctx context.Context, userID, method string) {
-	if err := s.db.Queries(ctx).RecordUserLogin(ctx, sqlc.RecordUserLoginParams{ID: userID, Method: &method}); err != nil {
+	if err := s.users.RecordLogin(ctx, userID, method); err != nil {
 		logger.FromContext(ctx).Warn("failed to record last login", zap.Error(err), zap.String("user_id", userID))
 	}
 }
 
 // sendResetCredential 签发重置凭据并投递邮件。邮箱不存在时静默返回成功。
-func (s *Service) sendResetCredential(ctx context.Context, language, purpose, email string) (StatusResponse, error) {
-	user, err := s.db.Queries(ctx).GetUserByEmail(ctx, sqlc.GetUserByEmailParams{
-		Email: shareduser.NormaliseEmail(email),
-	})
+func (s *Service) sendResetCredential(ctx context.Context, language, purpose, email string) (StatusResource, error) {
+	user, err := s.users.ByEmail(ctx, email)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if isNotFound(err) {
 			logger.FromContext(ctx).Info("password reset requested for non-existent email, ignored")
-			return StatusResponse{Status: true}, nil
+			return StatusResource{Status: true}, nil
 		}
-		return StatusResponse{}, errs.Internal(err)
+		return StatusResource{}, err
 	}
 
 	code, mailKey, ttl, err := s.issueResetCredential(ctx, purpose, user.Email)
 	if err != nil {
-		return StatusResponse{}, errs.Internal(err)
+		return StatusResource{}, errs.Internal(err)
 	}
 	notif := NewPasswordResetNotification(user.Name, code)
 	notif.ExpiresIn = ttl
-	if err := s.notifyUser(ctx, language, &user, notif, mailKey, code, ttl); err != nil {
-		return StatusResponse{}, errs.Internal(err)
+	if err := s.notifyUser(ctx, language, user, notif, mailKey, code, ttl); err != nil {
+		return StatusResource{}, errs.Internal(err)
 	}
-	return StatusResponse{Status: true}, nil
+	return StatusResource{Status: true}, nil
 }
 
 // issueResetCredential 按用途签发重置凭据，返回明文、邮件模板键与寿命。
@@ -448,7 +456,7 @@ func (s *Service) issueResetCredential(ctx context.Context, purpose, email strin
 }
 
 // resolveResetTarget 核销凭据并定位待重置的账号。
-func (s *Service) resolveResetTarget(ctx context.Context, req ResetPasswordRequest) (*sqlc.User, error) {
+func (s *Service) resolveResetTarget(ctx context.Context, req ResetPasswordBody) (*sqlc.User, error) {
 	email := shareduser.NormaliseEmail(req.Email)
 
 	purpose, credential := purposeResetOTP, ""
@@ -467,14 +475,14 @@ func (s *Service) resolveResetTarget(ctx context.Context, req ResetPasswordReque
 		return nil, err
 	}
 
-	user, err := s.db.Queries(ctx).GetUserByEmail(ctx, sqlc.GetUserByEmailParams{Email: email})
+	user, err := s.users.ByEmail(ctx, email)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if isNotFound(err) {
 			return nil, errs.NotFound("No account is associated with this email address")
 		}
-		return nil, errs.Internal(err)
+		return nil, err
 	}
-	return &user, nil
+	return user, nil
 }
 
 // sendMail 渲染并投递邮件；重置链接由前端站点根地址拼接而成。

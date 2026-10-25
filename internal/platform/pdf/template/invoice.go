@@ -41,6 +41,8 @@ type InvoiceDocument struct {
 	// Language 是文案语言标签（如 zh-CN / en），留空时走 i18n 的默认语言。
 	// 这里收的是原始取值，协商（Accept-Language 的 q 值、子标签退化）交给 i18n。
 	Language string
+	// Translator 承载全部展示文案；缺省视为装配错误，Build 会直接返回错误。
+	Translator *i18n.Translator
 }
 
 // Title 实现 pdf.WithMetadata。
@@ -88,9 +90,9 @@ func (d *InvoiceDocument) UseDefaultFooter() bool {
 // 所有展示文案都从 lang/<语言>/invoice.toml 取，模板里不留硬编码文案：
 // 该约束是 AGENTS.md 4.5 的硬性要求，也让同一份模板能直接出中英两种凭据。
 func (d *InvoiceDocument) Build(ctx context.Context, b *pdf.Builder) error {
-	translator := i18n.Default()
+	translator := d.Translator
 	if translator == nil {
-		return oops.Errorf("pdf: i18n translator not initialized")
+		return oops.Errorf("pdf: invoice document requires a translator")
 	}
 	text := func(key string, vars map[string]string) string {
 		return translator.Invoice(d.Language, key, vars)

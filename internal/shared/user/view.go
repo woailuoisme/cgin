@@ -7,8 +7,11 @@ import (
 	"cgin/internal/shared/enums"
 )
 
-// PublicProfile 是用户公共档案视图，客户端与管理端共用的唯一字段来源。
-type PublicProfile struct {
+// Profile 是用户档案视图：客户端与管理端共用的唯一字段来源。
+//
+// 字段逐项声明而不是嵌入其他结构体：嵌入会让 JSON 与 OpenAPI 契约
+// 随内层类型的演化被动漂移，读取字段集也要跨文件跳转。
+type Profile struct {
 	// 用户唯一标识
 	ID string `json:"id" example:"usr_01J9X4N8Y0ABCD"`
 	// 用户展示昵称
@@ -31,21 +34,16 @@ type PublicProfile struct {
 	CreatedAt time.Time `json:"createdAt" example:"2026-09-27T10:00:00Z"`
 	// 账号更新时间 (ISO 8601 UTC)
 	UpdatedAt time.Time `json:"updatedAt" example:"2026-09-27T10:00:00Z"`
-}
-
-// Profile 是用户档案响应视图，在公共字段之上扩展账号状态。
-type Profile struct {
-	PublicProfile
 	// 账号状态 (active: 正常活跃, inactive: 未激活, banned: 已封禁)
 	Status enums.Status `json:"status" example:"active" enums:"active,inactive,banned"`
 }
 
-// ProjectPublicProfile 把用户行投影为公共档案视图。
-func ProjectPublicProfile(entity *sqlc.User) PublicProfile {
+// ProjectProfile 把用户行投影为档案视图；时间统一归一到 UTC，避免响应体带出服务器本地偏移。
+func ProjectProfile(entity *sqlc.User) Profile {
 	if entity == nil {
-		return PublicProfile{}
+		return Profile{}
 	}
-	return PublicProfile{
+	return Profile{
 		ID:              entity.ID,
 		Name:            entity.Name,
 		Email:           entity.Email,
@@ -55,19 +53,8 @@ func ProjectPublicProfile(entity *sqlc.User) PublicProfile {
 		Username:        entity.Username,
 		DisplayUsername: entity.DisplayUsername,
 		PhoneNumber:     entity.PhoneNumber,
-		// 归一到 UTC：避免响应体带出服务器本地偏移。
-		CreatedAt: entity.CreatedAt.UTC(),
-		UpdatedAt: entity.UpdatedAt.UTC(),
-	}
-}
-
-// ProjectProfile 把用户行投影为完整档案视图。
-func ProjectProfile(entity *sqlc.User) Profile {
-	if entity == nil {
-		return Profile{}
-	}
-	return Profile{
-		PublicProfile: ProjectPublicProfile(entity),
-		Status:        entity.Status,
+		CreatedAt:       entity.CreatedAt.UTC(),
+		UpdatedAt:       entity.UpdatedAt.UTC(),
+		Status:          entity.Status,
 	}
 }

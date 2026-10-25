@@ -20,14 +20,21 @@ type FieldSet struct {
 }
 
 // AdminFieldSet 承载管理端具备完整权限的用户模型局部更新字段集合。
+//
+// 字段逐项声明而不是嵌入 FieldSet：嵌入会让“哪些字段可被管理端写入”
+// 这件事取决于另一个类型的演化。
 type AdminFieldSet struct {
-	FieldSet
-	EmailVerified omitnull.Val[bool]
-	Role          omitnull.Val[enums.Role]
-	Status        omitnull.Val[enums.Status]
-	Banned        omitnull.Val[bool]
-	BanReason     omitnull.Val[string]
-	BanExpires    omitnull.Val[time.Time]
+	Name            omitnull.Val[string]
+	Image           omitnull.Val[string]
+	Username        omitnull.Val[string]
+	DisplayUsername omitnull.Val[string]
+	PhoneNumber     omitnull.Val[string]
+	EmailVerified   omitnull.Val[bool]
+	Role            omitnull.Val[enums.Role]
+	Status          omitnull.Val[enums.Status]
+	Banned          omitnull.Val[bool]
+	BanReason       omitnull.Val[string]
+	BanExpires      omitnull.Val[time.Time]
 }
 
 // Patch 把三态字段归一为单条 UPDATE 所需的显式设置/清空意图。
@@ -93,7 +100,13 @@ func PatchFromFieldSet(fields FieldSet) (Patch, error) {
 
 // PatchFromAdminFieldSet 把管理端字段翻译为补丁，并协同封禁状态。
 func PatchFromAdminFieldSet(fields AdminFieldSet) (Patch, error) {
-	patch, err := PatchFromFieldSet(fields.FieldSet)
+	patch, err := PatchFromFieldSet(FieldSet{
+		Name:            fields.Name,
+		Image:           fields.Image,
+		Username:        fields.Username,
+		DisplayUsername: fields.DisplayUsername,
+		PhoneNumber:     fields.PhoneNumber,
+	})
 	if err != nil {
 		return Patch{}, err
 	}
@@ -130,12 +143,13 @@ func PatchFromAdminFieldSet(fields AdminFieldSet) (Patch, error) {
 		}
 	}
 
-	patch.reconcileBanState()
-	return patch, nil
+	return patch.reconciled(), nil
 }
 
-// reconcileBanState 保证 banned 布尔值与 status 状态相互协同一致。
-func (p *Patch) reconcileBanState() {
+// reconciled 返回封禁布尔值与账号状态相互协同后的补丁副本。
+//
+// Patch 是值语义：全部方法共用值接收者，避免同一个类型混用两种接收者。
+func (p Patch) reconciled() Patch {
 	if p.Status != nil && *p.Status == enums.StatusBanned {
 		banned := true
 		p.Banned = &banned
@@ -144,6 +158,7 @@ func (p *Patch) reconcileBanState() {
 		status := enums.StatusBanned
 		p.Status = &status
 	}
+	return p
 }
 
 // Params 把补丁投影为 sqlc 更新参数。

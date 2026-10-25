@@ -152,6 +152,9 @@ func (c *Client) newScheduler(cfg *config.Config) (*asynq.Scheduler, error) {
 }
 
 // StartScheduler 异步启动周期性定时调度器（用于与 Worker 联合共存运行）。
+//
+// 调度器生命周期跟随进程，因此不再向上游返回错误；但必须带 panic 守卫：
+// 后台任务崩溃不能直接带跌整个 Worker 进程。
 func (c *Client) StartScheduler(cfg *config.Config) error {
 	scheduler, err := c.newScheduler(cfg)
 	if err != nil {
@@ -162,6 +165,11 @@ func (c *Client) StartScheduler(cfg *config.Config) error {
 	c.mu.Unlock()
 
 	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				c.log().Error("periodic task scheduler panicked", zap.Any("panic", recovered))
+			}
+		}()
 		if err := scheduler.Run(); err != nil {
 			c.log().Error("periodic task scheduler encountered an error", zap.Error(err))
 		}

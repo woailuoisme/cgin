@@ -52,17 +52,6 @@ func NewService(cfg config.PDFConfig, disk storage.Disk, log *zap.Logger) *Servi
 	}
 }
 
-// RegisterPDF 注册并初始化 PDF 服务实例。
-func RegisterPDF(cfg *config.Config, disk storage.Disk, log *zap.Logger) (*Service, error) {
-	pdfCfg := lo.Ternary(cfg != nil, lo.FromPtr(cfg).PDF, config.PDFConfig{
-		FontFamily: "SourceHanSans",
-		PageSize:   "A4",
-		Margin:     DefaultMargin,
-	})
-
-	return NewService(pdfCfg, disk, log), nil
-}
-
 // Render 将 Document 编排并编译生成原始 PDF 二进制字节切片。
 func (s *Service) Render(ctx context.Context, doc Document) ([]byte, error) {
 	if doc == nil {

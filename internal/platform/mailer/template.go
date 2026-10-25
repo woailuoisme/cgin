@@ -3,7 +3,6 @@ package mailer
 
 import (
 	"bytes"
-	"cmp"
 	"html/template"
 	"maps"
 	"strings"
@@ -13,32 +12,20 @@ import (
 )
 
 var (
-	tmplMu        sync.RWMutex
-	tmplCache     = make(map[string]*template.Template)
-	globalThemeMu sync.RWMutex
-	globalTheme   ThemeConfig
-	globalAppName = "cgin"
-	themeKeys     = [...]string{"ThemePrimary", "ThemeSuccess", "ThemeDanger", "ThemeWarning", "ThemeBg"}
+	tmplMu    sync.RWMutex
+	tmplCache = make(map[string]*template.Template)
+	themeKeys = [...]string{"ThemePrimary", "ThemeSuccess", "ThemeDanger", "ThemeWarning", "ThemeBg"}
 )
 
-// ThemeConfig 描述 HTML 邮件模板的主题配色选项。
-type ThemeConfig struct {
-	PrimaryColor string
-	SuccessColor string
-	DangerColor  string
-	WarningColor string
-	BgColor      string
-}
-
-// SetGlobalTheme 设置邮件模板全局主题配色与应用名称。
-func SetGlobalTheme(theme ThemeConfig, appName string) {
-	globalThemeMu.Lock()
-	defer globalThemeMu.Unlock()
-	globalTheme = theme
-	if appName != "" {
-		globalAppName = appName
-	}
-}
+// 邮件模板的固定主题色与默认应用名。
+const (
+	defaultThemePrimary = "#3869D4"
+	defaultThemeSuccess = "#22BC66"
+	defaultThemeDanger  = "#DC4D2F"
+	defaultThemeWarning = "#FF6200"
+	defaultThemeBg      = "#F4F4F7"
+	defaultAppName      = "cgin"
+)
 
 // RenderTemplate 渲染指定的邮件模板与上下文数据，并自动注入主题样式。
 func RenderTemplate(name string, data map[string]any) (string, error) {
@@ -96,18 +83,13 @@ func getOrParseTemplate(tmplFile string) (*template.Template, error) {
 }
 
 func prepareTemplateData(data map[string]any) map[string]any {
-	globalThemeMu.RLock()
-	theme := globalTheme
-	appName := globalAppName
-	globalThemeMu.RUnlock()
-
 	merged := make(map[string]any, len(data)+6)
-	merged["ThemePrimary"] = cmp.Or(theme.PrimaryColor, "#3869D4")
-	merged["ThemeSuccess"] = cmp.Or(theme.SuccessColor, "#22BC66")
-	merged["ThemeDanger"] = cmp.Or(theme.DangerColor, "#DC4D2F")
-	merged["ThemeWarning"] = cmp.Or(theme.WarningColor, "#FF6200")
-	merged["ThemeBg"] = cmp.Or(theme.BgColor, "#F4F4F7")
-	merged["AppName"] = appName
+	merged["ThemePrimary"] = defaultThemePrimary
+	merged["ThemeSuccess"] = defaultThemeSuccess
+	merged["ThemeDanger"] = defaultThemeDanger
+	merged["ThemeWarning"] = defaultThemeWarning
+	merged["ThemeBg"] = defaultThemeBg
+	merged["AppName"] = defaultAppName
 
 	maps.Copy(merged, data)
 

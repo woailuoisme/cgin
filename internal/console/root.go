@@ -57,6 +57,8 @@ func NewRootCommand() *cobra.Command {
 
 // NewRootCommandWithFactory 注入依赖工厂并组装根命令与全部子命令 (IoC & DIP)。
 func NewRootCommandWithFactory(f Factory) *cobra.Command {
+	core.RegisterTemplateFuncs()
+
 	cmd := &cobra.Command{
 		Use:           "cgin",
 		Short:         "cgin application console",

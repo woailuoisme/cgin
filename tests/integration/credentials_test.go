@@ -21,8 +21,8 @@ func TestRegisterCreatesUserAndCredential(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
 	h := hasher.New()
-	service := shareduser.NewService(db, h)
-	provider := shareduser.NewProvider(db, h)
+	service := shareduser.MustNewService(db, h)
+	provider := shareduser.MustNewProvider(db, h)
 
 	email := strings.ToUpper(uniqueEmail())
 	username := strings.ToUpper(uniqueUsername())
@@ -66,8 +66,8 @@ func TestCredentialLifecycle(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
 	h := hasher.New()
-	service := shareduser.NewService(db, h)
-	provider := shareduser.NewProvider(db, h)
+	service := shareduser.MustNewService(db, h)
+	provider := shareduser.MustNewProvider(db, h)
 
 	created, err := service.Register(ctx, shareduser.RegisterParams{
 		Name:     "Credential Tester",
@@ -123,7 +123,7 @@ func TestCredentialMissing(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
 	h := hasher.New()
-	provider := shareduser.NewProvider(db, h)
+	provider := shareduser.MustNewProvider(db, h)
 
 	row, err := db.Queries(ctx).CreateUser(ctx, sqlc.CreateUserParams{
 		Name:   "No Credential",

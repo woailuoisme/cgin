@@ -279,7 +279,7 @@
                     "200": {
                         "description": "用户分页列表",
                         "schema": {
-                            "$ref": "#/definitions/admin.UserPageResource"
+                            "$ref": "#/definitions/adminuser.UserPageResource"
                         }
                     }
                 },
@@ -309,7 +309,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/admin.CreateUserBody"
+                            "$ref": "#/definitions/adminuser.CreateUserBody"
                         }
                     }
                 ],
@@ -317,7 +317,7 @@
                     "201": {
                         "description": "新建成功的用户对象",
                         "schema": {
-                            "$ref": "#/definitions/admin.UserResource"
+                            "$ref": "#/definitions/adminuser.UserResource"
                         }
                     }
                 },
@@ -331,7 +331,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "根据关键字、状态与角色条件分块流式导出用户列表为 Excel 文件，免除内存溢出风险。",
+                "description": "根据关键字、状态与角色条件分块流式导出用户列表为 Excel 文件，免除内存溢出风险。\n导出固定按用户 ID 升序逐行输出（单页成本与已翻页深度无关），与列表页的 sort 参数无关。",
                 "consumes": [
                     "application/json"
                 ],
@@ -462,7 +462,7 @@
                     "200": {
                         "description": "用户完整档案",
                         "schema": {
-                            "$ref": "#/definitions/admin.UserResource"
+                            "$ref": "#/definitions/adminuser.UserResource"
                         }
                     }
                 },
@@ -534,7 +534,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/admin.UpdateUserBody"
+                            "$ref": "#/definitions/adminuser.UpdateUserBody"
                         }
                     }
                 ],
@@ -542,7 +542,7 @@
                     "200": {
                         "description": "更新后的用户对象",
                         "schema": {
-                            "$ref": "#/definitions/admin.UserResource"
+                            "$ref": "#/definitions/adminuser.UserResource"
                         }
                     }
                 },
@@ -551,316 +551,6 @@
         }
     },
     "definitions": {
-        "admin.CreateUserBody": {
-            "type": "object",
-            "required": [
-                "email",
-                "name",
-                "password",
-                "role"
-            ],
-            "properties": {
-                "email": {
-                    "description": "用户电子邮箱",
-                    "type": "string",
-                    "maxLength": 254,
-                    "example": "alex@example.com"
-                },
-                "emailVerified": {
-                    "description": "邮箱是否已完成验证",
-                    "type": "boolean",
-                    "example": true
-                },
-                "image": {
-                    "description": "用户头像 URL",
-                    "type": "string",
-                    "maxLength": 2048,
-                    "example": "https://example.com/avatar.png"
-                },
-                "name": {
-                    "description": "用户展示昵称",
-                    "type": "string",
-                    "maxLength": 120,
-                    "minLength": 1,
-                    "example": "Alex Mercer"
-                },
-                "password": {
-                    "description": "登录口令 (8-128位)",
-                    "type": "string",
-                    "maxLength": 128,
-                    "minLength": 8,
-                    "example": "Secret123!"
-                },
-                "role": {
-                    "description": "用户权限角色 (user: 普通用户, admin: 系统管理员)",
-                    "enum": [
-                        "user",
-                        "admin"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/admin.Role"
-                        }
-                    ],
-                    "example": "user"
-                },
-                "username": {
-                    "description": "唯一登录用户名 (3-30位)",
-                    "type": "string",
-                    "maxLength": 30,
-                    "minLength": 3,
-                    "example": "alexmercer"
-                }
-            }
-        },
-        "admin.Role": {
-            "type": "string",
-            "enum": [
-                "user",
-                "admin"
-            ],
-            "x-enum-varnames": [
-                "RoleUser",
-                "RoleAdmin"
-            ]
-        },
-        "admin.Status": {
-            "type": "string",
-            "enum": [
-                "active",
-                "inactive",
-                "pending",
-                "suspended",
-                "banned",
-                "active",
-                "inactive",
-                "pending",
-                "suspended",
-                "banned"
-            ],
-            "x-enum-varnames": [
-                "StatusActive",
-                "StatusInactive",
-                "StatusPending",
-                "StatusSuspended",
-                "StatusBanned"
-            ]
-        },
-        "admin.UpdateUserBody": {
-            "type": "object",
-            "properties": {
-                "banExpires": {
-                    "description": "封禁到期时间 (ISO 8601 UTC)",
-                    "type": "string",
-                    "x-nullable": true,
-                    "example": "2026-10-01T00:00:00Z"
-                },
-                "banReason": {
-                    "description": "封禁原因",
-                    "type": "string",
-                    "maxLength": 500,
-                    "x-nullable": true,
-                    "example": "违规发布广告"
-                },
-                "banned": {
-                    "description": "是否封禁",
-                    "type": "boolean",
-                    "x-nullable": true,
-                    "example": false
-                },
-                "displayUsername": {
-                    "description": "用户显示名称",
-                    "type": "string",
-                    "maxLength": 120,
-                    "minLength": 1,
-                    "x-nullable": true,
-                    "example": "Alex Mercer"
-                },
-                "emailVerified": {
-                    "description": "邮箱是否已验证",
-                    "type": "boolean",
-                    "x-nullable": true,
-                    "example": true
-                },
-                "image": {
-                    "description": "用户头像 URL",
-                    "type": "string",
-                    "maxLength": 2048,
-                    "x-nullable": true,
-                    "example": "https://example.com/avatar.png"
-                },
-                "name": {
-                    "description": "用户展示昵称",
-                    "type": "string",
-                    "maxLength": 120,
-                    "minLength": 1,
-                    "x-nullable": true,
-                    "example": "Alex Mercer"
-                },
-                "phoneNumber": {
-                    "description": "E.164 格式手机号",
-                    "type": "string",
-                    "x-nullable": true,
-                    "example": "+8613800138000"
-                },
-                "role": {
-                    "description": "用户权限角色 (user: 普通用户, admin: 系统管理员)",
-                    "type": "string",
-                    "enum": [
-                        "user",
-                        "admin"
-                    ],
-                    "x-nullable": true,
-                    "example": "admin"
-                },
-                "status": {
-                    "description": "账号状态 (active: 正常活跃, inactive: 未激活, banned: 已封禁)",
-                    "type": "string",
-                    "enum": [
-                        "active",
-                        "inactive",
-                        "banned"
-                    ],
-                    "x-nullable": true,
-                    "example": "active"
-                },
-                "username": {
-                    "description": "唯一登录用户名 (3-30位)",
-                    "type": "string",
-                    "maxLength": 30,
-                    "minLength": 3,
-                    "x-nullable": true,
-                    "example": "alexmercer"
-                }
-            }
-        },
-        "admin.UserPageResource": {
-            "type": "object",
-            "properties": {
-                "items": {
-                    "description": "用户列表数据",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/admin.UserResource"
-                    }
-                },
-                "meta": {
-                    "description": "分页元信息",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/response.Meta"
-                        }
-                    ]
-                }
-            }
-        },
-        "admin.UserResource": {
-            "type": "object",
-            "properties": {
-                "banExpires": {
-                    "description": "封禁到期时间 (ISO 8601 UTC)",
-                    "type": "string",
-                    "example": "2026-10-01T00:00:00Z"
-                },
-                "banReason": {
-                    "description": "封禁原因说明",
-                    "type": "string",
-                    "example": "违规发布广告"
-                },
-                "banned": {
-                    "description": "账号是否已被封禁",
-                    "type": "boolean",
-                    "example": false
-                },
-                "createdAt": {
-                    "description": "账号创建时间 (ISO 8601 UTC)",
-                    "type": "string",
-                    "example": "2026-09-27T10:00:00Z"
-                },
-                "displayUsername": {
-                    "description": "用户显示名称",
-                    "type": "string",
-                    "example": "Alex Mercer"
-                },
-                "email": {
-                    "description": "用户电子邮箱",
-                    "type": "string",
-                    "example": "alex@example.com"
-                },
-                "emailVerified": {
-                    "description": "邮箱是否已验证",
-                    "type": "boolean",
-                    "example": true
-                },
-                "id": {
-                    "description": "用户唯一标识",
-                    "type": "string",
-                    "example": "usr_01J9X4N8Y0ABCD"
-                },
-                "image": {
-                    "description": "用户头像 URL",
-                    "type": "string",
-                    "example": "https://example.com/avatar.png"
-                },
-                "lastLoginAt": {
-                    "description": "最后登录时间 (ISO 8601 UTC)",
-                    "type": "string",
-                    "example": "2026-09-27T10:00:00Z"
-                },
-                "lastLoginMethod": {
-                    "description": "最后登录认证方式",
-                    "type": "string",
-                    "example": "email"
-                },
-                "name": {
-                    "description": "用户展示昵称",
-                    "type": "string",
-                    "example": "Alex Mercer"
-                },
-                "phoneNumber": {
-                    "description": "E.164 格式手机号",
-                    "type": "string",
-                    "example": "+8613800138000"
-                },
-                "role": {
-                    "description": "用户权限角色 (user: 普通用户, admin: 系统管理员)",
-                    "enum": [
-                        "user",
-                        "admin"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/enums.Role"
-                        }
-                    ],
-                    "example": "user"
-                },
-                "status": {
-                    "description": "账号状态 (active: 正常活跃, inactive: 未激活, banned: 已封禁)",
-                    "enum": [
-                        "active",
-                        "inactive",
-                        "banned"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/enums.Status"
-                        }
-                    ],
-                    "example": "active"
-                },
-                "updatedAt": {
-                    "description": "账号更新时间 (ISO 8601 UTC)",
-                    "type": "string",
-                    "example": "2026-09-27T10:00:00Z"
-                },
-                "username": {
-                    "description": "唯一登录用户名",
-                    "type": "string",
-                    "example": "alexmercer"
-                }
-            }
-        },
         "adminauth.ChangePasswordBody": {
             "type": "object",
             "required": [
@@ -1044,6 +734,316 @@
                     "description": "待作废的刷新令牌 (可选，同时作废可真正阻断续签)",
                     "type": "string",
                     "example": "rt_01J9X4N8Y0EFGH"
+                }
+            }
+        },
+        "adminuser.CreateUserBody": {
+            "type": "object",
+            "required": [
+                "email",
+                "name",
+                "password",
+                "role"
+            ],
+            "properties": {
+                "email": {
+                    "description": "用户电子邮箱",
+                    "type": "string",
+                    "maxLength": 254,
+                    "example": "alex@example.com"
+                },
+                "emailVerified": {
+                    "description": "邮箱是否已完成验证",
+                    "type": "boolean",
+                    "example": true
+                },
+                "image": {
+                    "description": "用户头像 URL",
+                    "type": "string",
+                    "maxLength": 2048,
+                    "example": "https://example.com/avatar.png"
+                },
+                "name": {
+                    "description": "用户展示昵称",
+                    "type": "string",
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "example": "Alex Mercer"
+                },
+                "password": {
+                    "description": "登录口令 (8-128位)",
+                    "type": "string",
+                    "maxLength": 128,
+                    "minLength": 8,
+                    "example": "Secret123!"
+                },
+                "role": {
+                    "description": "用户权限角色 (user: 普通用户, admin: 系统管理员)",
+                    "enum": [
+                        "user",
+                        "admin"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/adminuser.Role"
+                        }
+                    ],
+                    "example": "user"
+                },
+                "username": {
+                    "description": "唯一登录用户名 (3-30位)",
+                    "type": "string",
+                    "maxLength": 30,
+                    "minLength": 3,
+                    "example": "alexmercer"
+                }
+            }
+        },
+        "adminuser.Role": {
+            "type": "string",
+            "enum": [
+                "user",
+                "admin"
+            ],
+            "x-enum-varnames": [
+                "RoleUser",
+                "RoleAdmin"
+            ]
+        },
+        "adminuser.Status": {
+            "type": "string",
+            "enum": [
+                "active",
+                "inactive",
+                "pending",
+                "suspended",
+                "banned",
+                "active",
+                "inactive",
+                "pending",
+                "suspended",
+                "banned"
+            ],
+            "x-enum-varnames": [
+                "StatusActive",
+                "StatusInactive",
+                "StatusPending",
+                "StatusSuspended",
+                "StatusBanned"
+            ]
+        },
+        "adminuser.UpdateUserBody": {
+            "type": "object",
+            "properties": {
+                "banExpires": {
+                    "description": "封禁到期时间 (ISO 8601 UTC)",
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "2026-10-01T00:00:00Z"
+                },
+                "banReason": {
+                    "description": "封禁原因",
+                    "type": "string",
+                    "maxLength": 500,
+                    "x-nullable": true,
+                    "example": "违规发布广告"
+                },
+                "banned": {
+                    "description": "是否封禁",
+                    "type": "boolean",
+                    "x-nullable": true,
+                    "example": false
+                },
+                "displayUsername": {
+                    "description": "用户显示名称",
+                    "type": "string",
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "x-nullable": true,
+                    "example": "Alex Mercer"
+                },
+                "emailVerified": {
+                    "description": "邮箱是否已验证",
+                    "type": "boolean",
+                    "x-nullable": true,
+                    "example": true
+                },
+                "image": {
+                    "description": "用户头像 URL",
+                    "type": "string",
+                    "maxLength": 2048,
+                    "x-nullable": true,
+                    "example": "https://example.com/avatar.png"
+                },
+                "name": {
+                    "description": "用户展示昵称",
+                    "type": "string",
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "x-nullable": true,
+                    "example": "Alex Mercer"
+                },
+                "phoneNumber": {
+                    "description": "E.164 格式手机号",
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "+8613800138000"
+                },
+                "role": {
+                    "description": "用户权限角色 (user: 普通用户, admin: 系统管理员)",
+                    "type": "string",
+                    "enum": [
+                        "user",
+                        "admin"
+                    ],
+                    "x-nullable": true,
+                    "example": "admin"
+                },
+                "status": {
+                    "description": "账号状态 (active: 正常活跃, inactive: 未激活, banned: 已封禁)",
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "inactive",
+                        "banned"
+                    ],
+                    "x-nullable": true,
+                    "example": "active"
+                },
+                "username": {
+                    "description": "唯一登录用户名 (3-30位)",
+                    "type": "string",
+                    "maxLength": 30,
+                    "minLength": 3,
+                    "x-nullable": true,
+                    "example": "alexmercer"
+                }
+            }
+        },
+        "adminuser.UserPageResource": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "description": "用户列表数据",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/adminuser.UserResource"
+                    }
+                },
+                "meta": {
+                    "description": "分页元信息",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/response.Meta"
+                        }
+                    ]
+                }
+            }
+        },
+        "adminuser.UserResource": {
+            "type": "object",
+            "properties": {
+                "banExpires": {
+                    "description": "封禁到期时间 (ISO 8601 UTC)",
+                    "type": "string",
+                    "example": "2026-10-01T00:00:00Z"
+                },
+                "banReason": {
+                    "description": "封禁原因说明",
+                    "type": "string",
+                    "example": "违规发布广告"
+                },
+                "banned": {
+                    "description": "账号是否已被封禁",
+                    "type": "boolean",
+                    "example": false
+                },
+                "createdAt": {
+                    "description": "账号创建时间 (ISO 8601 UTC)",
+                    "type": "string",
+                    "example": "2026-09-27T10:00:00Z"
+                },
+                "displayUsername": {
+                    "description": "用户显示名称",
+                    "type": "string",
+                    "example": "Alex Mercer"
+                },
+                "email": {
+                    "description": "用户电子邮箱",
+                    "type": "string",
+                    "example": "alex@example.com"
+                },
+                "emailVerified": {
+                    "description": "邮箱是否已验证",
+                    "type": "boolean",
+                    "example": true
+                },
+                "id": {
+                    "description": "用户唯一标识",
+                    "type": "string",
+                    "example": "usr_01J9X4N8Y0ABCD"
+                },
+                "image": {
+                    "description": "用户头像 URL",
+                    "type": "string",
+                    "example": "https://example.com/avatar.png"
+                },
+                "lastLoginAt": {
+                    "description": "最后登录时间 (ISO 8601 UTC)",
+                    "type": "string",
+                    "example": "2026-09-27T10:00:00Z"
+                },
+                "lastLoginMethod": {
+                    "description": "最后登录认证方式",
+                    "type": "string",
+                    "example": "email"
+                },
+                "name": {
+                    "description": "用户展示昵称",
+                    "type": "string",
+                    "example": "Alex Mercer"
+                },
+                "phoneNumber": {
+                    "description": "E.164 格式手机号",
+                    "type": "string",
+                    "example": "+8613800138000"
+                },
+                "role": {
+                    "description": "用户权限角色 (user: 普通用户, admin: 系统管理员)",
+                    "enum": [
+                        "user",
+                        "admin"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/adminuser.Role"
+                        }
+                    ],
+                    "example": "user"
+                },
+                "status": {
+                    "description": "账号状态 (active: 正常活跃, inactive: 未激活, banned: 已封禁)",
+                    "enum": [
+                        "active",
+                        "inactive",
+                        "banned"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/adminuser.Status"
+                        }
+                    ],
+                    "example": "active"
+                },
+                "updatedAt": {
+                    "description": "账号更新时间 (ISO 8601 UTC)",
+                    "type": "string",
+                    "example": "2026-09-27T10:00:00Z"
+                },
+                "username": {
+                    "description": "唯一登录用户名",
+                    "type": "string",
+                    "example": "alexmercer"
                 }
             }
         },

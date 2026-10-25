@@ -15,7 +15,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 
@@ -24,46 +23,95 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	govalidator "github.com/go-playground/validator/v10"
-	"github.com/samber/lo"
 
 	"cgin/internal/platform/errs"
 	"cgin/internal/platform/i18n"
 )
-
-func init() {
-	if err := InitEngine(); err != nil {
-		panic(err)
-	}
-}
 
 // Validatable 是支持 DTO 自校验与跨字段复合校验的接口契约。
 type Validatable interface {
 	Validate() error
 }
 
-// customValidator 包装 Gin 默认 StructValidator，在完成标签校验后自动回调 Validatable 接口。
-type customValidator struct {
-	base   binding.StructValidator
-	engine *govalidator.Validate
+// Validator 持有校验引擎与自定义规则的文案键映射。
+//
+// 引擎只在本构造期被写入：构造完成后所有方法只读，因此可以安全并发共享。
+// 规则不再通过 init() 自注册——谁注册、注册几次，由装配根显式决定。
+type Validator struct {
+	engine      *govalidator.Validate
+	messageKeys map[string]string
 }
 
-func (cv *customValidator) ValidateStruct(obj any) error {
-	if cv.base != nil {
-		if err := cv.base.ValidateStruct(obj); err != nil {
-			return err
+// Option 描述构造期可追加的校验规则或自定义类型解包函数。
+type Option func(*Validator) error
+
+// WithRule 追加一条自定义校验标签，并可选指定其 i18n 文案键。
+func WithRule(tag string, fn govalidator.Func, messageKey string) Option {
+	return func(v *Validator) error {
+		if err := v.engine.RegisterValidation(tag, fn); err != nil {
+			return fmt.Errorf("validator: register rule %q: %w", tag, err)
+		}
+		if messageKey != "" {
+			v.messageKeys[tag] = messageKey
+		}
+		return nil
+	}
+}
+
+// WithOmitNullTypes 为具体的 omitnull.Val[T] 类型注册三态解包函数。
+func WithOmitNullTypes(types ...any) Option {
+	return func(v *Validator) error {
+		v.engine.RegisterCustomTypeFunc(UnpackOmitNull, types...)
+		return nil
+	}
+}
+
+// New 构造校验器：先注册内置规则，再依次应用调用方追加的选项。
+func New(opts ...Option) (*Validator, error) {
+	v := &Validator{
+		engine:      govalidator.New(),
+		messageKeys: make(map[string]string, 8),
+	}
+	if err := registerRules(v.engine); err != nil {
+		return nil, err
+	}
+	for _, opt := range opts {
+		if opt == nil {
+			continue
+		}
+		if err := opt(v); err != nil {
+			return nil, err
 		}
 	}
-	return checkValidatable(obj)
+	return v, nil
 }
 
-func (cv *customValidator) Engine() any {
-	if cv.engine != nil {
-		return cv.engine
+// Install 把本实例挂载为 gin 的包级 StructValidator。
+//
+// gin 在 binding.Bind 内部调用它，这是框架提供的唯一校验入口；
+// 挂载必须在服务开始接收请求之前完成，之后只读。
+func (v *Validator) Install() {
+	binding.Validator = &ginAdapter{validator: v}
+}
+
+// ginAdapter 把 Validator 适配为 gin 的 binding.StructValidator。
+type ginAdapter struct {
+	validator *Validator
+}
+
+func (a *ginAdapter) ValidateStruct(obj any) error { return a.validator.ValidateStruct(obj) }
+
+func (a *ginAdapter) Engine() any { return a.validator.engine }
+
+// ValidateStruct 先执行标签校验，再回调 Validatable 复合校验。
+func (v *Validator) ValidateStruct(obj any) error {
+	if v == nil || obj == nil {
+		return nil
 	}
-	if cv.base != nil {
-		return cv.base.Engine()
+	if err := v.engine.Struct(obj); err != nil {
+		return err
 	}
-	return nil
+	return checkValidatable(obj)
 }
 
 // checkValidatable 递归检查对象（或其指针/切片元素）是否实现 Validatable 接口并触发。
@@ -106,62 +154,8 @@ func wrapValidationError(err error) error {
 	return errs.New(errs.CodeValidationFailed, err.Error())
 }
 
-var (
-	registerMu           sync.Mutex
-	customTagMessageKeys sync.Map // tag -> messageKey string
-	bindingTags          = [...]string{"json", "form", "uri"}
-)
-
-// InitEngine 将自定义校验规则与字段名提取函数注册至 Gin 全局 binding.Validator，并挂载 Validatable 钩子。
-func InitEngine() error {
-	registerMu.Lock()
-	defer registerMu.Unlock()
-
-	var eng *govalidator.Validate
-	if cv, ok := binding.Validator.(*customValidator); ok {
-		eng = cv.engine
-	} else if v, ok := binding.Validator.Engine().(*govalidator.Validate); ok {
-		eng = v
-		binding.Validator = &customValidator{
-			base:   binding.Validator,
-			engine: eng,
-		}
-	}
-
-	if eng != nil {
-		return registerRules(eng)
-	}
-	return nil
-}
-
-// RegisterRule 注册自定义校验标签与对应函数，并可选指定文案映射键。
-func RegisterRule(tag string, fn govalidator.Func, messageKey ...string) error {
-	registerMu.Lock()
-	defer registerMu.Unlock()
-
-	if msgKey := lo.FirstOrEmpty(messageKey); msgKey != "" {
-		customTagMessageKeys.Store(tag, msgKey)
-	}
-	if v, ok := binding.Validator.Engine().(*govalidator.Validate); ok {
-		return v.RegisterValidation(tag, fn)
-	}
-	return nil
-}
-
-// RegisterCustomTypeFunc 为验证器引擎注册自定义类型的解包或值提取函数。
-func RegisterCustomTypeFunc(fn govalidator.CustomTypeFunc, types ...any) {
-	registerMu.Lock()
-	defer registerMu.Unlock()
-
-	if v, ok := binding.Validator.Engine().(*govalidator.Validate); ok {
-		v.RegisterCustomTypeFunc(fn, types...)
-	}
-}
-
-// RegisterOmitNullTypes 为指定具体类型的 omitnull.Val[T] 容器注册统一的三态解包函数。
-func RegisterOmitNullTypes(types ...any) {
-	RegisterCustomTypeFunc(UnpackOmitNull, types...)
-}
+// bindingTags 是字段名提取时依次尝试的结构体标签。
+var bindingTags = [...]string{"json", "form", "uri"}
 
 // UnpackOmitNull 统一从 omitnull.Val[T] 容器提取具体值供验证器校验。
 // 若字段为缺省 (Unset) 或显式置空 (Null)，返回 nil（由 omitempty 标签跳过基础校验规则）；
@@ -402,13 +396,13 @@ func BindOptionalJSON(c *gin.Context, target any) error {
 }
 
 // Translate 按请求语言渲染每条校验失败，键为 api.md 约定的字段路径。
-func Translate(translator *i18n.Translator, language string, valErr govalidator.ValidationErrors) map[string][]string {
+func (v *Validator) Translate(translator *i18n.Translator, language string, valErr govalidator.ValidationErrors) map[string][]string {
 	fields := make(map[string][]string, len(valErr))
 	for _, fe := range valErr {
 		field := errs.FieldPath(fe)
 		var message string
 		if translator != nil {
-			message = translator.ValidationMessage(language, MessageKey(fe), field, fe.Param())
+			message = translator.ValidationMessage(language, v.MessageKey(fe), field, fe.Param())
 		}
 		fields[field] = append(fields[field], cmp.Or(message, fmt.Sprintf("The %s is invalid.", field)))
 	}
@@ -416,12 +410,10 @@ func Translate(translator *i18n.Translator, language string, valErr govalidator.
 }
 
 // MessageKey 选择文案键：优先查询自定义规则文案映射，随后区分数值与字符串的 min/max 措辞。
-func MessageKey(fe govalidator.FieldError) string {
+func (v *Validator) MessageKey(fe govalidator.FieldError) string {
 	tag := fe.Tag()
-	if key, ok := customTagMessageKeys.Load(tag); ok {
-		if str, isStr := key.(string); isStr {
-			return str
-		}
+	if key, ok := v.messageKeys[tag]; ok && key != "" {
+		return key
 	}
 	switch tag {
 	case "min", "max", "gt", "gte", "lt", "lte":

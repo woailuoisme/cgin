@@ -9,8 +9,8 @@ import (
 
 	"cgin/internal/config"
 	adminauth "cgin/internal/features/admin/auth"
-	admin "cgin/internal/features/admin/user"
-	"cgin/internal/features/client/auth"
+	adminuser "cgin/internal/features/admin/user"
+	clientauth "cgin/internal/features/client/auth"
 	"cgin/internal/features/client/profile"
 	paymentFeature "cgin/internal/features/payment"
 	realtimeFeature "cgin/internal/features/realtime"
@@ -18,15 +18,14 @@ import (
 	"cgin/internal/middleware"
 	"cgin/internal/middleware/global"
 	"cgin/internal/platform/errs"
-	"cgin/internal/platform/validator"
 )
 
 // routeHandlers 汇总各垂直切片的 HTTP 处理器，由装配方填充。
 type routeHandlers struct {
 	system    *system.Handler
-	auth      *auth.Handler
+	auth      *clientauth.Handler
 	profile   *profile.Handler
-	admin     *admin.Handler
+	admin     *adminuser.Handler
 	adminAuth *adminauth.Handler
 	realtime  *realtimeFeature.Handler
 	payment   *paymentFeature.Handler
@@ -43,7 +42,7 @@ type routeMount func(v1 *gin.RouterGroup, mw *middleware.Middleware)
 func v1Routes(handlers routeHandlers) []routeMount {
 	return []routeMount{
 		func(v1 *gin.RouterGroup, mw *middleware.Middleware) {
-			auth.RegisterRoutes(v1, handlers.auth, mw)
+			clientauth.RegisterRoutes(v1, handlers.auth, mw)
 		},
 		func(v1 *gin.RouterGroup, mw *middleware.Middleware) {
 			profile.RegisterRoutes(v1, handlers.profile, mw)
@@ -52,7 +51,7 @@ func v1Routes(handlers routeHandlers) []routeMount {
 			adminauth.RegisterAdminAuthRoutes(v1, handlers.adminAuth, mw)
 		},
 		func(v1 *gin.RouterGroup, mw *middleware.Middleware) {
-			admin.RegisterAdminRoutes(v1, handlers.admin, mw)
+			adminuser.RegisterAdminRoutes(v1, handlers.admin, mw)
 		},
 		func(v1 *gin.RouterGroup, mw *middleware.Middleware) {
 			realtimeFeature.RegisterRoutes(v1, handlers.realtime, mw)
@@ -70,10 +69,6 @@ func buildEngine(
 	routeMW *middleware.Middleware,
 	handlers routeHandlers,
 ) (*gin.Engine, error) {
-	if err := validator.InitEngine(); err != nil {
-		return nil, fmt.Errorf("init validator engine failed: %w", err)
-	}
-
 	// 设置 Gin 运行模式并静默默认控制台输出，由结构化日志中间件统一记录
 	gin.SetMode(cfg.ResolveGinMode())
 	gin.DefaultWriter = io.Discard
@@ -150,9 +145,9 @@ func InspectEngine(cfg *config.Config) (*gin.Engine, error) {
 		routeMW,
 		routeHandlers{
 			system:    &system.Handler{},
-			auth:      &auth.Handler{},
+			auth:      &clientauth.Handler{},
 			profile:   &profile.Handler{},
-			admin:     &admin.Handler{},
+			admin:     &adminuser.Handler{},
 			adminAuth: &adminauth.Handler{},
 			realtime:  &realtimeFeature.Handler{},
 			payment:   &paymentFeature.Handler{},

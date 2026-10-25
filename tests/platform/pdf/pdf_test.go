@@ -208,14 +208,13 @@ func TestDocumentWithConcerns(t *testing.T) {
 
 // TestInvoiceDocumentTemplate 校验发票模板在中英两种语言下都能渲染出合法 PDF。
 //
-// 展示文案取自 lang/<语言>/invoice.toml，故渲染前必须先注册默认翻译器；
+// 展示文案取自 lang/<语言>/invoice.toml，故渲染前必须把翻译器注入文档；
 // 文案本体的正确性由 tests/platform/i18n 的用例锁定，这里只负责"语言这条路能走通"。
 func TestInvoiceDocumentTemplate(t *testing.T) {
 	ctx := t.Context()
 
 	translator, err := i18n.New(&config.Config{I18n: config.I18nConfig{DefaultLanguage: "zh-CN"}})
 	require.NoError(t, err)
-	i18n.SetDefault(translator)
 
 	newInvoice := func(language string) *template.InvoiceDocument {
 		return &template.InvoiceDocument{
@@ -231,12 +230,13 @@ func TestInvoiceDocumentTemplate(t *testing.T) {
 				{Name: "Dedicated Support SLA", Quantity: 12, UnitPrice: "$500.00", Amount: "$6,000.00"},
 				{Name: "Storage Add-on (10TB)", Quantity: 2, UnitPrice: "$1,200.00", Amount: "$2,400.00"},
 			},
-			Subtotal:  "$20,400.00",
-			Tax:       "$1,224.00",
-			Total:     "$21,624.00",
-			Notes:     "Please remit payment within 30 days of invoice date.",
-			PaymentQR: "https://pay.example.com/invoice/INV-20260928-001",
-			Language:  language,
+			Subtotal:   "$20,400.00",
+			Tax:        "$1,224.00",
+			Total:      "$21,624.00",
+			Notes:      "Please remit payment within 30 days of invoice date.",
+			PaymentQR:  "https://pay.example.com/invoice/INV-20260928-001",
+			Language:   language,
+			Translator: translator,
 		}
 	}
 
@@ -254,29 +254,21 @@ func TestInvoiceDocumentTemplate(t *testing.T) {
 	}
 }
 
-// TestInvoiceRequiresTranslator 校验未注册翻译器时给出明确错误，而不是渲染出一份空标签凭据。
+// TestInvoiceRequiresTranslator 校验未注入翻译器时给出明确错误，而不是渲染出一份空标签凭据。
 func TestInvoiceRequiresTranslator(t *testing.T) {
-	i18n.SetDefault(nil)
-
 	svc := pdf.NewService(config.PDFConfig{FontFamily: "Helvetica"}, nil, nil)
 	_, err := svc.Render(t.Context(), &template.InvoiceDocument{InvoiceNumber: "INV-001"})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "translator not initialized")
+	assert.Contains(t, err.Error(), "requires a translator")
 }
 
-func TestRegisterPDFServiceInstance(t *testing.T) {
+func TestPDFServiceInstance(t *testing.T) {
 	ctx := t.Context()
-	cfg := &config.Config{
-		PDF: config.PDFConfig{
-			FontFamily: "Helvetica",
-		},
-	}
 
-	service, err := pdf.RegisterPDF(cfg, nil, nil)
-	require.NoError(t, err)
+	service := pdf.NewService(config.PDFConfig{FontFamily: "Helvetica"}, nil, nil)
 	require.NotNil(t, service)
 
-	doc := &simpleTestDoc{title: "RegisterPDF Service", content: "Testing instance invocation"}
+	doc := &simpleTestDoc{title: "PDF Service", content: "Testing instance invocation"}
 	data, err := service.Render(ctx, doc)
 	require.NoError(t, err)
 	assert.True(t, bytes.HasPrefix(data, []byte("%PDF")))

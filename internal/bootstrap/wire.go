@@ -11,8 +11,8 @@ import (
 	"cgin/internal/config"
 	"cgin/internal/database"
 	adminauth "cgin/internal/features/admin/auth"
-	admin "cgin/internal/features/admin/user"
-	"cgin/internal/features/client/auth"
+	adminuser "cgin/internal/features/admin/user"
+	clientauth "cgin/internal/features/client/auth"
 	"cgin/internal/features/client/profile"
 	paymentFeature "cgin/internal/features/payment"
 	realtimeFeature "cgin/internal/features/realtime"
@@ -29,13 +29,12 @@ import (
 	"cgin/internal/platform/mailer"
 	"cgin/internal/platform/notification"
 	"cgin/internal/platform/payment"
-	"cgin/internal/platform/pdf"
 	"cgin/internal/platform/queue"
 	"cgin/internal/platform/realtime"
 	"cgin/internal/platform/search"
 	"cgin/internal/platform/storage"
 	"cgin/internal/platform/telemetry"
-	"cgin/internal/platform/wechat"
+	"cgin/internal/platform/validator"
 	"cgin/internal/shared/media"
 	sharedDatabase "cgin/internal/shared/notification/database"
 	"cgin/internal/shared/user"
@@ -64,19 +63,68 @@ func NewApplication(ctx context.Context, portOverride int) (_ *Application, err 
 		}
 	}()
 
+	infra, err := initInfrastructure(ctx, cfg, td)
+	if err != nil {
+		return nil, err
+	}
+
+	facade, err := initFeatures(infra, td)
+	if err != nil {
+		return nil, err
+	}
+
+	engine, err := buildEngine(cfg, facade.global, facade.route, facade.handlers)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Application{
+		cfg:          cfg,
+		logger:       infra.log,
+		db:           infra.db,
+		cache:        infra.cache,
+		locker:       infra.locker,
+		mailer:       infra.mailer,
+		notification: facade.notifier,
+		eventbus:     infra.eventbus,
+		queue:        infra.queue,
+		engine:       engine,
+	}, nil
+}
+
+// infrastructure 汇总装配期构建的基础设施依赖。
+//
+// 字段只在这一层被赋值，功能层只读，避免组装过程变成一条几十个局部变量的长链。
+type infrastructure struct {
+	cfg        *config.Config
+	log        *zap.Logger
+	db         *database.DB
+	cache      *cache.Client
+	locker     cache.Locker
+	mailer     mailer.Mailer
+	eventbus   *eventbus.Manager
+	queue      *queue.Client
+	disk       storage.Disk
+	translator *i18n.Translator
+	validator  *validator.Validator
+	enforcer   *authorization.Enforcer
+	tokens     *platformauth.TokenIssuer
+	hasher     *hasher.Hasher
+}
+
+// initInfrastructure 按依赖顺序构建配置、日志、连接池与平台组件。
+func initInfrastructure(ctx context.Context, cfg *config.Config, td *teardown) (*infrastructure, error) {
 	log, err := initLogging(ctx, cfg, td)
 	if err != nil {
 		return nil, err
 	}
 
-	// 初始化 PostgreSQL 数据库连接池
 	pool, err := database.Open(ctx, cfg.Database, cfg.App.Name)
 	if err != nil {
 		return nil, err
 	}
 	db := database.NewDB(pool)
 	td.add(db.Close)
-
 	logDatabaseReady(ctx, log, db, cfg.Database)
 
 	cacheClient, locker, mailerClient, err := initInfraServices(ctx, cfg, log, td)
@@ -89,7 +137,6 @@ func NewApplication(ctx context.Context, portOverride int) (_ *Application, err 
 		return nil, err
 	}
 
-	// 探测并初始化文件/对象存储驱动
 	disk, err := storage.Open(ctx, cfg.Storage)
 	if err != nil {
 		return nil, err
@@ -99,146 +146,150 @@ func NewApplication(ctx context.Context, portOverride int) (_ *Application, err 
 	if err != nil {
 		return nil, err
 	}
-	i18n.SetDefault(translator)
+
+	// 校验器在这里构造一次并挂载：规则由各领域模块显式贡献，不再靠 init() 自注册。
+	val, err := validator.New(slices.Concat(user.ValidationOptions(), adminuser.ValidationOptions())...)
+	if err != nil {
+		return nil, err
+	}
+	val.Install()
 
 	enforcer, err := authorization.New()
 	if err != nil {
 		return nil, err
 	}
 
-	tokens := platformauth.NewTokenIssuer(cfg.JWT, cacheClient)
-	hasherClient := hasher.New()
+	return &infrastructure{
+		cfg:        cfg,
+		log:        log,
+		db:         db,
+		cache:      cacheClient,
+		locker:     locker,
+		mailer:     mailerClient,
+		eventbus:   eventBusManager,
+		queue:      queueClient,
+		disk:       disk,
+		translator: translator,
+		validator:  val,
+		enforcer:   enforcer,
+		tokens:     platformauth.NewTokenIssuer(cfg.JWT, cacheClient),
+		hasher:     hasher.New(),
+	}, nil
+}
 
-	// 初始化用户认证提供器与用户领域服务
-	userProvider := user.NewProvider(db, hasherClient)
-	userService := user.NewService(db, hasherClient)
+// featureSet 汇总领域服务、HTTP 处理器与两层中间件。
+type featureSet struct {
+	handlers routeHandlers
+	global   *global.Middleware
+	route    *middleware.Middleware
+	notifier *notification.Notifier
+}
 
-	realtimeGateway, notifier, err := initNotificationSubsystem(cfg, db, mailerClient, queueClient, td)
+// initFeatures 装配用户域、认证守卫、通知网关与各垂直切片的 HTTP 处理器。
+func initFeatures(in *infrastructure, td *teardown) (*featureSet, error) {
+	userProvider := user.MustNewProvider(in.db, in.hasher)
+	userService := user.MustNewService(in.db, in.hasher)
+
+	realtimeGateway, notifier, err := initNotificationSubsystem(in.cfg, in.db, in.mailer, in.queue, td)
 	if err != nil {
 		return nil, err
 	}
 
-	// 初始化客户端与管理端 Guard 及多守卫注册中心 (Multiple Guards)
-	clientGuard := platformauth.NewGuard(tokens, userProvider, user.ClientPolicy{}, userProvider.Identity)
-	adminGuard := platformauth.NewGuard(tokens, userProvider, user.AdminPolicy{}, userProvider.Identity)
-
+	clientGuard := platformauth.NewGuard(in.tokens, userProvider, user.ClientPolicy{}, userProvider.Identity)
+	adminGuard := platformauth.NewGuard(in.tokens, userProvider, user.AdminPolicy{}, userProvider.Identity)
 	authManager := platformauth.NewManager().
 		Register("client", clientGuard).
 		Register("admin", adminGuard).
 		SetDefault("client")
 
 	globalMW := global.New(global.Deps{
-		Cache:          cacheClient,
-		Logger:         log,
-		CORS:           cfg.CORS,
-		Production:     cfg.IsProduction(),
-		Translator:     translator,
-		RequestTimeout: cfg.App.Server.RequestTimeout,
+		Cache:          in.cache,
+		Logger:         in.log,
+		CORS:           in.cfg.CORS,
+		Production:     in.cfg.IsProduction(),
+		Translator:     in.translator,
+		Validator:      in.validator,
+		RequestTimeout: in.cfg.App.Server.RequestTimeout,
 		// multipart 上传按媒体单文件配额放行；批量上传（UploadMultiple）受此单请求上限约束，
 		// ponytail: 单请求上限 == 单文件配额，需要一次传多个大文件时再加 MaxFiles 配置。
-		UploadMaxBody: cfg.Media.MaxFileSize,
+		UploadMaxBody: in.cfg.Media.MaxFileSize,
 	})
 
 	routeMW := middleware.New(middleware.Deps{
 		AuthManager: authManager,
-		Cache:       cacheClient,
-		Authz:       enforcer,
-		Logger:      log,
-		Limiter:     cfg.Limiter,
-		SigningKey:  cfg.JWT.Secret,
+		Cache:       in.cache,
+		Authz:       in.enforcer,
+		Logger:      in.log,
+		Limiter:     in.cfg.Limiter,
+		SigningKey:  in.cfg.JWT.Secret,
 	})
 
-	authService := auth.NewService(auth.Deps{
-		DB:          db,
+	authService := clientauth.MustNewService(clientauth.Deps{
+		DB:          in.db,
 		Users:       userService,
 		Credentials: userProvider,
 		Guard:       clientGuard,
-		Hasher:      hasherClient,
-		Cache:       cacheClient,
-		Mailer:      mailerClient,
+		Hasher:      in.hasher,
+		Cache:       in.cache,
+		Mailer:      in.mailer,
 		Notifier:    notifier,
-		Translator:  translator,
-		Config:      cfg,
-		Publisher:   eventBusManager,
+		Translator:  in.translator,
+		Config:      in.cfg,
+		Publisher:   in.eventbus,
 	})
 
-	adminService := admin.NewService(admin.Deps{UserService: userService})
-	adminAuthService := adminauth.NewService(adminauth.Deps{
+	adminService := adminuser.MustNewService(adminuser.Deps{UserService: userService})
+	adminAuthService := adminauth.MustNewService(adminauth.Deps{
 		Guard:     adminGuard,
 		Passwords: userProvider,
 	})
 
-	searchClient, err := search.New(cfg.Search)
+	searchClient, err := search.New(in.cfg.Search)
 	if err != nil {
 		return nil, err
 	}
 
-	mediaManager := media.New(cfg.Media, cfg.Storage, disk, db)
+	mediaManager := media.New(in.cfg.Media, in.cfg.Storage, in.disk, in.db)
 
-	// 初始化健康就绪探针 Handler
 	systemHandler := system.NewHandler(
 		system.NewService(system.Deps{
-			Database: &databasePinger{db: db},
-			Cache:    cacheClient,
-			Storage:  disk,
+			Database: &databasePinger{db: in.db},
+			Cache:    in.cache,
+			Storage:  in.disk,
 			Search:   searchClient,
 			Realtime: realtimeGateway,
-			Imgproxy: mediaManager.Image(),
-			Mailer:   mailerClient,
+			// 媒体门面自身实现 Ping/Driver/Enabled，探针直接依赖它而不需要伸手取内部件。
+			Imgproxy: mediaManager,
+			Mailer:   in.mailer,
 		}),
-		log,
+		in.log,
 	)
 
 	realtimeService := realtimeFeature.NewService(realtimeFeature.Deps{
 		Gateway: realtimeGateway,
-		Cfg:     cfg,
-		Secret:  cfg.Realtime.Secret,
-		DB:      db,
+		Cfg:     in.cfg,
+		Secret:  in.cfg.Realtime.Secret,
+		Users:   userService,
 	})
-	realtimeHandler := realtimeFeature.NewHandler(realtimeService)
-	if _, err := wechat.NewManager(cfg.WeChat, cacheClient); err != nil {
-		return nil, err
-	}
 
-	paymentManager, err := payment.NewManager(cfg, log)
+	paymentManager, err := payment.NewManager(in.cfg, in.log)
 	if err != nil {
 		return nil, err
 	}
 
-	paymentService := paymentFeature.NewService(paymentManager, cacheClient, cfg, eventBusManager)
-	paymentHandler := paymentFeature.NewHandler(paymentService)
-
-	engine, err := buildEngine(
-		cfg, globalMW, routeMW,
-		routeHandlers{
+	return &featureSet{
+		handlers: routeHandlers{
 			system:    systemHandler,
-			auth:      auth.NewHandler(authService),
-			profile:   profile.NewHandler(userService, mediaManager),
-			admin:     admin.NewHandler(adminService),
+			auth:      clientauth.NewHandler(authService),
+			profile:   profile.NewHandler(profile.MustNewService(profile.Deps{Users: userService, Avatars: mediaManager})),
+			admin:     adminuser.NewHandler(adminService),
 			adminAuth: adminauth.NewHandler(adminAuthService),
-			realtime:  realtimeHandler,
-			payment:   paymentHandler,
+			realtime:  realtimeFeature.NewHandler(realtimeService),
+			payment:   paymentFeature.NewHandler(paymentFeature.NewService(paymentManager, in.cache, in.cfg, in.eventbus)),
 		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err := pdf.RegisterPDF(cfg, disk, log); err != nil {
-		return nil, err
-	}
-
-	return &Application{
-		cfg:          cfg,
-		logger:       log,
-		db:           db,
-		cache:        cacheClient,
-		locker:       locker,
-		mailer:       mailerClient,
-		notification: notifier,
-		eventbus:     eventBusManager,
-		queue:        queueClient,
-		engine:       engine,
+		global:   globalMW,
+		route:    routeMW,
+		notifier: notifier,
 	}, nil
 }
 
@@ -358,7 +409,7 @@ func initEventSubsystem(cfg *config.Config, log *zap.Logger, locker cache.Locker
 	}
 	td.add(eventBusManager.Close)
 
-	if err := auth.RegisterListeners(eventBusManager, queueClient); err != nil {
+	if err := clientauth.RegisterListeners(eventBusManager, queueClient); err != nil {
 		return nil, nil, err
 	}
 

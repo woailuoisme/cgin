@@ -115,12 +115,12 @@ func TestNotificationAssembly(t *testing.T) {
 	}()
 
 	// 验证各渠道实例可正常获取
-	assert.NotNil(t, notifier.SMS())
-	assert.NotNil(t, notifier.Chat())
+	assert.NotNil(t, notifier.Channel("sms"))
+	assert.NotNil(t, notifier.Channel("chat"))
 
 	// Mail、Realtime 与注入型渠道（database）在传入 nil 依赖时不被默认注册
-	assert.Nil(t, notifier.Mail())
-	assert.Nil(t, notifier.Realtime())
+	assert.Nil(t, notifier.Channel("mail"))
+	assert.Nil(t, notifier.Channel("realtime"))
 	assert.Nil(t, notifier.Channel("database"))
 }
 

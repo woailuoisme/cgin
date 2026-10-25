@@ -33,7 +33,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/auth.ChangePasswordBody"
+                            "$ref": "#/definitions/clientauth.ChangePasswordBody"
                         }
                     }
                 ],
@@ -65,7 +65,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/auth.ForgetPasswordBody"
+                            "$ref": "#/definitions/clientauth.ForgetPasswordBody"
                         }
                     }
                 ],
@@ -73,7 +73,7 @@
                     "200": {
                         "description": "已受理（邮箱不存在时也返回此结果）",
                         "schema": {
-                            "$ref": "#/definitions/auth.StatusResource"
+                            "$ref": "#/definitions/clientauth.StatusResource"
                         }
                     }
                 },
@@ -99,7 +99,7 @@
                     "200": {
                         "description": "当前登录用户",
                         "schema": {
-                            "$ref": "#/definitions/auth.GetSessionResource"
+                            "$ref": "#/definitions/clientauth.GetSessionResource"
                         }
                     }
                 },
@@ -126,7 +126,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/auth.RequestPasswordResetBody"
+                            "$ref": "#/definitions/clientauth.RequestPasswordResetBody"
                         }
                     }
                 ],
@@ -134,7 +134,7 @@
                     "200": {
                         "description": "已受理（邮箱不存在时也返回此结果）",
                         "schema": {
-                            "$ref": "#/definitions/auth.StatusResource"
+                            "$ref": "#/definitions/clientauth.StatusResource"
                         }
                     }
                 },
@@ -161,7 +161,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/auth.ResetPasswordBody"
+                            "$ref": "#/definitions/clientauth.ResetPasswordBody"
                         }
                     }
                 ],
@@ -196,7 +196,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/auth.SendVerificationOTPBody"
+                            "$ref": "#/definitions/clientauth.SendVerificationOTPBody"
                         }
                     }
                 ],
@@ -204,7 +204,7 @@
                     "200": {
                         "description": "已受理（邮箱不存在或已验证时也返回此结果）",
                         "schema": {
-                            "$ref": "#/definitions/auth.StatusResource"
+                            "$ref": "#/definitions/clientauth.StatusResource"
                         }
                     }
                 },
@@ -231,7 +231,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/auth.SignInEmailBody"
+                            "$ref": "#/definitions/clientauth.SignInEmailBody"
                         }
                     }
                 ],
@@ -239,7 +239,7 @@
                     "200": {
                         "description": "登录成功",
                         "schema": {
-                            "$ref": "#/definitions/auth.SessionResource"
+                            "$ref": "#/definitions/clientauth.SessionResource"
                         }
                     }
                 },
@@ -266,7 +266,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/auth.SignInUsernameBody"
+                            "$ref": "#/definitions/clientauth.SignInUsernameBody"
                         }
                     }
                 ],
@@ -274,7 +274,7 @@
                     "200": {
                         "description": "登录成功",
                         "schema": {
-                            "$ref": "#/definitions/auth.SessionResource"
+                            "$ref": "#/definitions/clientauth.SessionResource"
                         }
                     }
                 },
@@ -305,7 +305,7 @@
                         "name": "payload",
                         "in": "body",
                         "schema": {
-                            "$ref": "#/definitions/auth.SignOutBody"
+                            "$ref": "#/definitions/clientauth.SignOutBody"
                         }
                     }
                 ],
@@ -337,7 +337,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/auth.SignUpEmailBody"
+                            "$ref": "#/definitions/clientauth.SignUpEmailBody"
                         }
                     }
                 ],
@@ -345,7 +345,7 @@
                     "201": {
                         "description": "注册成功并已登录",
                         "schema": {
-                            "$ref": "#/definitions/auth.SessionResource"
+                            "$ref": "#/definitions/clientauth.SessionResource"
                         }
                     }
                 },
@@ -372,7 +372,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/auth.RefreshTokenBody"
+                            "$ref": "#/definitions/clientauth.RefreshTokenBody"
                         }
                     }
                 ],
@@ -380,7 +380,7 @@
                     "200": {
                         "description": "新的一对令牌",
                         "schema": {
-                            "$ref": "#/definitions/auth.SessionResource"
+                            "$ref": "#/definitions/clientauth.SessionResource"
                         }
                     }
                 },
@@ -407,7 +407,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/auth.VerifyEmailBody"
+                            "$ref": "#/definitions/clientauth.VerifyEmailBody"
                         }
                     }
                 ],
@@ -415,7 +415,7 @@
                     "200": {
                         "description": "验证通过",
                         "schema": {
-                            "$ref": "#/definitions/auth.StatusResource"
+                            "$ref": "#/definitions/clientauth.StatusResource"
                         }
                     }
                 },
@@ -599,7 +599,31 @@
         }
     },
     "definitions": {
-        "auth.ChangePasswordBody": {
+        "cgin_internal_platform_realtime.ProxyError": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "cgin_internal_platform_realtime.SubscribeResult": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "expire_at": {
+                    "type": "integer"
+                },
+                "info": {
+                    "type": "object",
+                    "additionalProperties": {}
+                }
+            }
+        },
+        "clientauth.ChangePasswordBody": {
             "type": "object",
             "required": [
                 "currentPassword",
@@ -620,7 +644,7 @@
                 }
             }
         },
-        "auth.ForgetPasswordBody": {
+        "clientauth.ForgetPasswordBody": {
             "type": "object",
             "required": [
                 "email"
@@ -633,20 +657,20 @@
                 }
             }
         },
-        "auth.GetSessionResource": {
+        "clientauth.GetSessionResource": {
             "type": "object",
             "properties": {
                 "user": {
                     "description": "当前登录用户身份资料投影",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/auth.UserResource"
+                            "$ref": "#/definitions/clientauth.UserResource"
                         }
                     ]
                 }
             }
         },
-        "auth.RefreshTokenBody": {
+        "clientauth.RefreshTokenBody": {
             "type": "object",
             "required": [
                 "refreshToken"
@@ -659,7 +683,7 @@
                 }
             }
         },
-        "auth.RequestPasswordResetBody": {
+        "clientauth.RequestPasswordResetBody": {
             "type": "object",
             "required": [
                 "email"
@@ -672,7 +696,7 @@
                 }
             }
         },
-        "auth.ResetPasswordBody": {
+        "clientauth.ResetPasswordBody": {
             "type": "object",
             "required": [
                 "email",
@@ -704,7 +728,7 @@
                 }
             }
         },
-        "auth.SendVerificationOTPBody": {
+        "clientauth.SendVerificationOTPBody": {
             "type": "object",
             "required": [
                 "email"
@@ -717,7 +741,7 @@
                 }
             }
         },
-        "auth.SessionResource": {
+        "clientauth.SessionResource": {
             "type": "object",
             "properties": {
                 "expiresIn": {
@@ -739,13 +763,13 @@
                     "description": "用户身份资料投影",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/auth.UserResource"
+                            "$ref": "#/definitions/clientauth.UserResource"
                         }
                     ]
                 }
             }
         },
-        "auth.SignInEmailBody": {
+        "clientauth.SignInEmailBody": {
             "type": "object",
             "required": [
                 "email",
@@ -764,7 +788,7 @@
                 }
             }
         },
-        "auth.SignInUsernameBody": {
+        "clientauth.SignInUsernameBody": {
             "type": "object",
             "required": [
                 "password",
@@ -785,7 +809,7 @@
                 }
             }
         },
-        "auth.SignOutBody": {
+        "clientauth.SignOutBody": {
             "type": "object",
             "properties": {
                 "refreshToken": {
@@ -795,7 +819,7 @@
                 }
             }
         },
-        "auth.SignUpEmailBody": {
+        "clientauth.SignUpEmailBody": {
             "type": "object",
             "required": [
                 "email",
@@ -838,7 +862,7 @@
                 }
             }
         },
-        "auth.StatusResource": {
+        "clientauth.StatusResource": {
             "type": "object",
             "properties": {
                 "status": {
@@ -848,7 +872,7 @@
                 }
             }
         },
-        "auth.UserResource": {
+        "clientauth.UserResource": {
             "type": "object",
             "properties": {
                 "createdAt": {
@@ -916,7 +940,7 @@
                 }
             }
         },
-        "auth.VerifyEmailBody": {
+        "clientauth.VerifyEmailBody": {
             "type": "object",
             "required": [
                 "email",
@@ -932,30 +956,6 @@
                     "description": "6位数字邮箱验证码",
                     "type": "string",
                     "example": "123456"
-                }
-            }
-        },
-        "cgin_internal_platform_realtime.ProxyError": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "integer"
-                },
-                "message": {
-                    "type": "string"
-                }
-            }
-        },
-        "cgin_internal_platform_realtime.SubscribeResult": {
-            "type": "object",
-            "properties": {
-                "data": {},
-                "expire_at": {
-                    "type": "integer"
-                },
-                "info": {
-                    "type": "object",
-                    "additionalProperties": {}
                 }
             }
         },

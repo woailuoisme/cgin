@@ -2,10 +2,11 @@ package database
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -16,13 +17,6 @@ import (
 
 	"cgin/internal/config"
 	"cgin/internal/platform/logger"
-)
-
-var (
-	reSensitiveAssignments = regexp.MustCompile(`(?i)((?:["\x60]?[a-zA-Z0-9_]+["\x60]?\.)?["\x60]?(?:password|password_hash|token|secret|access_token|refresh_token|credential|api_key|verify_code|otp|value)["\x60]?\s*(?:=|ILIKE|LIKE)\s*)'(?:''|[^'])*'`)
-	reArgon2               = regexp.MustCompile(`'?\$argon2[^\s'"]+'?`)
-	reBcrypt               = regexp.MustCompile(`'?\$2[ayb]\$[0-9]{2}\$[^\s'"]{53}'?`)
-	reJWT                  = regexp.MustCompile(`'?eyJh[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+'?`)
 )
 
 // queryTrace 承载单条 SQL 的起始时间与语句文本。
@@ -56,6 +50,9 @@ func (t *ZapTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.T
 }
 
 // TraceQueryEnd 在 SQL 执行完成后触发，负责记录异常报错、慢查询告警与 Debug 审计。
+//
+// 日志只携带语句指纹与操作类型：pgx 扩展协议下参数位于 Args，语句文本只有 $n 占位符，
+// 因此无需手写 SQL 词法器去猜字面量边界，也就不存在脱敏遗漏导致的密钥泄漏。
 func (t *ZapTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryEndData) {
 	trace, ok := ctx.Value(ctxQueryTraceKey{}).(queryTrace)
 	if !ok {
@@ -65,31 +62,35 @@ func (t *ZapTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.Tra
 	dur := time.Since(trace.start)
 	log := logger.FromContext(ctx)
 
-	query := RedactQuery(trace.sql)
-	caller := captureCaller()
-	operation := sqlOperation(trace.sql)
+	failed := isActionableDBError(data.Err)
+	slow := t.slowThreshold > 0 && dur >= t.slowThreshold
+	debug := t.debugEnabled && log.Core().Enabled(zapcore.DebugLevel)
+	if !failed && !slow && !debug {
+		return
+	}
 
 	fields := func(extra ...zap.Field) []zap.Field {
-		f := make([]zap.Field, 0, 4+len(extra))
+		f := make([]zap.Field, 0, 5+len(extra))
 		f = append(f,
-			zap.String("query", query),
+			zap.String("operation", sqlOperation(trace.sql)),
+			zap.String("fingerprint", QueryFingerprint(trace.sql)),
 			zap.String("duration", dur.String()),
-			zap.String("operation", operation),
 		)
-		if caller != "" {
+		// 仅在实际写日志时采集调用栈，避免每条查询都付一次 runtime.Callers。
+		if caller := captureCaller(); caller != "" {
 			f = append(f, zap.String("caller", caller))
 		}
 		return append(f, extra...)
 	}
 
 	// 1. 查询执行失败：排除 pgx.ErrNoRows（正常领域状态）与 context.Canceled（客户端断开连接）
-	if isActionableDBError(data.Err) {
+	if failed {
 		log.Error("database query failed", fields(zap.Error(data.Err))...)
 		return
 	}
 
 	// 2. 慢查询捕获：执行耗时超过阈值记录 Warn 日志
-	if t.slowThreshold > 0 && dur >= t.slowThreshold {
+	if slow {
 		extra := []zap.Field{zap.String("threshold", t.slowThreshold.String())}
 		if errors.Is(data.Err, context.Canceled) {
 			extra = append(extra, zap.Bool("canceled", true))
@@ -98,14 +99,15 @@ func (t *ZapTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.Tra
 		return
 	}
 
-	// 3. 调试输出：当开启调试且当前日志级别为 Debug 或更低时以 Debug 级别输出
-	if t.debugEnabled && log.Core().Enabled(zapcore.DebugLevel) {
-		var extra []zap.Field
-		if data.Err != nil {
-			extra = append(extra, zap.Error(data.Err))
-		}
-		log.Debug("database query executed", fields(extra...)...)
+	// 3. 调试输出：仅在语句不含字面量时附带原文，否则只留指纹。
+	var extra []zap.Field
+	if statement, safe := loggableStatement(trace.sql); safe {
+		extra = append(extra, zap.String("statement", statement))
 	}
+	if data.Err != nil {
+		extra = append(extra, zap.Error(data.Err))
+	}
+	log.Debug("database query executed", fields(extra...)...)
 }
 
 // isActionableDBError 判断数据库错误是否为需要记录与追踪的非预期故障。
@@ -127,170 +129,25 @@ func sqlOperation(query string) string {
 	return strings.ToUpper(trimmed)
 }
 
-// RedactQuery 过滤并脱敏 SQL 中的敏感明文参数（口令、Hash、Token、验证码等）。
-func RedactQuery(query string) string {
-	if query == "" || !shouldRedact(query) {
-		return query
-	}
-
-	result := redactInsertValues(query)
-	result = reSensitiveAssignments.ReplaceAllString(result, "${1}'[REDACTED]'")
-	result = reArgon2.ReplaceAllString(result, "'[REDACTED]'")
-	result = reBcrypt.ReplaceAllString(result, "'[REDACTED]'")
-	result = reJWT.ReplaceAllString(result, "'[REDACTED]'")
-	return result
+// QueryFingerprint 返回语句的稳定短指纹：折叠连续空白后取 SHA-256 前 8 字节。
+//
+// 指纹只用于聚合与比对：同一语句的取模参数变化不会改变指纹，
+// 日志侧因此可以在不记录任何参数的前提下把慢查询归堆。
+func QueryFingerprint(query string) string {
+	normalised := strings.Join(strings.Fields(query), " ")
+	sum := sha256.Sum256([]byte(normalised))
+	return hex.EncodeToString(sum[:8])
 }
 
-// shouldRedact 探测查询是否可能包含敏感字段或哈希特征，避免无谓的正则扫描。
-func shouldRedact(query string) bool {
-	lower := strings.ToLower(query)
-	return strings.Contains(lower, "password") ||
-		strings.Contains(lower, "token") ||
-		strings.Contains(lower, "secret") ||
-		strings.Contains(lower, "credential") ||
-		strings.Contains(lower, "verify") ||
-		strings.Contains(lower, "otp") ||
-		strings.Contains(lower, "value") ||
-		strings.Contains(query, "$argon2") ||
-		strings.Contains(query, "$2a$") ||
-		strings.Contains(query, "$2y$") ||
-		strings.Contains(query, "$2b$") ||
-		strings.Contains(query, "eyJh")
-}
-
-// redactInsertValues 识别 INSERT INTO 语句中针对敏感列的插入字面量并遮蔽。
-func redactInsertValues(query string) string {
-	upper := strings.ToUpper(strings.TrimSpace(query))
-	if !strings.HasPrefix(upper, "INSERT INTO ") && !strings.HasPrefix(upper, "INSERT INTO\n") {
-		return query
+// loggableStatement 返回可安全写入日志的语句原文。
+//
+// pgx 扩展协议下参数位于 Args，语句本身只有 $n 占位符；一旦语句内出现单引号，
+// 说明调用方拼接了字面量（或使用了 simple protocol），此时只保留指纹、不输出原文。
+func loggableStatement(query string) (string, bool) {
+	if strings.ContainsRune(query, '\'') {
+		return "", false
 	}
-
-	sensitiveIndices, valuesStart := extractInsertMeta(query)
-	if len(sensitiveIndices) == 0 || valuesStart == -1 {
-		return query
-	}
-
-	return maskInsertTuples(query, valuesStart, sensitiveIndices)
-}
-
-// extractInsertMeta 解析 INSERT INTO 语句中的敏感列下标映射及 VALUES 字面量的起始偏移。
-func extractInsertMeta(query string) (map[int]bool, int) {
-	openCol := strings.Index(query, "(")
-	closeCol := strings.Index(query, ")")
-	if openCol == -1 || closeCol == -1 || closeCol <= openCol {
-		return nil, -1
-	}
-
-	colsStr := query[openCol+1 : closeCol]
-	cols := strings.Split(colsStr, ",")
-	sensitiveIndices := make(map[int]bool)
-	for i, col := range cols {
-		cleaned := strings.ToLower(strings.Trim(strings.TrimSpace(col), "`\"'"))
-		switch cleaned {
-		case "password", "password_hash", "token", "secret", "access_token",
-			"refresh_token", "credential", "api_key", "verify_code", "otp", "value":
-			sensitiveIndices[i] = true
-		}
-	}
-	if len(sensitiveIndices) == 0 {
-		return nil, -1
-	}
-
-	idxValues := strings.Index(strings.ToUpper(query[closeCol:]), "VALUES")
-	if idxValues == -1 {
-		return nil, -1
-	}
-
-	valuesStart := closeCol + idxValues + len("VALUES")
-	return sensitiveIndices, valuesStart
-}
-
-// maskInsertTuples 扫描 VALUES 后的元组并将敏感列对应的字面量替换为 [REDACTED]。
-func maskInsertTuples(query string, valuesStart int, sensitiveIndices map[int]bool) string {
-	prefix := query[:valuesStart]
-	valuesPart := query[valuesStart:]
-
-	var result strings.Builder
-	result.WriteString(prefix)
-
-	inQuote := false
-	tupleStart := -1
-	lastEnd := 0
-
-	for i := 0; i < len(valuesPart); i++ {
-		c := valuesPart[i]
-		switch {
-		case c == '\'':
-			if inQuote && i+1 < len(valuesPart) && valuesPart[i+1] == '\'' {
-				i++
-				continue
-			}
-			inQuote = !inQuote
-		case inQuote:
-			continue
-		case c == '(' && tupleStart == -1:
-			tupleStart = i
-		case c == ')' && tupleStart != -1:
-			result.WriteString(valuesPart[lastEnd : tupleStart+1])
-			tupleContent := valuesPart[tupleStart+1 : i]
-			result.WriteString(redactTupleValues(tupleContent, sensitiveIndices))
-			result.WriteByte(')')
-			lastEnd = i + 1
-			tupleStart = -1
-		}
-	}
-
-	if lastEnd < len(valuesPart) {
-		result.WriteString(valuesPart[lastEnd:])
-	}
-
-	return result.String()
-}
-
-// redactTupleValues 处理单个 INSERT 元组内的字段列表并遮蔽敏感列值。
-func redactTupleValues(tuple string, sensitiveIndices map[int]bool) string {
-	parts := splitSQLValues(tuple)
-	for i, part := range parts {
-		if !sensitiveIndices[i] {
-			continue
-		}
-		trimmed := strings.TrimSpace(part)
-		upperVal := strings.ToUpper(trimmed)
-		if upperVal == "DEFAULT" || upperVal == "NULL" {
-			continue
-		}
-		leadingSpaces := part[:len(part)-len(strings.TrimLeft(part, " \t\r\n"))]
-		parts[i] = leadingSpaces + "'[REDACTED]'"
-	}
-	return strings.Join(parts, ",")
-}
-
-// splitSQLValues 切分单条 SQL 元组中的逗号分隔值，正确处理带单引号的字符串字面量。
-func splitSQLValues(s string) []string {
-	var parts []string
-	var current strings.Builder
-	inQuote := false
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch {
-		case c == '\'':
-			if inQuote && i+1 < len(s) && s[i+1] == '\'' {
-				current.WriteByte(c)
-				current.WriteByte(s[i+1])
-				i++
-				continue
-			}
-			inQuote = !inQuote
-			current.WriteByte(c)
-		case c == ',' && !inQuote:
-			parts = append(parts, current.String())
-			current.Reset()
-		default:
-			current.WriteByte(c)
-		}
-	}
-	parts = append(parts, current.String())
-	return parts
+	return strings.Join(strings.Fields(query), " "), true
 }
 
 // captureCaller 自动提取触发数据库调用的首个业务层代码文件名与行号。

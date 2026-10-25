@@ -8,7 +8,6 @@ import (
 	govalidator "github.com/go-playground/validator/v10"
 
 	"cgin/internal/platform/errs"
-	"cgin/internal/platform/validator"
 )
 
 // ErrorHandler 【全局中间件】拦截请求链路中的全部错误，集中解析业务码、执行多语言翻译并写回统一 JSON 响应。
@@ -25,7 +24,7 @@ func (m *Middleware) ErrorHandler() gin.HandlerFunc {
 			err = errs.Validation(fields)
 		}
 
-		errs.Render(c, err, m.translator)
+		errs.Render(c, err)
 	}
 }
 
@@ -42,7 +41,7 @@ func (m *Middleware) extractValidationFields(c *gin.Context, err error) (map[str
 	}
 
 	if valErr, ok := errors.AsType[govalidator.ValidationErrors](err); ok {
-		return validator.Translate(m.translator, lang, valErr), true
+		return m.translateValidation(lang, valErr), true
 	}
 
 	sliceErr, ok := errors.AsType[binding.SliceValidationError](err)
@@ -56,11 +55,25 @@ func (m *Middleware) extractValidationFields(c *gin.Context, err error) (map[str
 		if !subOk {
 			continue
 		}
-		for k, v := range validator.Translate(m.translator, lang, subValErr) {
+		for k, v := range m.translateValidation(lang, subValErr) {
 			fields[k] = append(fields[k], v...)
 		}
 	}
 	return fields, len(fields) > 0
+}
+
+// translateValidation 渲染一条校验失败；未注入校验器时退回原始字段详情。
+func (m *Middleware) translateValidation(lang string, valErr govalidator.ValidationErrors) map[string][]string {
+	if m.validator != nil {
+		return m.validator.Translate(m.translator, lang, valErr)
+	}
+
+	fields := make(map[string][]string, len(valErr))
+	for _, fe := range valErr {
+		field := errs.FieldPath(fe)
+		fields[field] = append(fields[field], fe.Error())
+	}
+	return fields
 }
 
 // translateFieldKeys 将业务错误中基于键的字段明细渲染为指定语言文案。

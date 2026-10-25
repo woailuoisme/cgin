@@ -78,6 +78,14 @@ func (c *Channel) extractMessage(notifiable, message any) (*Message, error) {
 	}
 }
 
+// ensureDB 报告数据访问入口是否已装配。
+func (c *Channel) ensureDB() error {
+	if c.db == nil {
+		return oops.Code(errs.CodeDatabaseUnavailable).Errorf("database: connection is not available")
+	}
+	return nil
+}
+
 // Send 执行数据库通知入库持久化。
 func (c *Channel) Send(ctx context.Context, notifiable any, message any) error {
 	msg, err := c.extractMessage(notifiable, message)
@@ -105,8 +113,8 @@ func (c *Channel) Send(ctx context.Context, notifiable any, message any) error {
 		return oops.Code(errs.CodeNotificationEncodeError).In("DatabaseChannel.Send").Wrap(err)
 	}
 
-	if c.db == nil {
-		return oops.Code(errs.CodeDatabaseUnavailable).Errorf("database: connection is not available for notification")
+	if err := c.ensureDB(); err != nil {
+		return err
 	}
 
 	if _, err := c.db.Queries(ctx).CreateNotification(ctx, sqlc.CreateNotificationParams{
@@ -123,8 +131,8 @@ func (c *Channel) Send(ctx context.Context, notifiable any, message any) error {
 
 // MarkAsRead 将指定通知记录标记为已读。
 func (c *Channel) MarkAsRead(ctx context.Context, id string) error {
-	if c.db == nil {
-		return oops.Code(errs.CodeDatabaseUnavailable).Errorf("database: connection is not available")
+	if err := c.ensureDB(); err != nil {
+		return err
 	}
 	if _, err := c.db.Queries(ctx).MarkNotificationRead(ctx, sqlc.MarkNotificationReadParams{ID: id}); err != nil {
 		return oops.Code(errs.CodeInternal).In("DatabaseChannel.MarkAsRead").Wrap(err)
@@ -143,8 +151,8 @@ func resolveRecipient(notifiable any) (string, string, error) {
 
 // MarkAllAsRead 将指定接收者的所有未读通知标记为已读。
 func (c *Channel) MarkAllAsRead(ctx context.Context, notifiable any) error {
-	if c.db == nil {
-		return oops.Code(errs.CodeDatabaseUnavailable).Errorf("database: connection is not available")
+	if err := c.ensureDB(); err != nil {
+		return err
 	}
 	notifiableType, notifiableID, err := resolveRecipient(notifiable)
 	if err != nil {
@@ -162,8 +170,8 @@ func (c *Channel) MarkAllAsRead(ctx context.Context, notifiable any) error {
 
 // UnreadCount 查询指定接收者的未读通知数量。
 func (c *Channel) UnreadCount(ctx context.Context, notifiable any) (int, error) {
-	if c.db == nil {
-		return 0, oops.Code(errs.CodeDatabaseUnavailable).Errorf("database: connection is not available")
+	if err := c.ensureDB(); err != nil {
+		return 0, err
 	}
 	notifiableType, notifiableID, err := resolveRecipient(notifiable)
 	if err != nil {
@@ -182,8 +190,8 @@ func (c *Channel) UnreadCount(ctx context.Context, notifiable any) (int, error) 
 
 // Paginate 分页查询指定接收者的通知列表（单查询同时返回总数）。
 func (c *Channel) Paginate(ctx context.Context, notifiable any, page, perPage int, unreadOnly bool) ([]sqlc.Notification, int, error) {
-	if c.db == nil {
-		return nil, 0, oops.Code(errs.CodeDatabaseUnavailable).Errorf("database: connection is not available")
+	if err := c.ensureDB(); err != nil {
+		return nil, 0, err
 	}
 	notifiableType, notifiableID, err := resolveRecipient(notifiable)
 	if err != nil {
@@ -225,8 +233,8 @@ func (c *Channel) PaginateUnread(ctx context.Context, notifiable any, page, perP
 
 // Delete 软删除指定的通知记录。
 func (c *Channel) Delete(ctx context.Context, id string) error {
-	if c.db == nil {
-		return oops.Code(errs.CodeDatabaseUnavailable).Errorf("database: connection is not available")
+	if err := c.ensureDB(); err != nil {
+		return err
 	}
 	if _, err := c.db.Queries(ctx).SoftDeleteNotification(ctx, sqlc.SoftDeleteNotificationParams{ID: id}); err != nil {
 		return oops.Code(errs.CodeInternal).In("DatabaseChannel.Delete").Wrap(err)
@@ -236,8 +244,8 @@ func (c *Channel) Delete(ctx context.Context, id string) error {
 
 // ClearAll 软删除指定接收者的所有通知记录。
 func (c *Channel) ClearAll(ctx context.Context, notifiable any) error {
-	if c.db == nil {
-		return oops.Code(errs.CodeDatabaseUnavailable).Errorf("database: connection is not available")
+	if err := c.ensureDB(); err != nil {
+		return err
 	}
 	notifiableType, notifiableID, err := resolveRecipient(notifiable)
 	if err != nil {

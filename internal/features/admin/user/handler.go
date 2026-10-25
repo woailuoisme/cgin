@@ -1,4 +1,4 @@
-package admin
+package adminuser
 
 import (
 	"github.com/gin-gonic/gin"
@@ -47,6 +47,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 //
 // @Summary      导出系统用户
 // @Description  根据关键字、状态与角色条件分块流式导出用户列表为 Excel 文件，免除内存溢出风险。
+// @Description  导出固定按用户 ID 升序逐行输出（单页成本与已翻页深度无关），与列表页的 sort 参数无关。
 // @Tags         用户管理
 // @Accept       json
 // @Produce      application/vnd.openxmlformats-officedocument.spreadsheetml.sheet

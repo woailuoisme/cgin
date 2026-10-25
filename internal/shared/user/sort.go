@@ -10,10 +10,11 @@ import (
 	"cgin/internal/platform/validator"
 )
 
-func init() {
-	if err := validator.RegisterRule("usersort", ValidateSort, "oneof"); err != nil {
-		panic(err)
-	}
+// ValidationOptions 返回用户模块贡献给校验器的规则。
+//
+// 规则只在装配根被注册一次，不再通过 init() 自我安装。
+func ValidationOptions() []validator.Option {
+	return []validator.Option{validator.WithRule("usersort", ValidateSort, "oneof")}
 }
 
 // sortColumns 是允许排序的字段白名单。
@@ -66,31 +67,44 @@ func NormaliseSort(raw string) (string, bool) {
 
 // ListParams 生成分页查询参数。
 func (f ListFilter) ListParams(page, pageSize int) sqlc.ListUsersParams {
-	offset := int64(page-1) * int64(pageSize)
-	return sqlc.ListUsersParams(f.ChunkParams(int(offset), pageSize))
-}
-
-// ChunkParams 生成分块查询参数（导出与搜索导入共用）。
-func (f ListFilter) ChunkParams(offset, limit int) sqlc.ListUsersChunkParams {
-	params := sqlc.ListUsersChunkParams{
+	return sqlc.ListUsersParams{
+		Status:     optionalText(f.Status),
+		Role:       optionalText(f.Role),
+		Search:     f.searchPattern(),
 		SortKey:    f.SortKey,
 		SortDesc:   f.SortDesc,
-		PageOffset: int64(offset),
-		PageLimit:  int64(limit),
+		PageLimit:  int64(pageSize),
+		PageOffset: int64(page-1) * int64(pageSize),
 	}
-	if f.Status != "" {
-		status := string(f.Status)
-		params.Status = &status
+}
+
+// AfterParams 生成键集分块参数：以主键游标推进，不依赖偏移量。
+func (f ListFilter) AfterParams(afterID string, limit int) sqlc.ListUsersAfterParams {
+	return sqlc.ListUsersAfterParams{
+		Status:    optionalText(f.Status),
+		Role:      optionalText(f.Role),
+		Search:    f.searchPattern(),
+		AfterID:   afterID,
+		PageLimit: int64(limit),
 	}
-	if f.Role != "" {
-		role := string(f.Role)
-		params.Role = &role
+}
+
+// optionalText 把空字符串枚举收敛为 NULL，交给 sqlc.narg 表达“不过滤”。
+func optionalText[T ~string](value T) *string {
+	if value == "" {
+		return nil
 	}
-	if f.Search != "" {
-		pattern := "%" + EscapeLike(f.Search) + "%"
-		params.Search = &pattern
+	text := string(value)
+	return &text
+}
+
+// searchPattern 把关键字包装为 LIKE 模式，已转义通配符。
+func (f ListFilter) searchPattern() *string {
+	if f.Search == "" {
+		return nil
 	}
-	return params
+	pattern := "%" + EscapeLike(f.Search) + "%"
+	return &pattern
 }
 
 // EscapeLike 转义 SQL LIKE 特殊通配符，避免用户输入被当作模式语法。

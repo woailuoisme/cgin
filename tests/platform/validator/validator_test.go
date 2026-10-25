@@ -4,10 +4,10 @@ package validator_test
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync"
 	"testing"
 
@@ -25,6 +25,22 @@ import (
 )
 
 func init() { gin.SetMode(gin.TestMode) }
+
+// testValidator 是本包共享的校验器实例：TestMain 构造并挂载一次，
+// 所有用例通过同一个只读实例验证行为。
+var testValidator *validator.Validator
+
+// TestMain 构造并安装校验器，供依赖 gin 绑定的用例使用。
+func TestMain(m *testing.M) {
+	v, err := validator.New(validator.WithOmitNullTypes(omitnull.Val[testRoleType]{}))
+	if err != nil {
+		panic(err)
+	}
+	v.Install()
+	testValidator = v
+
+	os.Exit(m.Run())
+}
 
 // signupPayload 覆盖本项目用到的全部自定义规则。
 type signupPayload struct {
@@ -77,7 +93,7 @@ func bindJSON(t *testing.T, c *gin.Context, target any, translator *i18n.Transla
 		if translator != nil {
 			lang = translator.Language(lang)
 		}
-		return errs.Validation(validator.Translate(translator, lang, valErr))
+		return errs.Validation(testValidator.Translate(translator, lang, valErr))
 	}
 	return err
 }
@@ -206,7 +222,6 @@ func TestPasswordStrength(t *testing.T) {
 
 // TestPasswordValidationRule 验证基于 tag 的 password 校验规则与多语言翻译。
 func TestPasswordValidationRule(t *testing.T) {
-	require.NoError(t, validator.InitEngine())
 	v, ok := binding.Validator.Engine().(*govalidator.Validate)
 	require.True(t, ok)
 
@@ -261,10 +276,10 @@ func TestPasswordValidationRule(t *testing.T) {
 		valErr, ok := errors.AsType[govalidator.ValidationErrors](err)
 		require.True(t, ok)
 
-		transZH := validator.Translate(trZH, "zh-CN", valErr)
+		transZH := testValidator.Translate(trZH, "zh-CN", valErr)
 		assert.Equal(t, []string{"密码必须同时包含字母和数字。"}, transZH["password"])
 
-		transEN := validator.Translate(trEN, "en", valErr)
+		transEN := testValidator.Translate(trEN, "en", valErr)
 		assert.Equal(t, []string{"The password must contain both letters and numbers."}, transEN["password"])
 	})
 }
@@ -311,20 +326,32 @@ func TestUsernameSlugAndE164LengthGuards(t *testing.T) {
 	assert.Contains(t, resp3.Errors, "phoneNumber")
 }
 
-// TestCustomTagConcurrentSafety 验证 sync.Map 高并发注册与查询自定义规则的线程安全。
-func TestCustomTagConcurrentSafety(t *testing.T) {
+// TestValidatorConcurrentReadSafety 验证构造完成后的并发校验是安全的（规则表只读）。
+func TestValidatorConcurrentReadSafety(t *testing.T) {
+	v := newTestValidator(t, validator.WithRule("custom_rule", func(govalidator.FieldLevel) bool {
+		return true
+	}, "custom_msg_key"))
+
+	type payload struct {
+		Name string `json:"name" validate:"required,custom_rule"`
+	}
+
 	var wg sync.WaitGroup
-	for i := range 50 {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			tag := fmt.Sprintf("custom_rule_%d", idx)
-			_ = validator.RegisterRule(tag, func(fl govalidator.FieldLevel) bool {
-				return true
-			}, "custom_msg_key")
-		}(i)
+	for range 50 {
+		wg.Go(func() {
+			assert.NoError(t, v.ValidateStruct(&payload{Name: "alice"}))
+		})
 	}
 	wg.Wait()
+}
+
+// newTestValidator 构造一个测试用校验器（不挂载到 gin 全局）。
+func newTestValidator(t *testing.T, opts ...validator.Option) *validator.Validator {
+	t.Helper()
+
+	v, err := validator.New(opts...)
+	require.NoError(t, err)
+	return v
 }
 
 // createTestFileHeader 构造用于测试校验规则的 *multipart.FileHeader。
@@ -365,7 +392,6 @@ type testUploadForm struct {
 
 // TestFileValidationRules 验证 file, image, maxsize, mimes 规则的判定与国际化翻译。
 func TestFileValidationRules(t *testing.T) {
-	require.NoError(t, validator.InitEngine())
 	v, ok := binding.Validator.Engine().(*govalidator.Validate)
 	require.True(t, ok)
 
@@ -425,11 +451,11 @@ func TestFileValidationRules(t *testing.T) {
 		valErr, ok := errors.AsType[govalidator.ValidationErrors](err)
 		require.True(t, ok)
 
-		transEN := validator.Translate(trEN, "en", valErr)
+		transEN := testValidator.Translate(trEN, "en", valErr)
 		require.Contains(t, transEN, "avatar")
 		assert.Contains(t, transEN["avatar"][0], "must be an image")
 
-		transZH := validator.Translate(trZH, "zh-CN", valErr)
+		transZH := testValidator.Translate(trZH, "zh-CN", valErr)
 		require.Contains(t, transZH, "avatar")
 		assert.Contains(t, transZH["avatar"][0], "必须是图片")
 	})
@@ -467,8 +493,6 @@ func (f *plainErrorForm) Validate() error {
 
 // TestValidatableInterface 验证 DTO 自校验 Validatable 接口与短路逻辑。
 func TestValidatableInterface(t *testing.T) {
-	require.NoError(t, validator.InitEngine())
-
 	t.Run("通过基础校验且通过 Validate 钩子", func(t *testing.T) {
 		hookRun := false
 		form := complexRangeForm{StartTime: 10, EndTime: 20, hookRun: &hookRun}
@@ -540,9 +564,6 @@ type testPatchBody struct {
 
 // TestOmitNullValidation 验证三态 omitnull 容器字段与验证器解包、标量规则联动的准确性。
 func TestOmitNullValidation(t *testing.T) {
-	require.NoError(t, validator.InitEngine())
-	validator.RegisterOmitNullTypes(omitnull.Val[testRoleType]{})
-
 	v, ok := binding.Validator.Engine().(*govalidator.Validate)
 	require.True(t, ok)
 

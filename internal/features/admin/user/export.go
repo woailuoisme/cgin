@@ -1,4 +1,4 @@
-package admin
+package adminuser
 
 import (
 	"context"
@@ -37,21 +37,21 @@ func userExportRow(entity *sqlc.User) []any {
 	}
 }
 
-// writeUsersXLSX 把符合条件的用户按键集分块拉取并流式写入 xlsx。
+// writeUsersXLSX 把符合条件的用户按键集游标分块拉取并流式写入 xlsx。
 //
-// 分块游标与缓冲都收敛在闭包里：调用方只需给出拉取函数与过滤条件，
+// 游标、缓冲与终止判定都收敛在闭包里：调用方只需给出拉取函数与过滤条件，
 // 既不需要实现接口，也无法把状态从外部打乱。
 func writeUsersXLSX(
 	ctx context.Context,
 	w io.Writer,
-	fetch func(ctx context.Context, filter user.ListFilter, offset, limit int) ([]sqlc.User, error),
+	fetch func(ctx context.Context, filter user.ListFilter, afterID string, limit int) ([]sqlc.User, error),
 	filter user.ListFilter,
 ) error {
 	var (
-		offset int
-		buffer []sqlc.User
-		cursor int
-		ended  bool
+		afterID string
+		buffer  []sqlc.User
+		cursor  int
+		ended   bool
 	)
 
 	next := func() ([]any, bool, error) {
@@ -60,20 +60,20 @@ func writeUsersXLSX(
 				return nil, false, nil
 			}
 
-			chunk, err := fetch(ctx, filter, offset, userExportChunkSize)
+			chunk, err := fetch(ctx, filter, afterID, userExportChunkSize)
 			if err != nil {
 				return nil, false, err
-			}
-			if len(chunk) < userExportChunkSize {
-				ended = true
 			}
 			if len(chunk) == 0 {
 				return nil, false, nil
 			}
+			if len(chunk) < userExportChunkSize {
+				ended = true
+			}
 
 			buffer = chunk
 			cursor = 0
-			offset += len(chunk)
+			afterID = chunk[len(chunk)-1].ID
 		}
 
 		row := userExportRow(&buffer[cursor])

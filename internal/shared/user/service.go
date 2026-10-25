@@ -31,8 +31,11 @@ type Service struct {
 	hasher *hasher.Hasher
 }
 
-// NewService 构造用户档案领域服务；db 与 hasher 均为装配方必须提供的硬依赖。
-func NewService(db *database.DB, h *hasher.Hasher) *Service {
+// MustNewService 构造用户档案领域服务；db 与 hasher 为装配方必须提供的硬依赖。
+//
+// 依赖缺失属于启动期编程错误，因此按 Must 约定直接 panic：名字即契约，
+// 装配根是唯一允许传入这些依赖的地方。
+func MustNewService(db *database.DB, h *hasher.Hasher) *Service {
 	if db == nil {
 		panic("user: service requires a non-nil database")
 	}
@@ -101,25 +104,77 @@ func (s *Service) List(ctx context.Context, filter ListFilter, page, pageSize in
 	return users, total, nil
 }
 
-// ListChunk 供流式导出等批量场景按块读取用户列表。
-func (s *Service) ListChunk(ctx context.Context, filter ListFilter, offset, limit int) ([]sqlc.User, error) {
-	users, err := s.db.Queries(ctx).ListUsersChunk(ctx, filter.ChunkParams(offset, limit))
+// ListAfter 供流式导出等批量场景按键集游标读取用户列表；空游标表示从头开始。
+func (s *Service) ListAfter(ctx context.Context, filter ListFilter, afterID string, limit int) ([]sqlc.User, error) {
+	users, err := s.db.Queries(ctx).ListUsersAfter(ctx, filter.AfterParams(afterID, limit))
 	if err != nil {
 		return nil, errs.Internal(err)
 	}
 	return users, nil
 }
 
+// translateLookup 把空结果翻译为 404，其余错误收敛为 500。
+//
+// notFound 由调用点传入：不同查询的空结果对调用方的语义不同，文案不可统一。
+func translateLookup(err error, notFound string) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errs.NotFound(notFound)
+	}
+	return errs.Internal(err)
+}
+
 // Get 根据主键 ID 获取单个用户实体，不存在时返回 404 语义错误。
 func (s *Service) Get(ctx context.Context, id string) (*sqlc.User, error) {
 	entity, err := s.db.Queries(ctx).GetUserByID(ctx, sqlc.GetUserByIDParams{ID: id})
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, errs.NotFound("The requested user does not exist")
-		}
-		return nil, errs.Internal(err)
+		return nil, translateLookup(err, "The requested user does not exist")
 	}
 	return &entity, nil
+}
+
+// ByEmail 按邮箱查找用户；不存在时返回 404 语义错误。
+//
+// 认证流程需要区分“账号不存在”与“查询失败”，因此只在这里把底层空结果
+// 翻译成业务错误，调用方无需感知 pgx。
+func (s *Service) ByEmail(ctx context.Context, email string) (*sqlc.User, error) {
+	entity, err := s.db.Queries(ctx).GetUserByEmail(ctx, sqlc.GetUserByEmailParams{
+		Email: NormaliseEmail(email),
+	})
+	if err != nil {
+		return nil, translateLookup(err, "No account is associated with this email address")
+	}
+	return &entity, nil
+}
+
+// ByUsername 按登录用户名查找用户；不存在时返回 404 语义错误。
+func (s *Service) ByUsername(ctx context.Context, username string) (*sqlc.User, error) {
+	entity, err := s.db.Queries(ctx).GetUserByUsername(ctx, sqlc.GetUserByUsernameParams{
+		Username: NormaliseUsername(username),
+	})
+	if err != nil {
+		return nil, translateLookup(err, "No account is associated with this username")
+	}
+	return &entity, nil
+}
+
+// MarkEmailVerified 置位邮箱验证状态并返回最新用户行。
+func (s *Service) MarkEmailVerified(ctx context.Context, userID string) (*sqlc.User, error) {
+	entity, err := s.db.Queries(ctx).SetUserEmailVerified(ctx, sqlc.SetUserEmailVerifiedParams{ID: userID})
+	if err != nil {
+		return nil, translateLookup(err, "The requested user does not exist")
+	}
+	return &entity, nil
+}
+
+// RecordLogin 记录最近一次登录时间与方式；是否降级由调用方决定。
+func (s *Service) RecordLogin(ctx context.Context, userID, method string) error {
+	if err := s.db.Queries(ctx).RecordUserLogin(ctx, sqlc.RecordUserLoginParams{
+		ID:     userID,
+		Method: &method,
+	}); err != nil {
+		return errs.Internal(err)
+	}
+	return nil
 }
 
 // Delete 软删除指定主键的用户。

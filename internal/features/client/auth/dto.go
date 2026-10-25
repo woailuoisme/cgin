@@ -1,4 +1,4 @@
-package auth
+package clientauth
 
 import (
 	"time"
@@ -147,24 +147,21 @@ type StatusResource struct {
 }
 
 // projectUser 把用户模型投影为认证端点的响应资源。
+//
+// 逐字段赋值而不是依赖结构体布局转换：两端的字段增减不会因“恰好同构”而静默通过。
 func projectUser(u *sqlc.User) UserResource {
-	return UserResource(shareduser.ProjectPublicProfile(u))
+	profile := shareduser.ProjectProfile(u)
+	return UserResource{
+		ID:              profile.ID,
+		Name:            profile.Name,
+		Email:           profile.Email,
+		EmailVerified:   profile.EmailVerified,
+		Image:           profile.Image,
+		Role:            profile.Role,
+		Username:        profile.Username,
+		DisplayUsername: profile.DisplayUsername,
+		PhoneNumber:     profile.PhoneNumber,
+		CreatedAt:       profile.CreatedAt,
+		UpdatedAt:       profile.UpdatedAt,
+	}
 }
-
-type (
-	UserProjection              = UserResource
-	SignUpEmailRequest          = SignUpEmailBody
-	SignInEmailRequest          = SignInEmailBody
-	SignInUsernameRequest       = SignInUsernameBody
-	SignOutRequest              = SignOutBody
-	RefreshTokenRequest         = RefreshTokenBody
-	ChangePasswordRequest       = ChangePasswordBody
-	ForgetPasswordRequest       = ForgetPasswordBody
-	RequestPasswordResetRequest = RequestPasswordResetBody
-	ResetPasswordRequest        = ResetPasswordBody
-	SendVerificationOTPRequest  = SendVerificationOTPBody
-	VerifyEmailRequest          = VerifyEmailBody
-	SessionResponse             = SessionResource
-	GetSessionResponse          = GetSessionResource
-	StatusResponse              = StatusResource
-)

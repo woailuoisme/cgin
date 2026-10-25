@@ -150,7 +150,7 @@ func (o *GeoIPUpdateOptions) downloadFile(ctx context.Context, client *http.Clie
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP server returned non-200 status: %s", resp.Status)
+		return fmt.Errorf("http server returned non-200 status: %s", resp.Status)
 	}
 
 	out, err := os.Create(destPath)

@@ -22,15 +22,18 @@ import (
 	"cgin/internal/config"
 	"cgin/internal/platform/cache"
 	"cgin/internal/platform/i18n"
+	"cgin/internal/platform/validator"
 )
 
 // Deps 描述全局中间件所需的全部外部依赖。
 type Deps struct {
-	Cache          cache.Store
-	Logger         *zap.Logger
-	CORS           config.CORSConfig
-	Production     bool
-	Translator     *i18n.Translator
+	Cache      cache.Store
+	Logger     *zap.Logger
+	CORS       config.CORSConfig
+	Production bool
+	Translator *i18n.Translator
+	// Validator 用于把字段级校验失败翻译成当前语言；未注入时只返回原始文案。
+	Validator      *validator.Validator
 	RequestTimeout time.Duration
 	// MaxBody 非 multipart 请求的请求体上限（字节，0 表示用默认值）。
 	MaxBody int64
@@ -45,6 +48,7 @@ type Middleware struct {
 	cors           config.CORSConfig
 	production     bool
 	translator     *i18n.Translator
+	validator      *validator.Validator
 	requestTimeout time.Duration
 	maxBody        int64
 	uploadMaxBody  int64
@@ -58,6 +62,7 @@ func New(deps Deps) *Middleware {
 		cors:           deps.CORS,
 		production:     deps.Production,
 		translator:     deps.Translator,
+		validator:      deps.Validator,
 		requestTimeout: deps.RequestTimeout,
 		maxBody:        deps.MaxBody,
 		uploadMaxBody:  deps.UploadMaxBody,
