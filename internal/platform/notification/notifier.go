@@ -230,6 +230,79 @@ func resolveChannels(notif Notification, target any, so *SendOptions) []string {
 	return notif.Via(target)
 }
 
+// batchCollector 聚合支持 BatchChannel 的同渠道批量接收者与格式化载荷。
+type batchCollector struct {
+	mu       sync.Mutex
+	ch       BatchChannel
+	targets  []any
+	messages []any
+}
+
+// batchRegistry 线程安全地按渠道名称管理批量收集器。
+type batchRegistry struct {
+	mu       sync.Mutex
+	capacity int
+	batches  map[string]*batchCollector
+	order    []string
+}
+
+func (r *batchRegistry) resolve(n *Notifier, chName string) (*batchCollector, bool) {
+	if r.capacity <= 1 {
+		return nil, false
+	}
+	batchCh, ok := n.Channel(chName).(BatchChannel)
+	if !ok {
+		return nil, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.batches == nil {
+		r.batches = make(map[string]*batchCollector, 2)
+	}
+	collector, exists := r.batches[chName]
+	if !exists {
+		collector = &batchCollector{
+			ch:       batchCh,
+			targets:  make([]any, 0, r.capacity),
+			messages: make([]any, 0, r.capacity),
+		}
+		r.batches[chName] = collector
+		r.order = append(r.order, chName)
+	}
+	return collector, true
+}
+
+func (r *batchRegistry) flush(ctx context.Context) error {
+	for _, chName := range r.order {
+		collector := r.batches[chName]
+		if len(collector.targets) == 0 {
+			continue
+		}
+		if err := collector.ch.SendBatch(ctx, collector.targets, collector.messages); err != nil {
+			return oops.Code(errs.CodeNotificationSendFailed).
+				With("channel", chName).
+				Wrap(err)
+		}
+	}
+	return nil
+}
+
+// formatPayload 将抽象通知转换为渠道专属载荷。
+func formatPayload(ch Channel, notif contract.Notification, target any, chName string) (any, error) {
+	formatter, ok := ch.(Formatter)
+	if !ok {
+		return notif, nil
+	}
+	message, err := formatter.Format(notif, target)
+	if err != nil {
+		return nil, oops.Code(errs.CodeNotificationFormatFailed).
+			With("channel", chName).
+			Wrap(err)
+	}
+	return message, nil
+}
+
 // dispatchToChannel 针对单一渠道格式化并投递通知载荷，经由注册的中间件管道处理。
 func (n *Notifier) dispatchToChannel(ctx context.Context, target any, notif Notification, chName string) error {
 	baseSend := func(innerCtx context.Context, innerTarget any, innerNotif contract.Notification, innerChannel string) error {
@@ -240,15 +313,9 @@ func (n *Notifier) dispatchToChannel(ctx context.Context, target any, notif Noti
 				Errorf("unsupported notification channel: %s", innerChannel)
 		}
 
-		var message any = innerNotif
-		if formatter, ok := ch.(Formatter); ok {
-			var err error
-			message, err = formatter.Format(innerNotif, innerTarget)
-			if err != nil {
-				return oops.Code(errs.CodeNotificationFormatFailed).
-					With("channel", innerChannel).
-					Wrap(err)
-			}
+		message, err := formatPayload(ch, innerNotif, innerTarget, innerChannel)
+		if err != nil {
+			return err
 		}
 
 		if err := ch.Send(innerCtx, innerTarget, message); err != nil {
@@ -267,16 +334,47 @@ func (n *Notifier) dispatchToChannel(ctx context.Context, target any, notif Noti
 	return pipeline(ctx, target, notif, chName)
 }
 
-// sendSync 内部同步执行投递循环。
+// collectForBatch 经由中间件管道校验与格式化后，将目标与载荷收集至批量缓冲器。
+func (n *Notifier) collectForBatch(ctx context.Context, target any, notif Notification, chName string, collector *batchCollector) error {
+	collectSend := func(_ context.Context, innerTarget any, innerNotif contract.Notification, innerChannel string) error {
+		message, err := formatPayload(collector.ch, innerNotif, innerTarget, innerChannel)
+		if err != nil {
+			return err
+		}
+		collector.mu.Lock()
+		collector.targets = append(collector.targets, innerTarget)
+		collector.messages = append(collector.messages, message)
+		collector.mu.Unlock()
+		return nil
+	}
+
+	n.mu.RLock()
+	mws := slices.Clone(n.middlewares)
+	n.mu.RUnlock()
+
+	pipeline := WrapMiddleware(collectSend, mws...)
+	return pipeline(ctx, target, notif, chName)
+}
+
+// sendSync 内部同步执行投递循环；对实现 BatchChannel 的渠道自动合并为单次批量往返。
 func (n *Notifier) sendSync(ctx context.Context, targets []any, notif Notification, so *SendOptions) error {
+	reg := batchRegistry{capacity: len(targets)}
+
 	for _, target := range targets {
 		for _, chName := range resolveChannels(notif, target, so) {
+			if collector, ok := reg.resolve(n, chName); ok {
+				if err := n.collectForBatch(ctx, target, notif, chName, collector); err != nil {
+					return err
+				}
+				continue
+			}
 			if err := n.dispatchToChannel(ctx, target, notif, chName); err != nil {
 				return err
 			}
 		}
 	}
-	return nil
+
+	return reg.flush(ctx)
 }
 
 // SendParallel 在接收者与渠道维度并发投递通知，并限制最大并发数。
@@ -302,16 +400,28 @@ func (n *Notifier) SendParallel(ctx context.Context, notifiables any, notif Noti
 }
 
 func (n *Notifier) sendParallelSync(ctx context.Context, targets []any, notif Notification, so *SendOptions) error {
+	reg := batchRegistry{capacity: len(targets)}
+
 	g, gCtx := errgroup.WithContext(ctx)
 	g.SetLimit(n.parallelLimit())
 
 	for _, target := range targets {
 		for _, chName := range resolveChannels(notif, target, so) {
+			if collector, ok := reg.resolve(n, chName); ok {
+				g.Go(func() error {
+					return n.collectForBatch(gCtx, target, notif, chName, collector)
+				})
+				continue
+			}
 			g.Go(func() error {
 				return n.dispatchToChannel(gCtx, target, notif, chName)
 			})
 		}
 	}
 
-	return g.Wait()
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	return reg.flush(ctx)
 }

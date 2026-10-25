@@ -32,6 +32,7 @@ func (it memoryItem) isExpired(now time.Time) bool {
 // 内置 WTinyLFU 驱逐策略、容量上限保护、TTL 抖动清理与并发安全保障。
 type MemoryStore struct {
 	hot    *hot.HotCache[string, memoryItem]
+	locker *MemoryLocker
 	group  singleflight.Group
 	mu     sync.Mutex // 保护 Increment / SetNX 竞态与关闭状态
 	closed bool
@@ -54,12 +55,16 @@ func NewMemoryStoreWithCapacity(capacity int) *MemoryStore {
 		Build()
 
 	return &MemoryStore{
-		hot: h,
+		hot:    h,
+		locker: NewMemoryLocker(),
 	}
 }
 
-// 确保 *MemoryStore 完整实现 Store 契约。
-var _ Store = (*MemoryStore)(nil)
+// 确保 *MemoryStore 完整实现 Store 与 LockProvider 契约。
+var (
+	_ Store        = (*MemoryStore)(nil)
+	_ LockProvider = (*MemoryStore)(nil)
+)
 
 // Driver 返回内存驱动标识。
 func (m *MemoryStore) Driver() string {
@@ -86,6 +91,9 @@ func (m *MemoryStore) Close() error {
 	m.closed = true
 	m.hot.StopJanitor()
 	m.hot.Purge()
+	if m.locker != nil {
+		_ = m.locker.Close()
+	}
 	return nil
 }
 
@@ -374,7 +382,7 @@ func (m *MemoryStore) Remember(
 	}
 }
 
-// Locker 创建关联该纯内存存储环境的互斥锁管理器。
+// Locker 返回关联该纯内存存储环境的单例互斥锁管理器。
 func (m *MemoryStore) Locker() Locker {
-	return NewMemoryLocker()
+	return m.locker
 }

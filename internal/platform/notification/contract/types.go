@@ -21,11 +21,17 @@ type ChannelFormatter interface {
 
 // Channel 定义通知渠道契约。
 type Channel interface {
-	// Name 返回渠道标识名（如 "mail", "sms", "database", "telegram" 等）。
+	// Name 返回渠道标识名（如 "mail", "sms", "database", "realtime" 等）。
 	Name() string
 
 	// Send 将格式化后的具体载荷投递给接收方实体。
 	Send(ctx context.Context, notifiable any, message any) error
+}
+
+// BatchChannel 可选由 Channel 实现，支持将多个接收者的载荷合并为单次网络/存储往返批量投递（消除 N+1）。
+type BatchChannel interface {
+	Channel
+	SendBatch(ctx context.Context, notifiables []any, messages []any) error
 }
 
 // Formatter 可选由 Channel 实现，用于将抽象 Notification 转换为渠道专属消息。

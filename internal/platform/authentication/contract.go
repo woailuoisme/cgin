@@ -2,10 +2,14 @@ package authentication
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"time"
 )
+
+// ErrUserNotFound 表示用户仓储中不存在匹配的主体记录。
+var ErrUserNotFound = errors.New("authentication: user not found")
 
 // Credentials 封装用户认证的凭证入参。
 type Credentials struct {
@@ -30,12 +34,19 @@ func (c Credentials) GoString() string {
 // UserProvider 抽象底层用户实体读取与凭据验证的契约，彻底解耦具体数据源与加密算法。
 // T 不加约束：数据库行类型（如 sqlc 生成结构体）无需为平台实现任何方法。
 type UserProvider[T any] interface {
-	// FindByID 按主键查询主体；不存在时返回 pgx.ErrNoRows。
+	// FindByID 按主键查询主体；不存在时返回 ErrUserNotFound。
 	FindByID(ctx context.Context, id string) (T, error)
-	// FindByCredentials 根据凭据中的账号标识检索主体。
+	// FindByCredentials 根据凭据中的账号标识检索主体；不存在时返回 ErrUserNotFound。
 	FindByCredentials(ctx context.Context, creds Credentials) (T, error)
 	// ValidateCredentials 校验指定主体是否与凭证匹配（如比对口令哈希）。
 	ValidateCredentials(ctx context.Context, user T, creds Credentials) (bool, error)
+}
+
+// TimingEqualiser 定义账号未命中时的恒定时间伪哈希对抗契约（遵循 ISP 接口隔离原则）。
+// 当 UserProvider 实现此接口时，Guard.Validate 在账号不存在时将自动触发耗时对齐，阻断时序枚举。
+type TimingEqualiser interface {
+	// EqualiseTiming 执行与真实口令校验等价的耗时计算。
+	EqualiseTiming(ctx context.Context, secret string)
 }
 
 // LoginRecorder 定义登录审计行为的可选扩展契约（遵循 ISP 接口隔离原则）。

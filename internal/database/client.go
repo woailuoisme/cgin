@@ -45,6 +45,9 @@ func Open(ctx context.Context, cfg config.DatabaseConfig, applicationName string
 	poolCfg.MaxConns = int32(cfg.MaxOpenConns) //nolint:gosec // 上限由 DatabaseConfig.Validate 保证
 	poolCfg.MinConns = int32(cfg.MaxIdleConns) //nolint:gosec // 上限由 DatabaseConfig.Validate 保证
 	poolCfg.MaxConnLifetime = cfg.ConnMaxLifetime
+	if cfg.ConnMaxLifetime > 0 {
+		poolCfg.MaxConnLifetimeJitter = cfg.ConnMaxLifetime / 10
+	}
 	poolCfg.MaxConnIdleTime = cfg.ConnMaxIdleTime
 
 	// 链路追踪与结构化日志：otelpgx 负责 span，ZapTracer 负责慢查询与语句指纹审计。

@@ -2,13 +2,12 @@ package authentication
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"maps"
 	"reflect"
 	"strings"
 	"time"
-
-	"github.com/jackc/pgx/v5"
 
 	"cgin/internal/platform/errs"
 )
@@ -114,7 +113,7 @@ func (g *Guard[T]) User(ctx context.Context) (T, error) {
 		}
 		user, err := g.provider.FindByID(ctx, cache.identity.UserID)
 		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
+			if isUserNotFound(err) {
 				cache.userErr = errs.Unauthorized(errs.CodeAuthTokenInvalid, "The token is invalid")
 				return
 			}
@@ -159,6 +158,40 @@ func (g *Guard[T]) UserOrFail(ctx context.Context) (T, error) {
 	return user, nil
 }
 
+// ResolveUser 优先从当前认证上下文提取用户实体；若上下文尚未绑定身份，则按 userID 回源加载并执行守卫策略校验。
+func (g *Guard[T]) ResolveUser(ctx context.Context, userID string) (T, error) {
+	var zero T
+	if g.Check(ctx) {
+		return g.UserOrFail(ctx)
+	}
+	if strings.TrimSpace(userID) == "" {
+		return zero, errs.Unauthorized(errs.CodeAuthTokenInvalid, "Authentication is required")
+	}
+	if g.provider == nil {
+		return zero, errs.Internal(ErrProviderNotConfigured)
+	}
+	user, err := g.provider.FindByID(ctx, userID)
+	if err != nil {
+		if isUserNotFound(err) {
+			return zero, errs.Unauthorized(errs.CodeAuthTokenInvalid, "The token is invalid")
+		}
+		return zero, errs.Internal(err)
+	}
+	if g.policy != nil {
+		if err := g.policy.ValidateUser(ctx, user); err != nil {
+			return zero, err
+		}
+	}
+	return user, nil
+}
+
+// isUserNotFound 判断错误是否代表用户记录不存在（兼容平台哨兵错误与数据库空行错误）。
+func isUserNotFound(err error) bool {
+	return errors.Is(err, ErrUserNotFound) ||
+		errors.Is(err, sql.ErrNoRows) ||
+		(err != nil && strings.HasSuffix(err.Error(), "no rows in result set"))
+}
+
 func isNilOrZero[T any](v T) bool {
 	if any(v) == nil {
 		return true
@@ -185,16 +218,13 @@ func (g *Guard[T]) Validate(ctx context.Context, creds Credentials) (T, error) {
 
 	user, err := g.provider.FindByCredentials(ctx, creds)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if isUserNotFound(err) {
+			if equaliser, ok := any(g.provider).(TimingEqualiser); ok && equaliser != nil {
+				equaliser.EqualiseTiming(ctx, creds.Password)
+			}
 			return zero, errs.InvalidCredentials()
 		}
 		return zero, errs.Internal(err)
-	}
-
-	if g.policy != nil {
-		if err := g.policy.ValidateUser(ctx, user); err != nil {
-			return zero, err
-		}
 	}
 
 	matched, err := g.provider.ValidateCredentials(ctx, user, creds)
@@ -203,6 +233,12 @@ func (g *Guard[T]) Validate(ctx context.Context, creds Credentials) (T, error) {
 	}
 	if !matched {
 		return zero, errs.InvalidCredentials()
+	}
+
+	if g.policy != nil {
+		if err := g.policy.ValidateUser(ctx, user); err != nil {
+			return zero, err
+		}
 	}
 
 	return user, nil
@@ -271,7 +307,7 @@ func (g *Guard[T]) LoginUsingID(ctx context.Context, userID string, opts ...Opti
 	}
 	user, err := g.provider.FindByID(ctx, userID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if isUserNotFound(err) {
 			return zero, Session{}, errs.NotFound("The requested user does not exist")
 		}
 		return zero, Session{}, errs.Internal(err)
@@ -331,7 +367,7 @@ func (g *Guard[T]) Refresh(ctx context.Context, refreshToken string, opts ...Opt
 	}
 	user, err := g.provider.FindByID(ctx, claims.Subject)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if isUserNotFound(err) {
 			return zero, Session{}, errs.Unauthorized(errs.CodeAuthTokenInvalid, "The token is invalid")
 		}
 		return zero, Session{}, errs.Internal(err)

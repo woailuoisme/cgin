@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -73,9 +72,11 @@ func newTestTokenIssuerWithBlacklist(accessTTL time.Duration, store authenticati
 }
 
 type mockUserProvider struct {
-	users        map[string]*sqlc.User
-	loginHistory []string
-	validPass    bool
+	users         map[string]*sqlc.User
+	loginHistory  []string
+	validPass     bool
+	equaliseCalls int
+	lastEqualised string
 }
 
 func newMockUserProvider() *mockUserProvider {
@@ -89,14 +90,19 @@ func (p *mockUserProvider) FindByID(_ context.Context, id string) (*sqlc.User, e
 	if u, ok := p.users[id]; ok {
 		return u, nil
 	}
-	return nil, pgx.ErrNoRows
+	return nil, authentication.ErrUserNotFound
 }
 
 func (p *mockUserProvider) FindByCredentials(_ context.Context, creds authentication.Credentials) (*sqlc.User, error) {
 	if u, ok := p.users[creds.Account]; ok {
 		return u, nil
 	}
-	return nil, pgx.ErrNoRows
+	return nil, authentication.ErrUserNotFound
+}
+
+func (p *mockUserProvider) EqualiseTiming(_ context.Context, secret string) {
+	p.equaliseCalls++
+	p.lastEqualised = secret
 }
 
 func (p *mockUserProvider) ValidateCredentials(_ context.Context, _ *sqlc.User, _ authentication.Credentials) (bool, error) {
@@ -611,4 +617,75 @@ func TestGuardJWTSubjectAutoClaims(t *testing.T) {
 	valTeam, _ := claims2.GetClaim("team")
 	assert.Equal(t, "engineering", valDept)
 	assert.Equal(t, "core-infra", valTeam)
+}
+
+// TestGuardValidateTimingAndAntiEnumeration 验证用户不存在时的时序平衡以及错误密码下不泄露封禁状态。
+func TestGuardValidateTimingAndAntiEnumeration(t *testing.T) {
+	issuer := newTestTokenIssuer(15 * time.Minute)
+	provider := newMockUserProvider()
+	provider.users["banned@example.com"] = &sqlc.User{
+		ID:     "usr_banned_enum",
+		Role:   enums.RoleUser,
+		Status: enums.StatusBanned,
+	}
+
+	guard := authentication.NewGuard(issuer, provider, user.ClientPolicy{RequireEmailVerification: true}, user.Identity)
+	ctx := t.Context()
+
+	// 1. 用户不存在时触发 EqualiseTiming，防止时序枚举
+	_, err := guard.Validate(ctx, authentication.Credentials{
+		Account:  "ghost@example.com",
+		Password: "GuessPass123!",
+	})
+	require.Error(t, err)
+	assert.Equal(t, 1, provider.equaliseCalls)
+	assert.Equal(t, "GuessPass123!", provider.lastEqualised)
+
+	// 2. 封禁账号在密码错误时返回 CodeAuthInvalidCredentials（而非 CodeAuthAccountBanned），防止状态枚举
+	provider.validPass = false
+	_, err = guard.Validate(ctx, authentication.Credentials{
+		Account:  "banned@example.com",
+		Password: "WrongPass!",
+	})
+	require.Error(t, err)
+	bizErr, ok := errs.As(err)
+	require.True(t, ok)
+	assert.Equal(t, errs.CodeAuthInvalidCredentials, bizErr.Code())
+
+	// 3. 封禁账号在密码正确时才返回 CodeAuthAccountBanned
+	provider.validPass = true
+	_, err = guard.Validate(ctx, authentication.Credentials{
+		Account:  "banned@example.com",
+		Password: "CorrectPass!",
+	})
+	require.Error(t, err)
+	bizErr, ok = errs.As(err)
+	require.True(t, ok)
+	assert.Equal(t, errs.CodeAuthAccountBanned, bizErr.Code())
+}
+
+// TestGuardResolveUser 验证从 Context 命中或按 ID 回源并执行策略校验。
+func TestGuardResolveUser(t *testing.T) {
+	issuer := newTestTokenIssuer(15 * time.Minute)
+	provider := newMockUserProvider()
+	provider.users["usr_resolve"] = &sqlc.User{
+		ID:     "usr_resolve",
+		Role:   enums.RoleAdmin,
+		Status: enums.StatusActive,
+	}
+
+	guard := authentication.NewGuard(issuer, provider, user.AdminPolicy{}, user.Identity)
+	ctx := t.Context()
+
+	// 1. Context 未缓存时回源 Provider 并通过策略校验
+	u, err := guard.ResolveUser(ctx, "usr_resolve")
+	require.NoError(t, err)
+	assert.Equal(t, "usr_resolve", u.ID)
+
+	// 2. Context 已缓存时直接返回缓存实体（无需 Provider）
+	noProviderGuard := authentication.NewGuard(issuer, nil, user.AdminPolicy{}, user.Identity)
+	cachedCtx := noProviderGuard.SetUser(ctx, u)
+	uCached, err := noProviderGuard.ResolveUser(cachedCtx, "usr_resolve")
+	require.NoError(t, err)
+	assert.Equal(t, "usr_resolve", uCached.ID)
 }

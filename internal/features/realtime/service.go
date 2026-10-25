@@ -10,6 +10,7 @@ import (
 	"cgin/internal/database/sqlc"
 	"cgin/internal/platform/errs"
 	platformRealtime "cgin/internal/platform/realtime"
+	shareduser "cgin/internal/shared/user"
 )
 
 // userRoleReader 声明签发连接凭据所需的用户角色读取能力。
@@ -64,6 +65,9 @@ func (s *Service) IssueToken(ctx context.Context, userID, role string) (*TokenRe
 		if err != nil {
 			return nil, err
 		}
+		if err := shareduser.GuardState(entity); err != nil {
+			return nil, err
+		}
 		role = string(entity.Role)
 	}
 
@@ -103,6 +107,13 @@ func (s *Service) AuthorizeSubscribe(
 	}
 
 	user := platformRealtime.User{ID: req.User}
+	if s.users != nil && req.User != "" {
+		entity, err := s.users.Get(ctx, req.User)
+		if err != nil || shareduser.GuardState(entity) != nil {
+			return proxyError(platformRealtime.ProxyErrorCodePermissionDenied, "Permission denied"), nil //nolint:nilerr // 协议要求以 200 + error 字段表达拒绝
+		}
+		user.Role = string(entity.Role)
+	}
 	if err := s.gateway.Registry().Authorize(ctx, user, req.Channel); err != nil {
 		// 订阅被拒按 Centrifugo 协议是 200 响应内的 error 字段，Go 层不构成错误
 		return proxyError(platformRealtime.ProxyErrorCodePermissionDenied, "Permission denied"), nil //nolint:nilerr // 协议要求以 200 + error 字段表达拒绝

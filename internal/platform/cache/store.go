@@ -33,5 +33,11 @@ type Store interface {
 	Close() error
 }
 
+// LockProvider 声明缓存存储可选暴露的互斥锁管理器能力（遵循 ISP 接口隔离原则）。
+type LockProvider interface {
+	// Locker 返回与当前存储后端关联的互斥锁管理器。
+	Locker() Locker
+}
+
 // 确保 *Client 完整实现 Store 契约。
 var _ Store = (*Client)(nil)

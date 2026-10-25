@@ -197,20 +197,36 @@ func (t *TieredStore) Get(ctx context.Context, key string) (string, error) {
 		return "", ErrNotFound
 	}
 
-	// 2. L1 Miss，查询远端 L2
-	val, err = t.l2.Get(ctx, key)
-	if err != nil {
-		return "", err
-	}
+	// 2. L1 Miss，通过 singleflight 合并并发 L2 回源请求并回填 L1
+	ch := t.group.DoChan("get:"+key, func() (any, error) {
+		fillCtx := context.WithoutCancel(ctx)
+		if cached, err := t.l1.Get(fillCtx, key); err == nil {
+			return cached, nil
+		}
 
-	// 3. 计算回填 L1 TTL（取 L2 剩余 TTL 与 L1 预设上限的较小值）
-	l1TTL := t.l1TTL
-	if ttl, ttlErr := t.l2.TTL(ctx, key); ttlErr == nil {
-		l1TTL = t.effectiveL1TTL(ttl)
-	}
-	_ = t.l1.Set(ctx, key, val, l1TTL)
+		v, err := t.l2.Get(fillCtx, key)
+		if err != nil {
+			return "", err
+		}
 
-	return val, nil
+		l1TTL := t.l1TTL
+		if ttl, ttlErr := t.l2.TTL(fillCtx, key); ttlErr == nil {
+			l1TTL = t.effectiveL1TTL(ttl)
+		}
+		_ = t.l1.Set(fillCtx, key, v, l1TTL)
+		return v, nil
+	})
+
+	select {
+	case res := <-ch:
+		if res.Err != nil {
+			return "", res.Err
+		}
+		str, _ := res.Val.(string)
+		return str, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 }
 
 // Set 写入键值并设置过期时间：先写 L2，再同步写入 L1，最后广播失效通知。

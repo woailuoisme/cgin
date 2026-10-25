@@ -139,13 +139,14 @@ func (s *Service) ProcessNotification(
 
 	// 1. 幂等与并发防重放控制（按"渠道 + 通知类型 + 单号"三段去重：
 	//    同一订单的支付与退款通知必须各算一次，否则退款会被支付的去重标记吞掉）
-	consumed, lockErr := s.acquireLockOrConsumed(ctx, key)
+	consumed, releaseLock, lockErr := s.acquireLockOrConsumed(ctx, key)
 	if lockErr != nil {
 		return platformPayment.FailureAck(channel), lockErr
 	}
 	if consumed {
 		return platformPayment.SuccessAck(channel), nil
 	}
+	defer releaseLock()
 
 	// 2. 分发到具体业务处理器与发布领域事件
 	handleErr := s.dispatchNotification(ctx, channel, notification)
@@ -160,7 +161,7 @@ func (s *Service) ProcessNotification(
 
 	log.Info("payment callback notification successfully processed", key.logFields()...)
 
-	// 3. 写入持久化去重标记
+	// 3. 写入持久化去重标记（在 defer releaseLock 释放处理锁之前完成写入）
 	s.recordConsumed(ctx, key)
 
 	return platformPayment.SuccessAck(channel), nil
@@ -190,10 +191,11 @@ func (k notificationKey) logFields() []zap.Field {
 	}
 }
 
-// acquireLockOrConsumed 检查通知是否已消费并尝试加分布式防重放锁。
-func (s *Service) acquireLockOrConsumed(ctx context.Context, key notificationKey) (bool, error) {
+// acquireLockOrConsumed 检查通知是否已消费并尝试加分布式防重放锁，返回释放函数以保证处理失败时立即解锁。
+func (s *Service) acquireLockOrConsumed(ctx context.Context, key notificationKey) (bool, func(), error) {
+	noop := func() {}
 	if s.cache == nil || key.tradeNo == "" {
-		return false, nil
+		return false, noop, nil
 	}
 	log := logger.FromContext(ctx)
 
@@ -202,16 +204,22 @@ func (s *Service) acquireLockOrConsumed(ctx context.Context, key notificationKey
 		log.Warn("callback notification already consumed, acknowledged without reprocessing",
 			key.logFields()...,
 		)
-		return true, nil
+		return true, noop, nil
 	}
 
 	lockKey := key.cacheKey(purposeLock)
-	acquired, lockErr := s.cache.SetNX(ctx, lockKey, "1", notifyLockTTL)
+	const lockToken = "1"
+	acquired, lockErr := s.cache.SetNX(ctx, lockKey, lockToken, notifyLockTTL)
 	if lockErr == nil && !acquired {
-		return false, errs.Conflict("duplicate notification in progress")
+		return false, noop, errs.Conflict("duplicate notification in progress")
 	}
 
-	return false, nil
+	release := func() {
+		unlockCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		defer cancel()
+		_, _ = s.cache.DeleteIfMatch(unlockCtx, lockKey, lockToken)
+	}
+	return false, release, nil
 }
 
 // dispatchNotification 将通知派发给业务处理器并向事件总线广播领域事件。

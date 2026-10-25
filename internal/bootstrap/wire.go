@@ -195,7 +195,12 @@ func initFeatures(in *infrastructure, td *teardown) (*featureSet, error) {
 		return nil, err
 	}
 
-	clientGuard := platformauth.NewGuard(in.tokens, userProvider, user.ClientPolicy{}, userProvider.Identity)
+	clientGuard := platformauth.NewGuard(
+		in.tokens,
+		userProvider,
+		user.ClientPolicy{RequireEmailVerification: in.cfg.Auth.RequireEmailVerification},
+		userProvider.Identity,
+	)
 	adminGuard := platformauth.NewGuard(in.tokens, userProvider, user.AdminPolicy{}, userProvider.Identity)
 	authManager := platformauth.NewManager().
 		Register("client", clientGuard).

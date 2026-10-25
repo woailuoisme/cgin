@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/hibiken/asynq"
-	"github.com/redis/go-redis/v9"
 	"github.com/samber/lo"
 	"github.com/samber/oops"
 	"go.uber.org/zap"
@@ -25,7 +24,7 @@ type Client struct {
 	client          *asynq.Client
 	inspector       *asynq.Inspector
 	locker          Locker
-	redisClient     redis.UniversalClient
+	registry        Registry
 	redisOpt        asynq.RedisConnOpt
 	concurrency     int
 	shutdownTimeout time.Duration
@@ -57,12 +56,8 @@ func NewClient(cfg config.QueueConfig, lockers ...Locker) (*Client, func(), erro
 	inspector := asynq.NewInspector(redisOpt)
 
 	var locker Locker
-	var rdb redis.UniversalClient
 	if len(lockers) > 0 && lockers[0] != nil {
 		locker = lockers[0]
-	} else if rc, ok := redisOpt.MakeRedisClient().(redis.UniversalClient); ok {
-		rdb = rc
-		locker = NewRedisLocker(rc)
 	}
 
 	concurrency := cmp.Or(cfg.Concurrency, 10)
@@ -72,7 +67,7 @@ func NewClient(cfg config.QueueConfig, lockers ...Locker) (*Client, func(), erro
 		client:          client,
 		inspector:       inspector,
 		locker:          locker,
-		redisClient:     rdb,
+		registry:        defaultReg,
 		redisOpt:        redisOpt,
 		concurrency:     concurrency,
 		shutdownTimeout: shutdownTimeout,
@@ -83,6 +78,15 @@ func NewClient(cfg config.QueueConfig, lockers ...Locker) (*Client, func(), erro
 	}
 
 	return c, cleanup, nil
+}
+
+// SetRegistry 注入自定义任务注册表实例（未注入时默认使用 DefaultRegistry）。
+func (c *Client) SetRegistry(reg Registry) {
+	if reg != nil {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		c.registry = reg
+	}
 }
 
 // SetConcurrency 配置工作协程并发处理数上限。
@@ -158,7 +162,7 @@ func (c *Client) Use(middlewares ...Middleware) {
 	c.middlewares = append(c.middlewares, middlewares...)
 }
 
-// Close 释放队列客户端、运维探针与底层 Redis 资源。
+// Close 释放队列客户端与运维探针资源。
 func (c *Client) Close() error {
 	if c == nil {
 		return nil
@@ -168,9 +172,6 @@ func (c *Client) Close() error {
 	}
 	if c.client != nil {
 		_ = c.client.Close()
-	}
-	if c.redisClient != nil {
-		_ = c.redisClient.Close()
 	}
 	return nil
 }

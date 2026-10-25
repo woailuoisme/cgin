@@ -17,6 +17,7 @@ type (
 	Notification            = contract.Notification
 	ChannelFormatter        = contract.ChannelFormatter
 	Channel                 = contract.Channel
+	BatchChannel            = contract.BatchChannel
 	Formatter               = contract.Formatter
 	IdempotentNotification  = contract.IdempotentNotification
 	RateLimitedNotification = contract.RateLimitedNotification

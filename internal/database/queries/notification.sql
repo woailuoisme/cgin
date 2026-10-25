@@ -14,6 +14,19 @@ INSERT INTO notifications (
 )
 RETURNING *;
 
+-- name: CreateNotificationsBatch :batchexec
+INSERT INTO notifications (
+  notifiable_type,
+  notifiable_id,
+  type,
+  data
+) VALUES (
+  @notifiable_type,
+  @notifiable_id,
+  @type,
+  @data
+);
+
 -- name: ListNotifications :many
 SELECT sqlc.embed(n), count(*) OVER () AS total_count
 FROM notifications AS n

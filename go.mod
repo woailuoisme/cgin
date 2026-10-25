@@ -30,11 +30,10 @@ require (
 	github.com/hibiken/asynq v0.26.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/johnfercher/maroto/v2 v2.4.4
-	github.com/lionsoul2014/ip2region/binding/golang v0.0.0-20261018023631-f8b0792b0cd7
+	github.com/lionsoul2014/ip2region/binding/golang v0.0.0-20261025050407-70d862dbc7ee
 	github.com/meilisearch/meilisearch-go v0.36.3
 	github.com/minio/minio-go/v7 v7.4.1
 	github.com/pelletier/go-toml/v2 v2.4.3
-	github.com/redis/go-redis/v9 v9.23.0
 	github.com/redis/rueidis v1.0.79
 	github.com/resend/resend-go/v4 v4.9.0
 	github.com/samber/hot v0.13.1
@@ -144,6 +143,7 @@ require (
 	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.1 // indirect
+	github.com/redis/go-redis/v9 v9.23.0 // indirect
 	github.com/richardlehane/mscfb v1.0.7 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect

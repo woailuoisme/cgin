@@ -22,8 +22,9 @@ type Channel struct {
 }
 
 var (
-	_ contract.Channel   = (*Channel)(nil)
-	_ contract.Formatter = (*Channel)(nil)
+	_ contract.Channel      = (*Channel)(nil)
+	_ contract.Formatter    = (*Channel)(nil)
+	_ contract.BatchChannel = (*Channel)(nil)
 )
 
 // NewChannel 创建数据库通知渠道实例。
@@ -136,6 +137,59 @@ func (c *Channel) Send(ctx context.Context, notifiable any, message any) error {
 	}
 
 	return nil
+}
+
+// SendBatch 使用 pgx 批量管道一次性将通知持久化至多个接收者，消除多接收人场景下的 N+1 往返。
+func (c *Channel) SendBatch(ctx context.Context, notifiables []any, messages []any) error {
+	if len(notifiables) == 0 {
+		return nil
+	}
+	if err := c.ensureDB(); err != nil {
+		return err
+	}
+
+	batchParams := make([]sqlc.CreateNotificationsBatchParams, 0, len(notifiables))
+	for i, n := range notifiables {
+		if n == nil {
+			continue
+		}
+		var rawMsg any
+		if i < len(messages) {
+			rawMsg = messages[i]
+		}
+		msg, err := c.extractMessage(n, rawMsg)
+		if err != nil {
+			return err
+		}
+		notifiableType, notifiableID, err := resolveRecipient(n)
+		if err != nil {
+			return err
+		}
+		dataBytes, err := json.Marshal(msg.Data)
+		if err != nil {
+			return oops.Code(errs.CodeNotificationEncodeError).In("DatabaseChannel.SendBatch").Wrap(err)
+		}
+		batchParams = append(batchParams, sqlc.CreateNotificationsBatchParams{
+			NotifiableType: notifiableType,
+			NotifiableID:   notifiableID,
+			Type:           msg.Type,
+			Data:           string(dataBytes),
+		})
+	}
+	if len(batchParams) == 0 {
+		return nil
+	}
+
+	br := c.db.Queries(ctx).CreateNotificationsBatch(ctx, batchParams)
+	defer func() { _ = br.Close() }()
+
+	var batchErr error
+	br.Exec(func(_ int, err error) {
+		if err != nil && batchErr == nil {
+			batchErr = oops.Code(errs.CodeInternal).In("DatabaseChannel.SendBatch").Wrap(err)
+		}
+	})
+	return batchErr
 }
 
 // MarkAsRead 将指定通知记录标记为已读。

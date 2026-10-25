@@ -3,10 +3,10 @@ package queue
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -55,14 +55,26 @@ func (c *Client) StopWorker() error {
 	return nil
 }
 
+// activeRegistry 返回客户端绑定的任务注册表，未设置时退回全局默认注册表。
+func (c *Client) activeRegistry() *jobRegistry {
+	c.mu.RLock()
+	reg := c.registry
+	c.mu.RUnlock()
+	if jr, ok := reg.(*jobRegistry); ok && jr != nil {
+		return jr
+	}
+	return defaultReg
+}
+
 // BuildServeMux 将注册表中的任务工厂编译挂载到 Asynq 的 ServeMux 多路复用器中。
 // 每个任务执行前由工厂创建实例（元数据由构造器给出），再用载荷覆盖业务字段。
 func (c *Client) BuildServeMux() *asynq.ServeMux {
 	mux := asynq.NewServeMux()
-	defaultReg.mu.RLock()
-	defer defaultReg.mu.RUnlock()
+	reg := c.activeRegistry()
+	reg.mu.RLock()
+	defer reg.mu.RUnlock()
 
-	for name, factory := range defaultReg.jobs {
+	for name, factory := range reg.jobs {
 		taskName := name
 		jobFactory := factory
 
@@ -85,7 +97,7 @@ func (c *Client) BuildServeMux() *asynq.ServeMux {
 			mws := []Middleware{
 				RecoveryMiddleware(c.log()),
 				TracingMiddleware(c.log(), headers),
-				LockingMiddleware(c.locker, defaultReg, c.log()),
+				LockingMiddleware(c.locker, reg, c.log()),
 				LoggingMiddleware(c.log()),
 			}
 
@@ -115,13 +127,17 @@ func (c *Client) newScheduler(cfg *config.Config) (*asynq.Scheduler, error) {
 		Location: loc,
 	})
 
-	cronEntries := GetCronEntries()
+	reg := c.activeRegistry()
+	reg.mu.RLock()
+	cronEntries := slices.Clone(reg.cronEntries)
+	reg.mu.RUnlock()
+
 	for _, entry := range cronEntries {
 		if entry.Spec == "" || entry.Job == nil {
 			continue
 		}
 
-		payload, err := json.Marshal(entry.Job)
+		payload, err := wrapEnvelope(context.Background(), entry.Job, nil)
 		if err != nil {
 			c.log().Error("failed to marshal periodic task payload",
 				zap.String("task", entry.Job.TaskName()),

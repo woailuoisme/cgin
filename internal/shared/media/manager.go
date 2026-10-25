@@ -281,7 +281,7 @@ func (m *Manager) uploadSource(ctx context.Context, source any, category, diskNa
 	}
 }
 
-// clearOldFiles 删除指定模型集合下的数据库记录，并在之后清理物理文件。
+// clearOldFiles 删除指定模型集合下的数据库记录，并在事务提交后清理物理文件。
 func (m *Manager) clearOldFiles(ctx context.Context, modelType, modelID, collection string) error {
 	removed, err := m.db.Queries(ctx).DeleteMediaByModelAndCollection(ctx, sqlc.DeleteMediaByModelAndCollectionParams{
 		ModelType:      modelType,
@@ -293,7 +293,7 @@ func (m *Manager) clearOldFiles(ctx context.Context, modelType, modelID, collect
 	}
 
 	names := lo.Map(removed, func(item database.Media, _ int) string { return item.FileName })
-	m.deleteFiles(ctx, names)
+	database.AfterCommit(ctx, func() { m.deleteFiles(ctx, names) })
 	return nil
 }
 
@@ -345,6 +345,44 @@ func (m *Manager) Get(ctx context.Context, owner Owner, collection ...string) ([
 	}
 
 	return items, nil
+}
+
+// GetForOwners 批量查询同一宿主类型下多个宿主 ID 的媒体附件，按 ModelID 分组返回，彻底消除列表页 N+1 查询。
+func (m *Manager) GetForOwners(
+	ctx context.Context,
+	modelType string,
+	modelIDs []string,
+	collection ...string,
+) (map[string][]database.Media, error) {
+	if strings.TrimSpace(modelType) == "" {
+		return nil, oops.Code(errs.CodeBadRequest).Errorf("media: model type cannot be empty")
+	}
+	if len(modelIDs) == 0 {
+		return map[string][]database.Media{}, nil
+	}
+	if err := m.ensureDB(); err != nil {
+		return nil, err
+	}
+
+	params := sqlc.ListMediaByModelsParams{
+		ModelType: strings.TrimSpace(modelType),
+		ModelIds:  lo.Uniq(modelIDs),
+	}
+	if len(collection) > 0 && strings.TrimSpace(collection[0]) != "" {
+		name := strings.TrimSpace(collection[0])
+		params.CollectionName = &name
+	}
+
+	items, err := m.db.Queries(ctx).ListMediaByModels(ctx, params)
+	if err != nil {
+		return nil, oops.Code(errs.CodeInternal).In("media.Manager.GetForOwners").Wrap(err)
+	}
+
+	grouped := make(map[string][]database.Media, len(params.ModelIds))
+	for _, item := range items {
+		grouped[item.ModelID] = append(grouped[item.ModelID], item)
+	}
+	return grouped, nil
 }
 
 // GetFirst 查询指定宿主特定集合下的首个媒体附件（如头像）。
@@ -405,22 +443,25 @@ func (m *Manager) FindByID(ctx context.Context, id int64) (*database.Media, erro
 	return &item, nil
 }
 
-// Delete 删除指定 UUID 的媒体附件，先删数据库记录再清理物理文件。
+// Delete 原子删除指定 UUID 的媒体附件记录，并在事务提交后清理物理文件。
 func (m *Manager) Delete(ctx context.Context, uuid string) error {
-	mediaItem, err := m.FindByUUID(ctx, uuid)
-	if err != nil {
+	trimmed := strings.TrimSpace(uuid)
+	if trimmed == "" {
+		return oops.Code(errs.CodeBadRequest).Errorf("media: uuid cannot be empty")
+	}
+	if err := m.ensureDB(); err != nil {
 		return err
 	}
 
-	affected, err := m.db.Queries(ctx).DeleteMediaByUUID(ctx, sqlc.DeleteMediaByUUIDParams{UUID: uuid})
+	deleted, err := m.db.Queries(ctx).DeleteMediaByUUID(ctx, sqlc.DeleteMediaByUUIDParams{UUID: trimmed})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return oops.Code(errs.CodeNotFound).Wrap(ErrMediaNotFound)
+		}
 		return oops.Code(errs.CodeInternal).In("media.Manager.Delete").Wrap(err)
 	}
-	if affected == 0 {
-		return oops.Code(errs.CodeNotFound).Wrap(ErrMediaNotFound)
-	}
 
-	m.deleteFiles(ctx, []string{mediaItem.FileName})
+	database.AfterCommit(ctx, func() { m.deleteFiles(ctx, []string{deleted.FileName}) })
 	return nil
 }
 

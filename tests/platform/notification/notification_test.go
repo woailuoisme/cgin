@@ -548,3 +548,52 @@ func TestNotificationWithQueue(t *testing.T) {
 	assert.Equal(t, 5, cfg.MaxRetries)
 	assert.Equal(t, 15*time.Second, cfg.Delay)
 }
+
+type mockBatchChannel struct {
+	singleCalls atomic.Int32
+	batchCalls  atomic.Int32
+	batchSizes  []int
+}
+
+func (m *mockBatchChannel) Name() string { return "batch_mock" }
+
+func (m *mockBatchChannel) Send(_ context.Context, _ any, _ any) error {
+	m.singleCalls.Add(1)
+	return nil
+}
+
+func (m *mockBatchChannel) SendBatch(_ context.Context, notifiables []any, _ []any) error {
+	m.batchCalls.Add(1)
+	m.batchSizes = append(m.batchSizes, len(notifiables))
+	return nil
+}
+
+type batchTestNotification struct{}
+
+func (b *batchTestNotification) Via(_ any) []string { return []string{"batch_mock"} }
+
+func TestNotifierBatchChannel(t *testing.T) {
+	ctx := t.Context()
+	n := notification.NewNotifier(2, 10)
+	defer func() { _ = n.Close() }()
+
+	batchCh := &mockBatchChannel{}
+	n.Extend("batch_mock", batchCh)
+
+	targets := []any{
+		&mockNotifiable{ID: "u1"},
+		&mockNotifiable{ID: "u2"},
+		&mockNotifiable{ID: "u3"},
+	}
+	notif := &batchTestNotification{}
+
+	require.NoError(t, n.Send(ctx, targets, notif))
+	assert.Equal(t, int32(0), batchCh.singleCalls.Load())
+	assert.Equal(t, int32(1), batchCh.batchCalls.Load())
+	assert.Equal(t, []int{3}, batchCh.batchSizes)
+
+	require.NoError(t, n.SendParallel(ctx, targets, notif))
+	assert.Equal(t, int32(0), batchCh.singleCalls.Load())
+	assert.Equal(t, int32(2), batchCh.batchCalls.Load())
+	assert.Equal(t, []int{3, 3}, batchCh.batchSizes)
+}

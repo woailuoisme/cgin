@@ -19,6 +19,15 @@ WHERE m.model_type = @model_type
   AND (sqlc.narg('collection_name')::text IS NULL OR m.collection_name = sqlc.narg('collection_name')::text)
 ORDER BY m.order_column ASC NULLS LAST, m.id ASC;
 
+-- name: ListMediaByModels :many
+-- 批量按多个宿主 ID 预加载媒体附件，消除列表页 N+1 查询。
+SELECT *
+FROM media AS m
+WHERE m.model_type = @model_type
+  AND m.model_id = ANY(@model_ids::text[])
+  AND (sqlc.narg('collection_name')::text IS NULL OR m.collection_name = sqlc.narg('collection_name')::text)
+ORDER BY m.order_column ASC NULLS LAST, m.id ASC;
+
 -- name: GetFirstMedia :one
 SELECT *
 FROM media AS m
@@ -62,9 +71,10 @@ INSERT INTO media (
 )
 RETURNING *;
 
--- name: DeleteMediaByUUID :execrows
+-- name: DeleteMediaByUUID :one
 DELETE FROM media AS m
-WHERE m.uuid = @uuid;
+WHERE m.uuid = @uuid
+RETURNING *;
 
 -- name: DeleteMediaByModelAndCollection :many
 -- 删除并回传被移除的行，供调用方清理底层物理文件。

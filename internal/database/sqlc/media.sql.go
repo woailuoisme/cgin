@@ -158,21 +158,41 @@ func (q *Queries) DeleteMediaByModelAndCollection(ctx context.Context, arg Delet
 	return items, nil
 }
 
-const deleteMediaByUUID = `-- name: DeleteMediaByUUID :execrows
+const deleteMediaByUUID = `-- name: DeleteMediaByUUID :one
 DELETE FROM media AS m
 WHERE m.uuid = $1
+RETURNING id, uuid, model_type, model_id, collection_name, disk, name, file_name, mime_type, conversions_disk, size, conversion_status, order_column, manipulations, custom_properties, generated_conversions, responsive_images, created_at, updated_at
 `
 
 type DeleteMediaByUUIDParams struct {
 	UUID string
 }
 
-func (q *Queries) DeleteMediaByUUID(ctx context.Context, arg DeleteMediaByUUIDParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteMediaByUUID, arg.UUID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+func (q *Queries) DeleteMediaByUUID(ctx context.Context, arg DeleteMediaByUUIDParams) (Medium, error) {
+	row := q.db.QueryRow(ctx, deleteMediaByUUID, arg.UUID)
+	var i Medium
+	err := row.Scan(
+		&i.ID,
+		&i.UUID,
+		&i.ModelType,
+		&i.ModelID,
+		&i.CollectionName,
+		&i.Disk,
+		&i.Name,
+		&i.FileName,
+		&i.MIMEType,
+		&i.ConversionsDisk,
+		&i.Size,
+		&i.ConversionStatus,
+		&i.OrderColumn,
+		&i.Manipulations,
+		&i.CustomProperties,
+		&i.GeneratedConversions,
+		&i.ResponsiveImages,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getFirstMedia = `-- name: GetFirstMedia :one
@@ -312,6 +332,62 @@ type ListMediaByModelParams struct {
 // collection 传 NULL 表示不限定集合。
 func (q *Queries) ListMediaByModel(ctx context.Context, arg ListMediaByModelParams) ([]Medium, error) {
 	rows, err := q.db.Query(ctx, listMediaByModel, arg.ModelType, arg.ModelID, arg.CollectionName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Medium{}
+	for rows.Next() {
+		var i Medium
+		if err := rows.Scan(
+			&i.ID,
+			&i.UUID,
+			&i.ModelType,
+			&i.ModelID,
+			&i.CollectionName,
+			&i.Disk,
+			&i.Name,
+			&i.FileName,
+			&i.MIMEType,
+			&i.ConversionsDisk,
+			&i.Size,
+			&i.ConversionStatus,
+			&i.OrderColumn,
+			&i.Manipulations,
+			&i.CustomProperties,
+			&i.GeneratedConversions,
+			&i.ResponsiveImages,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMediaByModels = `-- name: ListMediaByModels :many
+SELECT id, uuid, model_type, model_id, collection_name, disk, name, file_name, mime_type, conversions_disk, size, conversion_status, order_column, manipulations, custom_properties, generated_conversions, responsive_images, created_at, updated_at
+FROM media AS m
+WHERE m.model_type = $1
+  AND m.model_id = ANY($2::text[])
+  AND ($3::text IS NULL OR m.collection_name = $3::text)
+ORDER BY m.order_column ASC NULLS LAST, m.id ASC
+`
+
+type ListMediaByModelsParams struct {
+	ModelType      string
+	ModelIds       []string
+	CollectionName *string
+}
+
+// 批量按多个宿主 ID 预加载媒体附件，消除列表页 N+1 查询。
+func (q *Queries) ListMediaByModels(ctx context.Context, arg ListMediaByModelsParams) ([]Medium, error) {
+	rows, err := q.db.Query(ctx, listMediaByModels, arg.ModelType, arg.ModelIds, arg.CollectionName)
 	if err != nil {
 		return nil, err
 	}

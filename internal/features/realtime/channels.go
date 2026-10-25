@@ -9,6 +9,7 @@ import (
 	"cgin/internal/database/sqlc"
 	platformRealtime "cgin/internal/platform/realtime"
 	"cgin/internal/shared/enums"
+	shareduser "cgin/internal/shared/user"
 )
 
 // UserChannel 构建受订阅代理保护的个人用户私有频道名称（private:users.userID）。
@@ -42,7 +43,7 @@ func RegisterChannels(r *platformRealtime.Registry, db *database.DB) {
 				return errors.New("unauthorized: missing target user id")
 			}
 
-			if (u.ID != "" && u.ID == targetID) || isAdmin(ctx, db, u.ID) {
+			if (u.ID != "" && u.ID == targetID) || isAdmin(ctx, db, u) {
 				return nil
 			}
 
@@ -55,10 +56,10 @@ func RegisterChannels(r *platformRealtime.Registry, db *database.DB) {
 			if u.ID == "" {
 				return errors.New("unauthorized: authentication required")
 			}
-			if db == nil {
+			if u.Role == "" && db == nil {
 				return errors.New("unauthorized: authorization service unavailable")
 			}
-			if !isAdmin(ctx, db, u.ID) {
+			if !isAdmin(ctx, db, u) {
 				return errors.New("unauthorized: admin privileges required")
 			}
 			return nil
@@ -75,11 +76,18 @@ func RegisterChannels(r *platformRealtime.Registry, db *database.DB) {
 	})
 }
 
-// isAdmin 检查指定用户是否具备系统管理员角色。
-func isAdmin(ctx context.Context, db *database.DB, userID string) bool {
-	if db == nil || userID == "" {
+// isAdmin 检查指定用户是否处于有效活跃状态且具备系统管理员角色。
+// 若上层已预加载并校验过 User.Role，则直接走纯内存判定，避免重复查询数据库。
+func isAdmin(ctx context.Context, db *database.DB, u platformRealtime.User) bool {
+	if u.ID == "" {
 		return false
 	}
-	user, err := db.Queries(ctx).GetUserByID(ctx, sqlc.GetUserByIDParams{ID: userID})
-	return err == nil && user.Role == enums.RoleAdmin
+	if u.Role != "" {
+		return u.Role == string(enums.RoleAdmin)
+	}
+	if db == nil {
+		return false
+	}
+	user, err := db.Queries(ctx).GetUserByID(ctx, sqlc.GetUserByIDParams{ID: u.ID})
+	return err == nil && shareduser.GuardState(&user) == nil && user.Role == enums.RoleAdmin
 }

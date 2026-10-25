@@ -193,6 +193,14 @@ var defaultReg = &jobRegistry{
 	jobLocks: make(map[string]time.Duration),
 }
 
+// NewRegistry 创建独立的任务与调度注册表实例（供隔离测试或独立队列实例注入使用）。
+func NewRegistry() Registry {
+	return &jobRegistry{
+		jobs:     make(map[string]func() Job),
+		jobLocks: make(map[string]time.Duration),
+	}
+}
+
 // DefaultRegistry 返回全局单例任务与调度注册中心。
 func DefaultRegistry() Registry {
 	return defaultReg

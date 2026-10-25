@@ -5,10 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"sync"
 	"time"
 
+	"github.com/samber/hot"
+
 	"cgin/internal/platform/cache"
+)
+
+const (
+	// revokeL1Capacity 限制用户撤销纪元 L1 缓存的最大条目数，防止海量随机 userID 导致内存无限增长。
+	revokeL1Capacity = 100_000
+	// revokeL1TTL 本地 L1 撤销纪元微缓存有效期。
+	revokeL1TTL = 2 * time.Second
 )
 
 // BlacklistStore 抽象令牌与用户撤销黑名单的缓存存取能力。
@@ -22,7 +30,7 @@ type BlacklistStore interface {
 type BlacklistManager struct {
 	store        BlacklistStore
 	refreshTTL   time.Duration
-	userRevokeL1 sync.Map // 优化高并发：本地 2 秒 L1 微缓存，减轻远程缓存读穿透
+	userRevokeL1 *hot.HotCache[string, userRevokeL1Entry] // 有界 W-TinyLFU 2 秒 L1 微缓存，兼顾防读穿透与防 OOM
 }
 
 type userRevokeL1Entry struct {
@@ -35,9 +43,13 @@ func NewBlacklistManager(store BlacklistStore, refreshTTL time.Duration) *Blackl
 	if refreshTTL <= 0 {
 		refreshTTL = 30 * 24 * time.Hour
 	}
+	l1 := hot.NewHotCache[string, userRevokeL1Entry](hot.WTinyLFU, revokeL1Capacity).
+		WithTTL(revokeL1TTL).
+		Build()
 	return &BlacklistManager{
-		store:      store,
-		refreshTTL: refreshTTL,
+		store:        store,
+		refreshTTL:   refreshTTL,
+		userRevokeL1: l1,
 	}
 }
 
@@ -104,11 +116,10 @@ func (b *BlacklistManager) IsUserRevoked(ctx context.Context, userID string, iss
 		return epoch
 	}
 
-	// 1. 先检查本地 L1 微缓存（TTL 2秒），高并发下极大减免远程缓存读取
+	// 1. 先检查有界本地 L1 微缓存（TTL 2秒），高并发下极大减免远程缓存读取
 	now := time.Now()
-	if val, ok := b.userRevokeL1.Load(userID); ok {
-		entry, isEntry := val.(userRevokeL1Entry)
-		if isEntry && now.Before(entry.expiresAt) {
+	if b.userRevokeL1 != nil {
+		if entry, found, err := b.userRevokeL1.Get(userID); err == nil && found && now.Before(entry.expiresAt) {
 			if entry.epochUnix == 0 {
 				return false, nil
 			}
@@ -138,10 +149,13 @@ func (b *BlacklistManager) IsUserRevoked(ctx context.Context, userID string, iss
 }
 
 func (b *BlacklistManager) setL1(userID string, epochUnix int64, now time.Time) {
-	b.userRevokeL1.Store(userID, userRevokeL1Entry{
+	if b.userRevokeL1 == nil {
+		return
+	}
+	b.userRevokeL1.SetWithTTL(userID, userRevokeL1Entry{
 		epochUnix: epochUnix,
-		expiresAt: now.Add(2 * time.Second),
-	})
+		expiresAt: now.Add(revokeL1TTL),
+	}, revokeL1TTL)
 }
 
 // IsRevoked 综合检验令牌 JTI 单项黑名单与用户级全局注销纪元。

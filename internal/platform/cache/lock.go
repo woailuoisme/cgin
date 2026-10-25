@@ -157,7 +157,11 @@ func makeLockerRelease(ctx context.Context, ch chan struct{}) (context.Context, 
 			ch <- struct{}{}
 		})
 	}
-	return lockedCtx, release
+	stop := context.AfterFunc(lockedCtx, release)
+	return lockedCtx, func() {
+		stop()
+		release()
+	}
 }
 
 // Lock 阻塞等待并获取指定名称的内存锁。

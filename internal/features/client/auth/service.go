@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -37,15 +36,6 @@ const (
 	mailKeyResetLink   = "reset_link"
 	mailKeyResetOTP    = "reset_otp"
 )
-
-// dummyPasswordHash 是时序对齐用的固定哈希载荷，进程内只生成一次。
-var dummyPasswordHash = sync.OnceValue(func() string {
-	encoded, err := hasher.New().Make("cgin-login-timing-equaliser")
-	if err != nil {
-		return ""
-	}
-	return encoded
-})
 
 // NotificationSender 定义外发通知的高层抽象契约。
 type NotificationSender interface {
@@ -387,7 +377,9 @@ func (s *Service) guardAccountState(user *sqlc.User) error {
 // translateLookupFailure 把"账号不存在"统一翻译为凭证错误，避免泄漏账号是否存在。
 func (s *Service) translateLookupFailure(ctx context.Context, err error, identifier string) error {
 	if isNotFound(err) {
-		s.equaliseLookupTiming(identifier)
+		if equaliser, ok := s.credentials.(platformauth.TimingEqualiser); ok {
+			equaliser.EqualiseTiming(ctx, identifier)
+		}
 		logger.FromContext(ctx).Info("login failed: account not found", zap.String("identifier", identifier))
 		return errs.InvalidCredentials()
 	}
@@ -398,17 +390,6 @@ func (s *Service) translateLookupFailure(ctx context.Context, err error, identif
 func isNotFound(err error) bool {
 	bizErr, ok := errs.As(err)
 	return ok && bizErr.Code() == errs.CodeNotFound
-}
-
-// equaliseLookupTiming 在账号不存在时补做一次等价的口令校验。
-// "密码错误"路径会执行 Argon2 校验而本路径不会，响应时间差足以枚举账号是否存在。
-func (s *Service) equaliseLookupTiming(identifier string) {
-	if s.hasher == nil {
-		return
-	}
-	if encoded := dummyPasswordHash(); encoded != "" {
-		_, _ = s.hasher.Check(encoded, identifier)
-	}
 }
 
 // recordLogin 记录最近登录信息；失败不影响登录本身。

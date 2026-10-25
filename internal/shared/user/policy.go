@@ -14,11 +14,20 @@ import (
 var ErrRoleRestricted = errs.Forbidden("Access restricted to administrators")
 
 // ClientPolicy 实现普通客户端用户的守卫校验策略。
-type ClientPolicy struct{}
+type ClientPolicy struct {
+	// RequireEmailVerification 为 true 时拒绝尚未完成邮箱验证的账号。
+	RequireEmailVerification bool
+}
 
-// ValidateUser 校验客户端账号活跃且未被封禁。
+// ValidateUser 校验客户端账号活跃、未被封禁，且按配置校验邮箱验证状态。
 func (p ClientPolicy) ValidateUser(_ context.Context, user *sqlc.User) error {
-	return GuardState(user)
+	if err := GuardState(user); err != nil {
+		return err
+	}
+	if p.RequireEmailVerification && !user.EmailVerified {
+		return errs.New(errs.CodeAuthEmailNotVerified, "The email address has not been verified")
+	}
+	return nil
 }
 
 // AdminPolicy 实现后台管理端管理员的守卫校验策略。

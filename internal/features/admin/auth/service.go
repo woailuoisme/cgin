@@ -4,12 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/jackc/pgx/v5"
-
 	"cgin/internal/database/sqlc"
 	"cgin/internal/platform/authentication"
 	"cgin/internal/platform/errs"
-	"cgin/internal/shared/enums"
 	shareduser "cgin/internal/shared/user"
 )
 
@@ -59,38 +56,12 @@ func (s *Service) SignInEmail(ctx context.Context, body SignInEmailBody) (Sessio
 
 // GetSession 获取当前有效会话的管理员资料。
 func (s *Service) GetSession(ctx context.Context, userID string) (GetSessionResource, error) {
-	user, err := s.guard.UserOrFail(ctx)
+	user, err := s.guard.ResolveUser(ctx, userID)
 	if err != nil {
-		loaded, loadErr := s.loadAdmin(ctx, userID)
-		if loadErr != nil {
-			return GetSessionResource{}, loadErr
-		}
-		user = loaded
+		return GetSessionResource{}, err
 	}
 
 	return GetSessionResource{User: shareduser.ProjectProfile(user)}, nil
-}
-
-// loadAdmin 加载管理员实体并进行角色与状态校验。
-func (s *Service) loadAdmin(ctx context.Context, userID string) (*sqlc.User, error) {
-	if s.guard == nil || s.guard.Provider() == nil {
-		return nil, errs.Internal(errors.New("adminauth: guard provider is not configured"))
-	}
-
-	u, err := s.guard.Provider().FindByID(ctx, userID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, errs.Unauthorized(errs.CodeAuthTokenInvalid, "The token is invalid")
-		}
-		return nil, errs.Internal(err)
-	}
-	if u.Role != enums.RoleAdmin {
-		return nil, errs.Forbidden("Access restricted to administrators")
-	}
-	if err := shareduser.GuardState(u); err != nil {
-		return nil, err
-	}
-	return u, nil
 }
 
 // Refresh 刷新管理员双令牌，实现令牌轮换。
@@ -125,8 +96,8 @@ func toSessionResource(sess authentication.Session, user *sqlc.User) SessionReso
 
 // ChangePassword 修改当前管理员登录密码。
 func (s *Service) ChangePassword(ctx context.Context, userID string, body ChangePasswordBody) error {
-	// 新口令强度由凭据深模块统一校验；此处先做管理员语义校验，遵循"先授权、后入参"。
-	if _, err := s.loadAdmin(ctx, userID); err != nil {
+	// 新口令强度由凭据深模块统一校验；此处先通过守卫策略做管理员语义校验，遵循"先授权、后入参"。
+	if _, err := s.guard.ResolveUser(ctx, userID); err != nil {
 		return err
 	}
 

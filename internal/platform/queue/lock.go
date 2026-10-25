@@ -2,12 +2,8 @@ package queue
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 
 	"cgin/internal/platform/cache"
 )
@@ -39,13 +35,22 @@ type tryLockerAdapter struct {
 
 var _ Locker = (*tryLockerAdapter)(nil)
 
-func (a *tryLockerAdapter) Acquire(ctx context.Context, key string, _ time.Duration) (func(context.Context) error, bool, error) {
+func (a *tryLockerAdapter) Acquire(ctx context.Context, key string, ttl time.Duration) (func(context.Context) error, bool, error) {
 	if a == nil || a.l == nil {
 		return nil, false, errors.New("queue: locker is nil")
 	}
 
-	_, cancel, err := a.l.TryLock(ctx, key)
+	lockCtx := ctx
+	var timeoutCancel context.CancelFunc
+	if ttl > 0 {
+		lockCtx, timeoutCancel = context.WithTimeout(ctx, ttl)
+	}
+
+	_, cancel, err := a.l.TryLock(lockCtx, key)
 	if err != nil {
+		if timeoutCancel != nil {
+			timeoutCancel()
+		}
 		if errors.Is(err, cache.ErrNotLocked) {
 			return nil, false, nil
 		}
@@ -54,6 +59,9 @@ func (a *tryLockerAdapter) Acquire(ctx context.Context, key string, _ time.Durat
 
 	release := func(_ context.Context) error {
 		cancel()
+		if timeoutCancel != nil {
+			timeoutCancel()
+		}
 		return nil
 	}
 
@@ -79,55 +87,4 @@ func TryLock(ctx context.Context, locker Locker, key string, ttl time.Duration, 
 	}()
 
 	return true, fn(ctx)
-}
-
-// RedisLocker 基于 Redis SET NX PX 与 Lua 脚本提供安全释放机制的分布式锁实现。
-type RedisLocker struct {
-	client redis.UniversalClient
-}
-
-var _ Locker = (*RedisLocker)(nil)
-
-// NewRedisLocker 创建基于 Redis 的分布式锁实例。
-func NewRedisLocker(client redis.UniversalClient) *RedisLocker {
-	return &RedisLocker{client: client}
-}
-
-// luaReleaseLock 确保只有持有锁的客户端（token 匹配）才能删除释放锁。
-const luaReleaseLock = `
-if redis.call("get", KEYS[1]) == ARGV[1] then
-    return redis.call("del", KEYS[1])
-else
-    return 0
-end
-`
-
-// Acquire 尝试通过 Redis SET key token NX PX ttl 获取锁。
-func (l *RedisLocker) Acquire(ctx context.Context, key string, ttl time.Duration) (func(context.Context) error, bool, error) {
-	if l == nil || l.client == nil {
-		return nil, false, errors.New("queue: redis client is nil")
-	}
-
-	token := randomToken()
-	ok, err := l.client.SetNX(ctx, key, token, ttl).Result()
-	if err != nil {
-		return nil, false, err
-	}
-	if !ok {
-		return nil, false, nil
-	}
-
-	release := func(relCtx context.Context) error {
-		return l.client.Eval(relCtx, luaReleaseLock, []string{key}, token).Err()
-	}
-
-	return release, true, nil
-}
-
-func randomToken() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return hex.EncodeToString([]byte(time.Now().String()))
-	}
-	return hex.EncodeToString(b)
 }
