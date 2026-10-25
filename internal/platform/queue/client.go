@@ -50,7 +50,7 @@ func NewClient(cfg config.QueueConfig, lockers ...Locker) (*Client, func(), erro
 	redisURL := cmp.Or(cfg.RedisURL, "redis://127.0.0.1:6379")
 	redisOpt, err := asynq.ParseRedisURI(redisURL)
 	if err != nil {
-		return nil, nil, oops.Code(string(errs.CodeInternal)).In("queue.NewClient.ParseRedisURI").Wrap(err)
+		return nil, nil, oops.Code(errs.CodeInternal).In("queue.NewClient.ParseRedisURI").Wrap(err)
 	}
 
 	client := asynq.NewClient(redisOpt)
@@ -89,8 +89,8 @@ func NewClient(cfg config.QueueConfig, lockers ...Locker) (*Client, func(), erro
 func (c *Client) SetConcurrency(n int) {
 	if n > 0 {
 		c.mu.Lock()
+		defer c.mu.Unlock()
 		c.concurrency = n
-		c.mu.Unlock()
 	}
 }
 
@@ -105,8 +105,8 @@ func (c *Client) Concurrency() int {
 func (c *Client) SetShutdownTimeout(d time.Duration) {
 	if d > 0 {
 		c.mu.Lock()
+		defer c.mu.Unlock()
 		c.shutdownTimeout = d
-		c.mu.Unlock()
 	}
 }
 

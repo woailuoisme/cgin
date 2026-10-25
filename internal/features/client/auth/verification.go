@@ -39,6 +39,11 @@ const (
 	otpAttemptsTTL = time.Hour
 )
 
+var (
+	errOTPExpired = errs.New(errs.CodeAuthOTPExpired, "The verification code has expired")
+	errOTPInvalid = errs.New(errs.CodeAuthOTPInvalid, "The verification code is incorrect")
+)
+
 // verifier 负责一次性凭据的签发与核销。
 // 明文只出现在邮件里，库里存的是 HMAC-SHA256 摘要，因此拿到库也还原不出可用凭据。
 type verifier struct {
@@ -95,11 +100,6 @@ func (v *verifier) store(ctx context.Context, purpose, email, code string, ttl t
 	}
 	return nil
 }
-
-var (
-	errOTPExpired = errs.New(errs.CodeAuthOTPExpired, "The verification code has expired")
-	errOTPInvalid = errs.New(errs.CodeAuthOTPInvalid, "The verification code is incorrect")
-)
 
 // consume 核销一枚凭据。区分"已过期"与"不正确"，并累计失败次数以防暴力破解。
 func (v *verifier) consume(ctx context.Context, purpose, email, code string) error {

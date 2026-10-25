@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"maps"
 	"mime/multipart"
 	"path/filepath"
 	"strings"
@@ -22,6 +23,13 @@ import (
 	"cgin/internal/platform/errs"
 	"cgin/internal/platform/logger"
 	"cgin/internal/platform/storage"
+)
+
+const (
+	// maxAvatarSize 是头像上传允许的最大体积（2MB）。
+	maxAvatarSize = 2 * 1024 * 1024
+	// avatarSize 是头像签名 URL 的边长（像素）。
+	avatarSize = 256
 )
 
 // ErrMediaNotFound 表示未查询到目标媒体记录的哨兵错误。
@@ -84,14 +92,14 @@ func WithSingleFile() AttachOption {
 // WithCustomProperties 设置自定义业务元数据。
 func WithCustomProperties(props map[string]any) AttachOption {
 	return func(c *AttachConfig) {
-		c.CustomProperties = props
+		c.CustomProperties = maps.Clone(props)
 	}
 }
 
 // WithManipulations 设置图片衍生与操作指令。
 func WithManipulations(manipulations map[string]any) AttachOption {
 	return func(c *AttachConfig) {
-		c.Manipulations = manipulations
+		c.Manipulations = maps.Clone(manipulations)
 	}
 }
 
@@ -464,8 +472,6 @@ func (m *Manager) Avatar(mediaItem *database.Media, size int) string {
 	)
 }
 
-const maxAvatarSize = 2 * 1024 * 1024 // 2MB
-
 // ValidateAvatarFile 校验头像文件的大小、扩展名与真实魔数。
 func ValidateAvatarFile(file *multipart.FileHeader) error {
 	if file == nil || file.Size <= 0 {
@@ -502,9 +508,6 @@ func ValidateAvatarFile(file *multipart.FileHeader) error {
 		return errs.BadRequest("Invalid image format; only JPEG, PNG, and WebP are allowed")
 	}
 }
-
-// avatarSize 是头像签名 URL 的边长（像素）。
-const avatarSize = 256
 
 // ChangeAvatar 校验头像规格（魔数嗅探、格式白名单、尺寸限制），以单文件模式
 // 原子替换用户头像，并在同一事务内通过 link 把访问 URL 回写给宿主模型。

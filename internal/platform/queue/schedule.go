@@ -28,7 +28,6 @@ type Schedule struct {
 func NewSchedule(registries ...Registry) *Schedule {
 	return &Schedule{
 		registry: cmp.Or(lo.FirstOrEmpty(registries), DefaultRegistry()),
-		entries:  make([]*ScheduleEntry, 0),
 	}
 }
 
@@ -151,7 +150,7 @@ func (e *ScheduleEntry) HourlyAt(minute int) *ScheduleEntry {
 	if minute < 0 || minute > 59 {
 		return e.invalidSpec("HourlyAt", strconv.Itoa(minute))
 	}
-	return e.Cron(fmt.Sprintf("%d * * * *", minute))
+	return e.Cron(strconv.Itoa(minute) + " * * * *")
 }
 
 // Daily 配置为每天午夜 00:00 执行一次（"0 0 * * *"）。

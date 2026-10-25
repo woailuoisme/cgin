@@ -31,6 +31,22 @@ import (
 	shareduser "cgin/internal/shared/user"
 )
 
+// 邮件模板键，与 lang/<语言>/mail.toml 中的键前缀一一对应。
+const (
+	mailKeyVerifyEmail = "verify_email"
+	mailKeyResetLink   = "reset_link"
+	mailKeyResetOTP    = "reset_otp"
+)
+
+// dummyPasswordHash 是时序对齐用的固定哈希载荷，进程内只生成一次。
+var dummyPasswordHash = sync.OnceValue(func() string {
+	encoded, err := hasher.New().Make("cgin-login-timing-equaliser")
+	if err != nil {
+		return ""
+	}
+	return encoded
+})
+
 // NotificationSender 定义外发通知的高层抽象契约。
 type NotificationSender interface {
 	Send(ctx context.Context, notifiables any, notif contract.Notification, opts ...notification.SendOption) error
@@ -164,6 +180,9 @@ func (s *Service) SignInUsername(ctx context.Context, req SignInUsernameBody) (S
 
 // SignOut 作废当前访问令牌；同时传入刷新令牌时一并作废，否则续签通道仍然敞开。
 func (s *Service) SignOut(ctx context.Context, req SignOutBody) error {
+	if !s.guard.Check(ctx) {
+		return errs.Unauthorized(errs.CodeAuthTokenInvalid, "Authentication is required")
+	}
 	if req.RefreshToken != nil {
 		return s.guard.Logout(ctx, *req.RefreshToken)
 	}
@@ -313,13 +332,6 @@ func (s *Service) VerifyEmail(ctx context.Context, req VerifyEmailBody) (StatusR
 	return StatusResource{Status: true}, nil
 }
 
-// 邮件模板键，与 lang/<语言>/mail.toml 中的键前缀一一对应。
-const (
-	mailKeyVerifyEmail = "verify_email"
-	mailKeyResetLink   = "reset_link"
-	mailKeyResetOTP    = "reset_otp"
-)
-
 // signInWithCredentials 校验本地密码凭据并签发令牌。
 func (s *Service) signInWithCredentials(ctx context.Context, user *sqlc.User, password string) (SessionResource, error) {
 	matched, err := s.credentials.VerifyPassword(ctx, user.ID, password)
@@ -387,15 +399,6 @@ func isNotFound(err error) bool {
 	bizErr, ok := errs.As(err)
 	return ok && bizErr.Code() == errs.CodeNotFound
 }
-
-// dummyPasswordHash 是时序对齐用的固定哈希载荷，进程内只生成一次。
-var dummyPasswordHash = sync.OnceValue(func() string {
-	encoded, err := hasher.New().Make("cgin-login-timing-equaliser")
-	if err != nil {
-		return ""
-	}
-	return encoded
-})
 
 // equaliseLookupTiming 在账号不存在时补做一次等价的口令校验。
 // "密码错误"路径会执行 Argon2 校验而本路径不会，响应时间差足以枚举账号是否存在。

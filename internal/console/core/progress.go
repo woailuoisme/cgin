@@ -59,6 +59,9 @@ func terminalWidth(w io.Writer) int {
 }
 
 // NewProgressBarTo 构造写入指定 writer 的全新终端进度条。
+//
+// interactive 决定是否实时重绘（调用方通常传 streams.CanPrompt()，非 TTY 时应为 false）；
+// total 为预期总量，传负值时按 0 处理。
 func NewProgressBarTo(w io.Writer, interactive bool, total int64, label string) *ProgressBar {
 	if total < 0 {
 		total = 0
@@ -77,6 +80,8 @@ func NewProgressBarTo(w io.Writer, interactive bool, total int64, label string) 
 }
 
 // NewByteProgressBarTo 构造用于字节流/文件传输的终端进度条，自动格式化字节容量与传输速率。
+//
+// 参数语义与 NewProgressBarTo 一致，只是把计数按容量单位展示。
 func NewByteProgressBarTo(w io.Writer, interactive bool, total int64, label string) *ProgressBar {
 	b := NewProgressBarTo(w, interactive, total, label)
 	b.isBytes = true

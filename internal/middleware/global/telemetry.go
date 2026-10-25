@@ -2,8 +2,8 @@ package global
 
 import (
 	"cmp"
-	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -118,7 +118,7 @@ func (m *Middleware) Telemetry() gin.HandlerFunc {
 		)
 
 		if status >= http.StatusInternalServerError {
-			span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", status))
+			span.SetStatus(codes.Error, "HTTP "+strconv.Itoa(status))
 		} else {
 			span.SetStatus(codes.Ok, "")
 		}

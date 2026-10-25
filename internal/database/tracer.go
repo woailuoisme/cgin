@@ -36,6 +36,8 @@ type ZapTracer struct {
 	debugEnabled  bool
 }
 
+var _ pgx.QueryTracer = (*ZapTracer)(nil)
+
 // NewZapTracer 创建一个基于 zap 的结构化查询追踪器。
 func NewZapTracer(cfg config.DatabaseConfig) *ZapTracer {
 	return &ZapTracer{
@@ -110,6 +112,16 @@ func (t *ZapTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.Tra
 	log.Debug("database query executed", fields(extra...)...)
 }
 
+// QueryFingerprint 返回语句的稳定短指纹：折叠连续空白后取 SHA-256 前 8 字节。
+//
+// 指纹只用于聚合与比对：同一语句的取模参数变化不会改变指纹，
+// 日志侧因此可以在不记录任何参数的前提下把慢查询归堆。
+func QueryFingerprint(query string) string {
+	normalised := strings.Join(strings.Fields(query), " ")
+	sum := sha256.Sum256([]byte(normalised))
+	return hex.EncodeToString(sum[:8])
+}
+
 // isActionableDBError 判断数据库错误是否为需要记录与追踪的非预期故障。
 func isActionableDBError(err error) bool {
 	return err != nil && !errors.Is(err, pgx.ErrNoRows) && !errors.Is(err, context.Canceled)
@@ -127,16 +139,6 @@ func sqlOperation(query string) string {
 		}
 	}
 	return strings.ToUpper(trimmed)
-}
-
-// QueryFingerprint 返回语句的稳定短指纹：折叠连续空白后取 SHA-256 前 8 字节。
-//
-// 指纹只用于聚合与比对：同一语句的取模参数变化不会改变指纹，
-// 日志侧因此可以在不记录任何参数的前提下把慢查询归堆。
-func QueryFingerprint(query string) string {
-	normalised := strings.Join(strings.Fields(query), " ")
-	sum := sha256.Sum256([]byte(normalised))
-	return hex.EncodeToString(sum[:8])
 }
 
 // loggableStatement 返回可安全写入日志的语句原文。

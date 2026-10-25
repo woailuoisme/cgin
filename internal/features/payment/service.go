@@ -25,9 +25,15 @@ const (
 	notifyLockTTL = 30 * time.Second
 	// notifyDoneTTL 是已消费通知的持久去重标记保留时长。
 	notifyDoneTTL = 7 * 24 * time.Hour
-	// errUnsupportedChannel 是不支持支付渠道时的统一错误信息。
-	errUnsupportedChannel = "Unsupported payment channel"
+	// msgUnsupportedChannel 是不支持支付渠道时的统一错误信息。
+	msgUnsupportedChannel = "Unsupported payment channel"
+
+	purposeConsumed notificationKeyPurpose = "done"
+	purposeLock     notificationKeyPurpose = "lock"
 )
+
+// notificationKeyPurpose 是幂等缓存键的用途维度：已消费标记与处理中锁必须分键，否则会互相覆盖。
+type notificationKeyPurpose string
 
 // CallbackHandler 是支付与退款业务消费钩子接口。
 // 业务切片或聚合根通过实现此接口接收成功状态并推进领域状态机。
@@ -119,7 +125,7 @@ func (s *Service) ProcessNotification(
 	log := logger.FromContext(ctx)
 
 	if !channel.IsValid() {
-		return platformPayment.FailureAck(channel), errs.BadRequest(errUnsupportedChannel)
+		return platformPayment.FailureAck(channel), errs.BadRequest(msgUnsupportedChannel)
 	}
 	if notification == nil {
 		return platformPayment.FailureAck(channel), errs.BadRequest("notification payload is nil")
@@ -145,7 +151,7 @@ func (s *Service) ProcessNotification(
 	handleErr := s.dispatchNotification(ctx, channel, notification)
 	if handleErr != nil {
 		return platformPayment.FailureAck(channel), oops.
-			Code(string(errs.CodeInternal)).
+			Code(errs.CodeInternal).
 			With("channel", key.channel.String()).
 			With("kind", key.kind).
 			With("trade_no", key.tradeNo).
@@ -169,14 +175,6 @@ type notificationKey struct {
 	kind    string
 	tradeNo string
 }
-
-// notificationKeyPurpose 是幂等缓存键的用途维度：已消费标记与处理中锁必须分键，否则会互相覆盖。
-type notificationKeyPurpose string
-
-const (
-	purposeConsumed notificationKeyPurpose = "done"
-	purposeLock     notificationKeyPurpose = "lock"
-)
 
 // cacheKey 返回指定用途的幂等缓存键，三段标识的拼装只此一处。
 func (k notificationKey) cacheKey(purpose notificationKeyPurpose) string {

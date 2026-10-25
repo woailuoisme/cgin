@@ -38,7 +38,7 @@ func TestMain(m *testing.M) {
 
 // TestUpdateProfileRequestShape 校验自助更新只暴露 Q27 允许的字段。
 func TestUpdateProfileRequestShape(t *testing.T) {
-	var request profile.UpdateProfileRequest
+	var request profile.UpdateProfileBody
 	require.NoError(t, json.Unmarshal([]byte(`{
 		"name":"Alice",
 		"image":null,

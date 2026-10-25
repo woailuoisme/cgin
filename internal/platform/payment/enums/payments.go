@@ -168,61 +168,22 @@ const (
 	PaymentStatusUnknown PaymentStatus = "unknown"
 )
 
-// 通用展示元数据常量（用于支付状态与退款状态徽标展示）。
-const (
-	colorSecondary = "secondary"
-	colorSuccess   = "success"
-	colorDanger    = "danger"
-	colorWarning   = "warning"
-	colorGray      = "gray"
-	labelPending   = "Pending"
-)
-
-// paymentStatusMeta 存储支付状态的展示元数据。
-var paymentStatusMeta = map[PaymentStatus]struct {
-	Label    string
-	Color    string
-	Priority int
-}{
-	PaymentStatusPending:   {Label: labelPending, Color: colorWarning, Priority: 1},
-	PaymentStatusSucceeded: {Label: "Succeeded", Color: colorSuccess, Priority: 2},
-	PaymentStatusFailed:    {Label: "Failed", Color: colorDanger, Priority: 3},
-	PaymentStatusClosed:    {Label: "Closed", Color: colorSecondary, Priority: 4},
-	PaymentStatusUnknown:   {Label: "Unknown", Color: colorGray, Priority: 99},
-}
-
 // String 返回支付状态的字符串表现形式。
-func (s PaymentStatus) String() string {
-	if meta, ok := paymentStatusMeta[s]; ok {
-		return meta.Label
-	}
-
-	return string(s)
-}
-
-// Label 获取支付状态的可读文本标签。
-func (s PaymentStatus) Label() string { return s.String() }
-
-// Color 获取支付状态对应的徽标颜色。
-func (s PaymentStatus) Color() string {
-	if meta, ok := paymentStatusMeta[s]; ok {
-		return meta.Color
-	}
-
-	return colorGray
-}
-
-// Priority 获取支付状态排序优先级。
-func (s PaymentStatus) Priority() int {
-	if meta, ok := paymentStatusMeta[s]; ok {
-		return meta.Priority
-	}
-
-	return 999
-}
+func (s PaymentStatus) String() string { return string(s) }
 
 // IsValid 检查支付状态是否合法。
-func (s PaymentStatus) IsValid() bool { _, ok := paymentStatusMeta[s]; return ok }
+func (s PaymentStatus) IsValid() bool {
+	switch s {
+	case PaymentStatusPending,
+		PaymentStatusSucceeded,
+		PaymentStatusFailed,
+		PaymentStatusClosed,
+		PaymentStatusUnknown:
+		return true
+	default:
+		return false
+	}
+}
 
 // IsFinal 判断支付状态是否为终态。
 func (s PaymentStatus) IsFinal() bool {
@@ -261,51 +222,22 @@ const (
 	PaymentRefundStatusUnknown PaymentRefundStatus = "unknown"
 )
 
-// paymentRefundStatusMeta 存储退款状态的展示元数据。
-var paymentRefundStatusMeta = map[PaymentRefundStatus]struct {
-	Label    string
-	Color    string
-	Priority int
-}{
-	PaymentRefundStatusPending:   {Label: labelPending, Color: colorWarning, Priority: 1},
-	PaymentRefundStatusSucceeded: {Label: "Succeeded", Color: colorSuccess, Priority: 2},
-	PaymentRefundStatusFailed:    {Label: "Failed", Color: colorDanger, Priority: 3},
-	PaymentRefundStatusCanceled:  {Label: "Canceled", Color: colorSecondary, Priority: 4},
-	PaymentRefundStatusUnknown:   {Label: "Unknown", Color: colorGray, Priority: 99},
-}
-
 // String 返回退款状态的字符串表现形式。
-func (s PaymentRefundStatus) String() string {
-	if meta, ok := paymentRefundStatusMeta[s]; ok {
-		return meta.Label
-	}
-
-	return string(s)
-}
-
-// Label 获取退款状态的可读文本标签。
-func (s PaymentRefundStatus) Label() string { return s.String() }
-
-// Color 获取退款状态对应的徽标颜色。
-func (s PaymentRefundStatus) Color() string {
-	if meta, ok := paymentRefundStatusMeta[s]; ok {
-		return meta.Color
-	}
-
-	return colorGray
-}
-
-// Priority 获取退款状态排序优先级。
-func (s PaymentRefundStatus) Priority() int {
-	if meta, ok := paymentRefundStatusMeta[s]; ok {
-		return meta.Priority
-	}
-
-	return 999
-}
+func (s PaymentRefundStatus) String() string { return string(s) }
 
 // IsValid 检查退款状态是否合法。
-func (s PaymentRefundStatus) IsValid() bool { _, ok := paymentRefundStatusMeta[s]; return ok }
+func (s PaymentRefundStatus) IsValid() bool {
+	switch s {
+	case PaymentRefundStatusPending,
+		PaymentRefundStatusSucceeded,
+		PaymentRefundStatusFailed,
+		PaymentRefundStatusCanceled,
+		PaymentRefundStatusUnknown:
+		return true
+	default:
+		return false
+	}
+}
 
 // IsFinal 判断退款状态是否为终态。
 func (s PaymentRefundStatus) IsFinal() bool {

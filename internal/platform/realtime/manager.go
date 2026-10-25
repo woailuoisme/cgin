@@ -79,7 +79,6 @@ func (m *ManagerImpl) Client() *Client {
 
 // Registry 返回频道策略注册表。
 func (m *ManagerImpl) Registry() *Registry {
-	m.registry = cmp.Or(m.registry, NewRegistry())
 	return m.registry
 }
 
@@ -130,7 +129,7 @@ func (m *ManagerImpl) DispatchContext(ctx context.Context, channelName, event st
 
 	if channelName == "" || event == "" {
 		return oops.
-			Code("BAD_REQUEST").
+			Code(errs.CodeBadRequest).
 			In("ManagerImpl.Dispatch").
 			Errorf("missing channel or event")
 	}
@@ -151,7 +150,7 @@ func (m *ManagerImpl) BroadcastContext(ctx context.Context, channels []string, e
 
 	if event == "" {
 		return oops.
-			Code("BAD_REQUEST").
+			Code(errs.CodeBadRequest).
 			In("ManagerImpl.Broadcast").
 			Errorf("missing event")
 	}
@@ -171,7 +170,7 @@ func marshalEventMessage(op, event string, data any) ([]byte, error) {
 	})
 	if err != nil {
 		return nil, oops.
-			Code("INTERNAL_SERVER_ERROR").
+			Code(errs.CodeInternal).
 			In("ManagerImpl." + op + ".Marshal").
 			Wrap(err)
 	}
@@ -186,7 +185,7 @@ func (m *ManagerImpl) PublishRaw(ctx context.Context, channelName string, data [
 
 	if channelName == "" {
 		return oops.
-			Code("BAD_REQUEST").
+			Code(errs.CodeBadRequest).
 			In("ManagerImpl.PublishRaw").
 			Errorf("missing channel")
 	}
@@ -197,7 +196,7 @@ func (m *ManagerImpl) PublishRaw(ctx context.Context, channelName string, data [
 	})
 	if publishErr != nil {
 		return oops.
-			Code("INTERNAL_SERVER_ERROR").
+			Code(errs.CodeInternal).
 			In("ManagerImpl.PublishRaw.Publish").
 			With("channel", channelName).
 			Wrap(publishErr)
@@ -218,7 +217,7 @@ func (m *ManagerImpl) BroadcastRaw(ctx context.Context, channels []string, data 
 	})
 	if publishErr != nil {
 		return oops.
-			Code("INTERNAL_SERVER_ERROR").
+			Code(errs.CodeInternal).
 			In("ManagerImpl.BroadcastRaw.Execute").
 			Wrap(publishErr)
 	}
@@ -267,7 +266,7 @@ func (m *ManagerImpl) History(ctx context.Context, channel string, limit int) ([
 	})
 	if err != nil {
 		return nil, oops.
-			Code("INTERNAL_SERVER_ERROR").
+			Code(errs.CodeInternal).
 			In("ManagerImpl.History").
 			With("channel", channel).
 			Wrap(err)
@@ -290,7 +289,7 @@ func (m *ManagerImpl) Presence(ctx context.Context, channel string) (map[string]
 	})
 	if err != nil {
 		return nil, oops.
-			Code("INTERNAL_SERVER_ERROR").
+			Code(errs.CodeInternal).
 			In("ManagerImpl.Presence").
 			With("channel", channel).
 			Wrap(err)
@@ -313,7 +312,7 @@ func (m *ManagerImpl) PresenceStats(ctx context.Context, channel string) (Presen
 	})
 	if err != nil {
 		return PresenceStatsResult{}, oops.
-			Code("INTERNAL_SERVER_ERROR").
+			Code(errs.CodeInternal).
 			In("ManagerImpl.PresenceStats").
 			With("channel", channel).
 			Wrap(err)

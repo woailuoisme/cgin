@@ -33,8 +33,6 @@ type meilisearchClient struct {
 	prefix  string
 }
 
-var _ Client = (*meilisearchClient)(nil)
-
 // NewMeilisearchClient 从已有的 Meilisearch ServiceManager 创建客户端门面。
 func NewMeilisearchClient(manager meilisearch.ServiceManager, prefix ...string) Client {
 	return &meilisearchClient{
@@ -83,10 +81,10 @@ func (c *meilisearchClient) Driver() string {
 func (c *meilisearchClient) Ping(ctx context.Context) error {
 	resp, err := c.manager.HealthWithContext(ctx)
 	if err != nil {
-		return oops.Code(string(errs.CodeInternal)).In("search.Meilisearch.Ping").Wrap(err)
+		return oops.Code(errs.CodeInternal).In("search.Meilisearch.Ping").Wrap(err)
 	}
 	if resp == nil || resp.Status != "available" {
-		return oops.Code(string(errs.CodeInternal)).In("search.Meilisearch.Ping").Errorf("meilisearch status is not available")
+		return oops.Code(errs.CodeInternal).In("search.Meilisearch.Ping").Errorf("meilisearch status is not available")
 	}
 	return nil
 }
@@ -95,7 +93,7 @@ func (c *meilisearchClient) DeleteIndex(ctx context.Context, name string) error 
 	prefixed := c.prefix + name
 	_, err := c.manager.DeleteIndexWithContext(ctx, prefixed)
 	if err != nil {
-		return oops.Code(string(errs.CodeInternal)).In("search.Meilisearch.DeleteIndex").Wrap(err)
+		return oops.Code(errs.CodeInternal).In("search.Meilisearch.DeleteIndex").Wrap(err)
 	}
 	return nil
 }
@@ -128,10 +126,10 @@ func (i *meilisearchIndex) wrapError(op string, err error) error {
 	}
 	if meiliErr, ok := errors.AsType[*meilisearch.Error](err); ok {
 		if meiliErr.MeilisearchApiError.Code == "index_not_found" || meiliErr.StatusCode == http.StatusNotFound {
-			return oops.Code(string(errs.CodeNotFound)).In("search.Meilisearch." + op).Wrap(err)
+			return oops.Code(errs.CodeNotFound).In("search.Meilisearch." + op).Wrap(err)
 		}
 	}
-	return oops.Code(string(errs.CodeInternal)).In("search.Meilisearch." + op).Wrap(err)
+	return oops.Code(errs.CodeInternal).In("search.Meilisearch." + op).Wrap(err)
 }
 
 func (i *meilisearchIndex) AddDocuments(ctx context.Context, documents any, primaryKey ...string) error {
@@ -200,7 +198,7 @@ func (i *meilisearchIndex) SearchDirect(ctx context.Context, query string, targe
 
 	if target != nil {
 		if err := resp.Hits.DecodeInto(target); err != nil {
-			return nil, oops.Code(string(errs.CodeInternal)).In("search.Meilisearch.Search.DecodeHits").Wrap(err)
+			return nil, oops.Code(errs.CodeInternal).In("search.Meilisearch.Search.DecodeHits").Wrap(err)
 		}
 	}
 

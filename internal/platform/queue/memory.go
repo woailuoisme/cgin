@@ -22,9 +22,7 @@ type MemoryDispatcher struct {
 
 // NewMemoryDispatcher 构建一个全新的空内存派发器。
 func NewMemoryDispatcher() *MemoryDispatcher {
-	return &MemoryDispatcher{
-		jobs: make([]Job, 0),
-	}
+	return &MemoryDispatcher{}
 }
 
 // Dispatch 将任务记录到内部切片，完全满足 Dispatcher 契约。

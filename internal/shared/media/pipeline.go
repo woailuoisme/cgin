@@ -192,6 +192,8 @@ type PipelineImpl struct {
 	targetImageFormat string
 }
 
+var _ Pipeline = (*PipelineImpl)(nil)
+
 // NewPipeline 构建并初始化带有工业级默认配置的媒体管道实例。
 func NewPipeline(disk storage.Disk, opts ...PipelineOption) *PipelineImpl {
 	p := &PipelineImpl{
@@ -206,11 +208,6 @@ func NewPipeline(disk storage.Disk, opts ...PipelineOption) *PipelineImpl {
 	}
 
 	return p
-}
-
-// NewService 兼容工厂函数。
-func NewService(disk storage.Disk, opts ...PipelineOption) *PipelineImpl {
-	return NewPipeline(disk, opts...)
 }
 
 // Image 返回图像处理与防篡改签名器。

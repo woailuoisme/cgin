@@ -33,41 +33,57 @@ func NewMemoryLock() *MemoryLock {
 
 // Lock 获取指定键的锁；等待者计入引用，避免删除仍被等待的键。
 func (l *MemoryLock) Lock(_ context.Context, key string) error {
-	l.mu.Lock()
-	if l.keys == nil {
-		l.keys = make(map[string]*countedLock)
-	}
-	lock, ok := l.keys[key]
-	if !ok {
-		lock = new(countedLock)
-		l.keys[key] = lock
-	}
-	lock.locked++
-	l.mu.Unlock()
-
+	lock := l.retain(key)
 	lock.mu.Lock()
 	return nil
 }
 
 // Unlock 释放指定键的锁，最后一个持有者退出时清理映射。
 func (l *MemoryLock) Unlock(_ context.Context, key string) error {
-	l.mu.Lock()
-	lock, ok := l.keys[key]
-	if !ok {
-		l.mu.Unlock()
+	lock := l.lookup(key)
+	if lock == nil {
 		return nil
 	}
-	l.mu.Unlock()
 
 	lock.mu.Unlock()
+	l.release(key, lock)
+	return nil
+}
 
+// retain 获取或初始化指定键的计数锁并递增引用计数。
+func (l *MemoryLock) retain(key string) *countedLock {
 	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.keys == nil {
+		l.keys = make(map[string]*countedLock)
+	}
+	lock, ok := l.keys[key]
+	if !ok {
+		lock = &countedLock{}
+		l.keys[key] = lock
+	}
+	lock.locked++
+	return lock
+}
+
+// lookup 查询指定键关联的计数锁。
+func (l *MemoryLock) lookup(key string) *countedLock {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return l.keys[key]
+}
+
+// release 递减指定键的引用计数，归零时移除键映射。
+func (l *MemoryLock) release(key string, lock *countedLock) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	lock.locked--
 	if lock.locked <= 0 {
 		delete(l.keys, key)
 	}
-	l.mu.Unlock()
-	return nil
 }
 
 var _ Locker = (*MemoryLock)(nil)

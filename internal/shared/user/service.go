@@ -77,7 +77,7 @@ func (s *Service) UpdateAdminUser(ctx context.Context, userID string, fields Adm
 	if err != nil {
 		return nil, err
 	}
-	if err := s.checkUsername(ctx, userID, patch); err != nil {
+	if err := s.checkUsername(ctx, userID, &patch); err != nil {
 		return nil, err
 	}
 	if patch.Empty() {
@@ -111,16 +111,6 @@ func (s *Service) ListAfter(ctx context.Context, filter ListFilter, afterID stri
 		return nil, errs.Internal(err)
 	}
 	return users, nil
-}
-
-// translateLookup 把空结果翻译为 404，其余错误收敛为 500。
-//
-// notFound 由调用点传入：不同查询的空结果对调用方的语义不同，文案不可统一。
-func translateLookup(err error, notFound string) error {
-	if errors.Is(err, pgx.ErrNoRows) {
-		return errs.NotFound(notFound)
-	}
-	return errs.Internal(err)
 }
 
 // Get 根据主键 ID 获取单个用户实体，不存在时返回 404 语义错误。
@@ -206,14 +196,14 @@ func (s *Service) clientPatch(ctx context.Context, userID string, fields FieldSe
 		patch.BanExpires = nil
 		patch.ClearBanExpires = false
 	}
-	if err := s.checkUsername(ctx, userID, patch); err != nil {
+	if err := s.checkUsername(ctx, userID, &patch); err != nil {
 		return Patch{}, err
 	}
 	return patch, nil
 }
 
 // checkUsername 在写入前预判用户名占用，唯一索引仍是最终仲裁。
-func (s *Service) checkUsername(ctx context.Context, userID string, patch Patch) error {
+func (s *Service) checkUsername(ctx context.Context, userID string, patch *Patch) error {
 	if patch.Username == nil || *patch.Username == "" {
 		return nil
 	}
@@ -259,4 +249,14 @@ func NewListFilter(search string, status enums.Status, role enums.Role, sort str
 		SortKey:  key,
 		SortDesc: desc,
 	}
+}
+
+// translateLookup 把空结果翻译为 404，其余错误收敛为 500。
+//
+// notFound 由调用点传入：不同查询的空结果对调用方的语义不同，文案不可统一。
+func translateLookup(err error, notFound string) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errs.NotFound(notFound)
+	}
+	return errs.Internal(err)
 }

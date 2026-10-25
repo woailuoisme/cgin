@@ -29,6 +29,9 @@ var sortColumns = map[string]bool{
 // defaultSort 保证分页遍历的确定性顺序，对应 api.md 6.2。
 const defaultSort = "-createdAt"
 
+// likeReplacer 预编译 SQL LIKE 通配符转义替换器，避免每次搜索分配实例。
+var likeReplacer = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
 // ValidateSort 校验用户列表的排序字段，支持以逗号分隔的复合排序以及 - 降序前缀。
 func ValidateSort(field govalidator.FieldLevel) bool {
 	raw := field.Field().String()
@@ -109,6 +112,5 @@ func (f ListFilter) searchPattern() *string {
 
 // EscapeLike 转义 SQL LIKE 特殊通配符，避免用户输入被当作模式语法。
 func EscapeLike(value string) string {
-	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
-	return replacer.Replace(value)
+	return likeReplacer.Replace(value)
 }

@@ -71,8 +71,8 @@ func (n *Notifier) Extend(name string, ch Channel) *Notifier {
 func (n *Notifier) WithParallelTargets(limit int) *Notifier {
 	if limit > 0 {
 		n.mu.Lock()
+		defer n.mu.Unlock()
 		n.parallelTargets = limit
-		n.mu.Unlock()
 	}
 	return n
 }

@@ -10,6 +10,8 @@ import (
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/ThreeDotsLabs/watermill/message/router/middleware"
 	"go.opentelemetry.io/otel/trace"
+
+	"cgin/internal/platform/logger"
 )
 
 // MetadataKey 定义事件元数据标准字段键名。
@@ -37,10 +39,10 @@ func RequestIDFromContext(ctx context.Context) string {
 	if ctx == nil {
 		return ""
 	}
-	if v, ok := ctx.Value(ctxKeyRequestID).(string); ok {
+	if v, ok := ctx.Value(ctxKeyRequestID).(string); ok && v != "" {
 		return v
 	}
-	return ""
+	return logger.RequestIDFromContext(ctx)
 }
 
 // injectEventMetadata 在发布端将 OpenTelemetry TraceContext 与 CorrelationID 注入消息元数据。

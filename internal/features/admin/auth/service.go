@@ -105,6 +105,9 @@ func (s *Service) Refresh(ctx context.Context, body RefreshTokenBody) (SessionRe
 
 // SignOut 登出并作废当前管理员访问令牌与可选的刷新令牌。
 func (s *Service) SignOut(ctx context.Context, body SignOutBody) error {
+	if !s.guard.Check(ctx) {
+		return errs.Unauthorized(errs.CodeAuthTokenInvalid, "Authentication is required")
+	}
 	if body.RefreshToken != nil {
 		return s.guard.Logout(ctx, *body.RefreshToken)
 	}

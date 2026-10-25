@@ -3,6 +3,7 @@ package errs
 import (
 	"cmp"
 	"errors"
+	"slices"
 
 	"github.com/samber/oops"
 )
@@ -46,7 +47,7 @@ func (e *Error) Code() Code { return e.code }
 func (e *Error) Message() string { return e.message }
 
 // Fields 返回按字段路径归集的校验明细，无明细时为 nil。
-func (e *Error) Fields() map[string][]string { return e.fields }
+func (e *Error) Fields() map[string][]string { return cloneFieldMap(e.fields) }
 
 // WithField 追加一条字段级明细并返回自身，供构造时链式调用。
 func (e *Error) WithField(field, message string) *Error {
@@ -145,7 +146,7 @@ func Internal(cause error) *Error { return Wrap(CodeInternal, msgInternal, cause
 // Validation 构造 422，fields 为按字段路径归集的校验失败文案。
 func Validation(fields map[string][]string) *Error {
 	e := New(CodeValidationFailed, msgValidationFailed)
-	e.fields = fields
+	e.fields = cloneFieldMap(fields)
 	return e
 }
 
@@ -160,12 +161,24 @@ type MessageKey struct {
 // ValidationKeys 构造 422 校验错误，字段明细交由中间件按客户端语言进行翻译。
 func ValidationKeys(fields map[string][]MessageKey) *Error {
 	e := New(CodeValidationFailed, msgValidationFailed)
-	e.fieldKeys = fields
+	e.fieldKeys = cloneFieldMap(fields)
 	return e
 }
 
 // FieldKeys 返回待翻译的字段级明细，无明细时为 nil。
-func (e *Error) FieldKeys() map[string][]MessageKey { return e.fieldKeys }
+func (e *Error) FieldKeys() map[string][]MessageKey { return cloneFieldMap(e.fieldKeys) }
+
+// cloneFieldMap 深拷贝字段级切片字典，避免外部修改底层数组。
+func cloneFieldMap[T any](src map[string][]T) map[string][]T {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string][]T, len(src))
+	for k, v := range src {
+		dst[k] = slices.Clone(v)
+	}
+	return dst
+}
 
 // As 从错误链中提取 *Error，是 errors.AsType 的语义化封装。
 func As(err error) (*Error, bool) {

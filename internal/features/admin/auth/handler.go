@@ -4,7 +4,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"cgin/internal/platform/authentication"
-	"cgin/internal/platform/errs"
 	"cgin/internal/platform/response"
 	"cgin/internal/platform/validator"
 )
@@ -57,9 +56,9 @@ func (h *Handler) SignInEmail(c *gin.Context) {
 // @x-order      2
 // @Router       /admin/auth/get-session [get]
 func (h *Handler) GetSession(c *gin.Context) {
-	id, ok := authentication.FromContext(c.Request.Context())
-	if !ok {
-		_ = c.Error(errs.Unauthorized(errs.CodeAuthTokenInvalid, "Authentication is required"))
+	id, err := authentication.RequireIdentity(c.Request.Context())
+	if err != nil {
+		_ = c.Error(err)
 		return
 	}
 
@@ -110,8 +109,8 @@ func (h *Handler) Refresh(c *gin.Context) {
 // @x-order      4
 // @Router       /admin/auth/sign-out [post]
 func (h *Handler) SignOut(c *gin.Context) {
-	if !h.service.guard.Check(c.Request.Context()) {
-		_ = c.Error(errs.Unauthorized(errs.CodeAuthTokenInvalid, "Authentication is required"))
+	if _, err := authentication.RequireIdentity(c.Request.Context()); err != nil {
+		_ = c.Error(err)
 		return
 	}
 
@@ -141,9 +140,9 @@ func (h *Handler) SignOut(c *gin.Context) {
 // @x-order      5
 // @Router       /admin/auth/change-password [post]
 func (h *Handler) ChangePassword(c *gin.Context) {
-	id, ok := authentication.FromContext(c.Request.Context())
-	if !ok {
-		_ = c.Error(errs.Unauthorized(errs.CodeAuthTokenInvalid, "Authentication is required"))
+	id, err := authentication.RequireIdentity(c.Request.Context())
+	if err != nil {
+		_ = c.Error(err)
 		return
 	}
 

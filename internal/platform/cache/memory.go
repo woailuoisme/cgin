@@ -89,18 +89,22 @@ func (m *MemoryStore) Close() error {
 	return nil
 }
 
+// isClosed 报告内存缓存是否已关闭。
+func (m *MemoryStore) isClosed() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.closed
+}
+
 // Get 读取指定键的值，键不存在或已过期返回 ErrNotFound。
 func (m *MemoryStore) Get(ctx context.Context, key string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 
-	m.mu.Lock()
-	if m.closed {
-		m.mu.Unlock()
+	if m.isClosed() {
 		return "", errClosed
 	}
-	m.mu.Unlock()
 
 	item, found, err := m.hot.Get(key)
 	if err != nil {
@@ -176,12 +180,9 @@ func (m *MemoryStore) Exists(ctx context.Context, key string) (bool, error) {
 		return false, err
 	}
 
-	m.mu.Lock()
-	if m.closed {
-		m.mu.Unlock()
+	if m.isClosed() {
 		return false, errClosed
 	}
-	m.mu.Unlock()
 
 	item, found := m.hot.Peek(key)
 	if !found {
@@ -239,12 +240,9 @@ func (m *MemoryStore) TTL(ctx context.Context, key string) (time.Duration, error
 		return 0, err
 	}
 
-	m.mu.Lock()
-	if m.closed {
-		m.mu.Unlock()
+	if m.isClosed() {
 		return 0, errClosed
 	}
-	m.mu.Unlock()
 
 	item, found := m.hot.Peek(key)
 	if !found {

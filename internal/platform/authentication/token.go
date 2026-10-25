@@ -60,7 +60,7 @@ func (c *Claims) Payload() map[string]any {
 	if c == nil {
 		return nil
 	}
-	res := make(map[string]any)
+	res := make(map[string]any, 7+len(c.Custom))
 	if c.ID != "" {
 		res["jti"] = c.ID
 	}
@@ -156,7 +156,7 @@ func (c *JWTCodec) Sign(userID, role, tokenType string, now, expiresAt time.Time
 		Role:              role,
 		Type:              tokenType,
 		IssuedAtUnixMilli: now.UnixMilli(),
-		Custom:            customClaims,
+		Custom:            maps.Clone(customClaims),
 	}
 
 	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(c.secret)

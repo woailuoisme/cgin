@@ -41,8 +41,3 @@ func (b UpdateProfileBody) Validate() error {
 
 // fieldSet 将请求转换为共享内核档案字段集。
 func (b UpdateProfileBody) fieldSet() user.FieldSet { return user.FieldSet(b) }
-
-type (
-	Profile              = ProfileResource
-	UpdateProfileRequest = UpdateProfileBody
-)

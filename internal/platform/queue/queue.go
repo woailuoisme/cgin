@@ -61,6 +61,14 @@ type OverlappingLockProvider interface {
 // DefaultScheduleLockTTL 声明防并发重叠任务默认锁超时时长（10分钟）。
 const DefaultScheduleLockTTL = 10 * time.Minute
 
+var (
+	_ QueueNameProvider       = JobMeta{}
+	_ MaxRetriesProvider      = JobMeta{}
+	_ TimeoutProvider         = JobMeta{}
+	_ RetentionProvider       = JobMeta{}
+	_ OverlappingLockProvider = JobMeta{}
+)
+
 // JobMeta 封装后台任务执行元数据与调度约束（不参与载荷序列化）。
 type JobMeta struct {
 	Type           string        `json:"-"`
@@ -226,7 +234,7 @@ func (r *jobRegistry) Cron(spec string, job Job, opts ...asynq.Option) {
 	r.cronEntries = append(r.cronEntries, CronEntry{
 		Spec: spec,
 		Job:  job,
-		Opts: opts,
+		Opts: slices.Clone(opts),
 	})
 }
 

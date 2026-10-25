@@ -50,7 +50,7 @@ func (h *Handler) HandleNotification(c *gin.Context) {
 	if !channel.IsValid() {
 		// 报文里不拼接调用方原始输入，渠道值只进结构化日志。
 		logger.FromContext(c.Request.Context()).Warn("unsupported payment channel callback received", zap.String("channel", pathParams.Channel))
-		err := errs.BadRequest(errUnsupportedChannel)
+		err := errs.BadRequest(msgUnsupportedChannel)
 		_ = c.Error(err)
 		return
 	}
@@ -105,7 +105,6 @@ func (h *Handler) HandleAlipayReturn(c *gin.Context) {
 	// 对 URL Query 参数进行支付宝公钥验签
 	notification, err := h.gateway.ParseNotification(ctx, enums.PaymentChannelAlipay, "", c.Request)
 	if err != nil {
-		_ = c.Error(err)
 		log.Warn("alipay return verification failed, redirecting to order failure page", zap.Error(err))
 		c.Redirect(http.StatusFound, h.service.FailureRedirectURL())
 		return

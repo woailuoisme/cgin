@@ -44,15 +44,6 @@ type UserPathParams struct {
 	ID string `uri:"id" json:"id" example:"usr_01J9X4N8Y0ABCD" validate:"required"`
 }
 
-// GetUserPathParams 是 GET /v1/admin/users/:id 的路径参数。
-type GetUserPathParams = UserPathParams
-
-// UpdateUserPathParams 是 PATCH /v1/admin/users/:id 的路径参数。
-type UpdateUserPathParams = UserPathParams
-
-// DeleteUserPathParams 是 DELETE /v1/admin/users/:id 的路径参数。
-type DeleteUserPathParams = UserPathParams
-
 // --- 请求体 Body ---
 
 // CreateUserBody 是 POST /v1/admin/users 的请求体。
@@ -98,6 +89,8 @@ type UpdateUserBody struct {
 	// 封禁到期时间 (ISO 8601 UTC)
 	BanExpires omitnull.Val[time.Time] `json:"banExpires" swaggertype:"string" extensions:"x-nullable" example:"2026-10-01T00:00:00Z"`
 }
+
+var _ validator.Validatable = UpdateUserBody{}
 
 // Validate 实现 Validatable 契约，阻断库层非空字段的显式置空。
 func (r UpdateUserBody) Validate() error {

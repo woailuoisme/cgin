@@ -4,6 +4,7 @@ package mail
 import (
 	"cmp"
 	"context"
+	"slices"
 	"sync"
 
 	"github.com/samber/lo"
@@ -22,7 +23,10 @@ type Channel struct {
 	defaultDriver string
 }
 
-var _ contract.Channel = (*Channel)(nil)
+var (
+	_ contract.Channel   = (*Channel)(nil)
+	_ contract.Formatter = (*Channel)(nil)
+)
 
 // NewChannel 创建邮件通知渠道实例。
 func NewChannel(m mailer.Mailer) *Channel {
@@ -162,11 +166,10 @@ func toPlatformMailMessage(raw any) (*mailer.Message, bool) {
 		}
 		msg := &mailer.Message{
 			To:      to,
-			Cc:      v.Cc,
-			Bcc:     v.Bcc,
+			Cc:      slices.Clone(v.Cc),
+			Bcc:     slices.Clone(v.Bcc),
 			Subject: v.Subject,
 			Body:    v.Text,
-			IsHTML:  false,
 		}
 		if len(v.To) > 1 {
 			msg.Cc = append(msg.Cc, v.To[1:]...)

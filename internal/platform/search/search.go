@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 )
 
 // ErrDisabled 表示全文搜索未启用或未配置服务地址。
@@ -51,7 +52,7 @@ func WithFilter(filter string) SearchOption {
 // WithSort 设置排序规则。
 func WithSort(sort ...string) SearchOption {
 	return func(r *SearchRequest) {
-		r.Sort = sort
+		r.Sort = slices.Clone(sort)
 	}
 }
 

@@ -3,6 +3,7 @@ package authentication
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -61,6 +62,8 @@ type requestAuthCache struct {
 
 // With 将已解析的身份凭据注入请求上下文，并初始化请求级缓存。
 func With(ctx context.Context, id Identity) context.Context {
+	id.Roles = slices.Clone(id.Roles)
+	id.CustomClaims = maps.Clone(id.CustomClaims)
 	if len(id.Roles) == 0 && id.Role != "" {
 		id.Roles = []string{id.Role}
 	}
@@ -90,7 +93,10 @@ func WithUser[T any](ctx context.Context, user T, id Identity) context.Context {
 		cache.identity.Role = id.Role
 	}
 	if len(id.Roles) > 0 {
-		cache.identity.Roles = id.Roles
+		cache.identity.Roles = slices.Clone(id.Roles)
+	}
+	if len(id.CustomClaims) > 0 {
+		cache.identity.CustomClaims = maps.Clone(id.CustomClaims)
 	}
 	if len(cache.identity.Roles) == 0 && cache.identity.Role != "" {
 		cache.identity.Roles = []string{cache.identity.Role}

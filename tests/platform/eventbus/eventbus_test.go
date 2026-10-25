@@ -10,7 +10,6 @@ import (
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/components/cqrs"
 	"github.com/ThreeDotsLabs/watermill/message"
-	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
@@ -265,24 +264,23 @@ func TestEventBus_LifecycleAndErrors(t *testing.T) {
 	<-nilMgr.Running()
 }
 
-// TestEventBus_DriverRegistry 验证传输后端驱动工厂注册机制 (OCP)。
-func TestEventBus_DriverRegistry(t *testing.T) {
-	customDriverCalled := false
-	eventbus.RegisterDriver("custom_mock", func(cfg config.EventBusConfig, logger watermill.LoggerAdapter) (eventbus.PubSubDriver, error) {
-		customDriverCalled = true
-		return gochannel.NewGoChannel(gochannel.Config{}, logger), nil
+// TestEventBus_DriverDispatch 验证内置传输驱动按名称分发，未知驱动立即报错。
+func TestEventBus_DriverDispatch(t *testing.T) {
+	t.Run("go_channel 驱动可直接构造", func(t *testing.T) {
+		mgr, err := eventbus.NewManager(config.EventBusConfig{
+			Driver:      eventbus.DriverGoChannel,
+			TopicPrefix: "custom",
+		}, zap.NewNop())
+		require.NoError(t, err)
+		require.NotNil(t, mgr)
+		_ = mgr.Close()
 	})
 
-	cfg := config.EventBusConfig{
-		Driver:      "custom_mock",
-		TopicPrefix: "custom",
-	}
-
-	mgr, err := eventbus.NewManager(cfg, zap.NewNop())
-	require.NoError(t, err)
-	require.NotNil(t, mgr)
-	assert.True(t, customDriverCalled)
-	_ = mgr.Close()
+	t.Run("未知驱动返回错误", func(t *testing.T) {
+		_, err := eventbus.NewManager(config.EventBusConfig{Driver: "custom_mock"}, zap.NewNop())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported event bus driver")
+	})
 }
 
 // TestEventBus_FunctionalOptions 验证函数式配置选项。

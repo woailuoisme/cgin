@@ -27,6 +27,9 @@ import (
 // ctxKey 是日志器在 context 中的私有键，避免与其他包产生键名冲突。
 type ctxKey struct{}
 
+// requestIDKey 是请求标识在 context 中的私有键。
+type requestIDKey struct{}
+
 var (
 	defaultLoggerMu sync.RWMutex
 	defaultLogger   = newFallbackLogger()
@@ -52,8 +55,8 @@ func setDefault(l *zap.Logger) {
 		return
 	}
 	defaultLoggerMu.Lock()
+	defer defaultLoggerMu.Unlock()
 	defaultLogger = l
-	defaultLoggerMu.Unlock()
 }
 
 // defaultLog 在读锁保护下取得兜底日志器。
@@ -139,7 +142,7 @@ func WithRedaction(enabled bool, customKeys ...string) Option {
 	return func(o *Options) {
 		o.Redact = enabled
 		if len(customKeys) > 0 {
-			o.RedactKeys = customKeys
+			o.RedactKeys = slices.Clone(customKeys)
 		}
 	}
 }
@@ -475,10 +478,22 @@ func WithContext(ctx context.Context, l *zap.Logger, requestID string) context.C
 	fields := make([]zap.Field, 0, 3)
 	if requestID != "" {
 		fields = append(fields, zap.String("request_id", requestID))
+		ctx = context.WithValue(ctx, requestIDKey{}, requestID)
 	}
 	fields = append(fields, traceFields(ctx)...)
 
 	return context.WithValue(ctx, ctxKey{}, l.With(fields...))
+}
+
+// RequestIDFromContext 从 context 中安全提取请求标识 request_id。
+func RequestIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if id, ok := ctx.Value(requestIDKey{}).(string); ok {
+		return id
+	}
+	return ""
 }
 
 // FromContextOK 从 context 中提取请求作用域日志器。

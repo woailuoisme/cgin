@@ -1,6 +1,8 @@
 // Package mail 提供邮件通知渠道与驱动实现。
 package mail
 
+import "bytes"
+
 // Attachment 表示邮件附件。
 type Attachment struct {
 	Filename    string
@@ -26,11 +28,7 @@ type Message struct {
 // NewMessage 创建初始化为空的邮件消息对象。
 func NewMessage() *Message {
 	return &Message{
-		To:          make([]string, 0),
-		Cc:          make([]string, 0),
-		Bcc:         make([]string, 0),
-		Headers:     make(map[string]string),
-		Attachments: make([]Attachment, 0),
+		Headers: make(map[string]string),
 	}
 }
 
@@ -105,7 +103,7 @@ func (m *Message) Attach(filename, contentType string, content []byte) *Message 
 	m.Attachments = append(m.Attachments, Attachment{
 		Filename:    filename,
 		ContentType: contentType,
-		Content:     content,
+		Content:     bytes.Clone(content),
 	})
 	return m
 }

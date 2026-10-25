@@ -121,7 +121,7 @@ type memoryEntry struct {
 type memoryTokenStore struct {
 	data      sync.Map
 	lockMu    sync.Mutex
-	lockOwner atomic.Value
+	lockOwner atomic.Pointer[string]
 }
 
 var _ TokenStore = (*memoryTokenStore)(nil)
@@ -160,15 +160,15 @@ func (s *memoryTokenStore) Lock(_ context.Context, _ string, _ time.Duration) (s
 		return "", false, nil
 	}
 	owner := newLockOwner()
-	s.lockOwner.Store(owner)
+	s.lockOwner.Store(&owner)
 	return owner, true, nil
 }
 
 func (s *memoryTokenStore) Unlock(_ context.Context, _, owner string) error {
-	if current, ok := s.lockOwner.Load().(string); ok && current != "" && current != owner {
+	if current := s.lockOwner.Load(); current != nil && *current != "" && *current != owner {
 		return nil
 	}
-	s.lockOwner.Store("")
+	s.lockOwner.Store(nil)
 	s.lockMu.Unlock()
 	return nil
 }

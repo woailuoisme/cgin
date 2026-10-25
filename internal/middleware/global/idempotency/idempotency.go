@@ -87,10 +87,12 @@ func (h *handler) handle(c *gin.Context) {
 	}
 
 	// 快速路径：无锁读缓存，命中直接回放。
-	if hit, err := h.replay(c, storageKey); err != nil {
+	hit, err := h.replay(c, storageKey)
+	if err != nil {
 		h.abortInternal(c, "failed to write cached response at fastpath", err)
 		return
-	} else if hit {
+	}
+	if hit {
 		return
 	}
 
@@ -102,10 +104,12 @@ func (h *handler) handle(c *gin.Context) {
 	defer h.unlock(c.Request.Context(), key, storageKey)
 
 	// 锁内二次读：并发竞争的失败方在这里回放先完成者的响应。
-	if hit, err := h.replay(c, storageKey); err != nil {
+	hit, err = h.replay(c, storageKey)
+	if err != nil {
 		h.abortInternal(c, "failed to write cached response while locked", err)
 		return
-	} else if hit {
+	}
+	if hit {
 		return
 	}
 
@@ -213,7 +217,7 @@ func snapshotResponse(c *gin.Context, capture *responseBufferWriter, keepHeader 
 	snapshot := &response{
 		StatusCode: c.Writer.Status(),
 		Body:       bytes.Clone(capture.body.Bytes()),
-		Headers:    make(map[string][]string),
+		Headers:    make(map[string][]string, len(c.Writer.Header())),
 	}
 	for header, values := range c.Writer.Header() {
 		if !keepHeader(header) {

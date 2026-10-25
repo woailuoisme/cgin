@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -232,7 +233,7 @@ func (c *Client) NewServer(queues map[string]int) *asynq.Server {
 		c.redisOpt,
 		asynq.Config{
 			Concurrency:     cmp.Or(c.Concurrency(), 10),
-			Queues:          queues,
+			Queues:          maps.Clone(queues),
 			ShutdownTimeout: c.ShutdownTimeout(),
 			ErrorHandler:    asynq.ErrorHandlerFunc(c.handleTaskError),
 		},

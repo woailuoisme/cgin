@@ -101,7 +101,7 @@ func (m *Middleware) Can(resource, action string) gin.HandlerFunc {
 
 // parseGuards 解析可能存在的逗号分隔或变长守卫名称。
 func parseGuards(guardNames []string) []string {
-	var guards []string
+	guards := make([]string, 0, len(guardNames))
 	for _, gn := range guardNames {
 		for part := range strings.SplitSeq(gn, ",") {
 			part = strings.TrimSpace(part)

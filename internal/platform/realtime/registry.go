@@ -8,6 +8,8 @@ import (
 	"sync"
 
 	"github.com/samber/oops"
+
+	"cgin/internal/platform/errs"
 )
 
 // ChannelAuthorization 定义私有/成员频道的订阅授权回调函数签名。
@@ -138,7 +140,7 @@ func (r *Registry) RegisterRPC(method string, handler RPCHandler) {
 func (r *Registry) Authorize(ctx context.Context, user User, channel string) error {
 	if r == nil {
 		return oops.
-			Code("FORBIDDEN").
+			Code(errs.CodeForbidden).
 			In("Registry.Authorize").
 			With("channel", channel).
 			Errorf("realtime registry is not initialized")
@@ -150,7 +152,7 @@ func (r *Registry) Authorize(ctx context.Context, user User, channel string) err
 
 	if !found {
 		return oops.
-			Code("FORBIDDEN").
+			Code(errs.CodeForbidden).
 			In("Registry.Authorize").
 			With("channel", channel).
 			Errorf("unauthorized channel subscription: channel %q is not registered", channel)
@@ -163,7 +165,7 @@ func (r *Registry) Authorize(ctx context.Context, user User, channel string) err
 func (r *Registry) AuthorizePublish(ctx context.Context, user User, channel string, data json.RawMessage) error {
 	if r == nil {
 		return oops.
-			Code("FORBIDDEN").
+			Code(errs.CodeForbidden).
 			In("Registry.AuthorizePublish").
 			With("channel", channel).
 			Errorf("client publishing is disabled for channel: %s", channel)
@@ -175,7 +177,7 @@ func (r *Registry) AuthorizePublish(ctx context.Context, user User, channel stri
 
 	if !found {
 		return oops.
-			Code("FORBIDDEN").
+			Code(errs.CodeForbidden).
 			In("Registry.AuthorizePublish").
 			With("channel", channel).
 			Errorf("client publishing is disabled for channel: %s", channel)
@@ -188,7 +190,7 @@ func (r *Registry) AuthorizePublish(ctx context.Context, user User, channel stri
 func (r *Registry) HandleRPC(ctx context.Context, user User, method string, data json.RawMessage) (any, error) {
 	if r == nil {
 		return nil, oops.
-			Code("BAD_REQUEST").
+			Code(errs.CodeBadRequest).
 			In("Registry.HandleRPC").
 			Errorf("unknown RPC method: %s", method)
 	}
@@ -199,7 +201,7 @@ func (r *Registry) HandleRPC(ctx context.Context, user User, method string, data
 
 	if !ok {
 		return nil, oops.
-			Code("BAD_REQUEST").
+			Code(errs.CodeBadRequest).
 			In("Registry.HandleRPC").
 			Errorf("unknown RPC method: %s", method)
 	}

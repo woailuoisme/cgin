@@ -32,7 +32,7 @@ func newResendMailer(cfg config.MailConfig, log *zap.Logger) (*resendMailer, err
 	log = cmp.Or(log, zap.NewNop())
 	apiKey := strings.TrimSpace(cfg.Resend.APIKey)
 	if apiKey == "" {
-		return nil, oops.Code(string(errs.CodeInternal)).Wrap(errors.New("resend: api key cannot be empty"))
+		return nil, oops.Code(errs.CodeInternal).Wrap(errors.New("resend: api key cannot be empty"))
 	}
 
 	httpClient := resilience.NewResilientHTTPClient(resilience.ResilientTransportConfig{
@@ -45,7 +45,7 @@ func newResendMailer(cfg config.MailConfig, log *zap.Logger) (*resendMailer, err
 	baseURLStr := strings.TrimRight(cmp.Or(strings.TrimSpace(cfg.Resend.BaseURL), "https://api.resend.com"), "/") + "/"
 	parsedURL, err := url.Parse(baseURLStr)
 	if err != nil {
-		return nil, oops.Code(string(errs.CodeInternal)).Wrap(fmt.Errorf("resend: invalid base url %q: %w", cfg.Resend.BaseURL, err))
+		return nil, oops.Code(errs.CodeInternal).Wrapf(err, "resend: invalid base url %q", cfg.Resend.BaseURL)
 	}
 	client.BaseURL = parsedURL
 
@@ -70,16 +70,16 @@ func (m *resendMailer) Send(ctx context.Context, msg Message) error {
 	resp, err := m.client.Emails.SendWithContext(ctx, reqPayload)
 	if err != nil {
 		if rateLimitErr, ok := errors.AsType[*resend.RateLimitError](err); ok {
-			return oops.Code(string(errs.CodeRateLimited)).
+			return oops.Code(errs.CodeRateLimited).
 				With("to", maskRecipient(msg.To)).
 				With("subject", msg.Subject).
-				Wrap(fmt.Errorf("resend: rate limit exceeded: %w", rateLimitErr))
+				Wrapf(rateLimitErr, "resend: rate limit exceeded")
 		}
 
-		return oops.Code(string(errs.CodeServiceUnavailable)).
+		return oops.Code(errs.CodeServiceUnavailable).
 			With("to", maskRecipient(msg.To)).
 			With("subject", msg.Subject).
-			Wrap(fmt.Errorf("resend: send email failed: %w", err))
+			Wrapf(err, "resend: send email failed")
 	}
 
 	m.logger.Debug("resend email sent successfully",
@@ -150,8 +150,8 @@ func (m *resendMailer) buildRequest(msg Message) (*resend.SendEmailRequest, erro
 		for _, att := range allAtts {
 			data, err := att.Bytes()
 			if err != nil {
-				return nil, oops.Code(string(errs.CodeBadRequest)).
-					Wrap(fmt.Errorf("resend: read attachment %s failed: %w", att.Filename, err))
+				return nil, oops.Code(errs.CodeBadRequest).
+					Wrapf(err, "resend: read attachment %s failed", att.Filename)
 			}
 			attachments = append(attachments, &resend.Attachment{
 				Filename:    att.Filename,

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"reflect"
 
+	"github.com/samber/lo"
 	"github.com/samber/oops"
 
 	"cgin/internal/database"
@@ -19,6 +20,11 @@ import (
 type Channel struct {
 	db *database.DB
 }
+
+var (
+	_ contract.Channel   = (*Channel)(nil)
+	_ contract.Formatter = (*Channel)(nil)
+)
 
 // NewChannel 创建数据库通知渠道实例。
 func NewChannel(db *database.DB) *Channel {
@@ -37,6 +43,10 @@ func (c *Channel) DB() *database.DB {
 
 // Format 将领域通知对象转换为数据库持久化载荷 *Message。
 func (c *Channel) Format(n contract.Notification, notifiable any) (any, error) {
+	if n == nil {
+		return nil, oops.Code(errs.CodeNotificationUnsupportedDB).
+			Errorf("notification cannot be nil")
+	}
 	notifType := reflect.TypeOf(n).String()
 
 	if dbNotif, ok := n.(Notification); ok {
@@ -102,11 +112,10 @@ func (c *Channel) Send(ctx context.Context, notifiable any, message any) error {
 		return oops.Code(errs.CodeNotificationMissingRecipient).Errorf("database: cannot resolve notifiable target")
 	}
 
-	notifiableID := target.GetNotifiableID()
-	if notifiableID == "" {
-		return oops.Code(errs.CodeNotificationMissingRecipientID).Errorf("database: recipient ID cannot be empty")
+	notifiableType, notifiableID, err := resolveRecipient(target)
+	if err != nil {
+		return err
 	}
-	notifiableType := cmp.Or(target.GetNotifiableType(), contract.DefaultNotifiableType)
 
 	dataBytes, err := json.Marshal(msg.Data)
 	if err != nil {
@@ -138,15 +147,6 @@ func (c *Channel) MarkAsRead(ctx context.Context, id string) error {
 		return oops.Code(errs.CodeInternal).In("DatabaseChannel.MarkAsRead").Wrap(err)
 	}
 	return nil
-}
-
-// resolveRecipient 解析可通知实体的类型标识与主键 ID。
-func resolveRecipient(notifiable any) (string, string, error) {
-	target := contract.ToNotifiable(notifiable)
-	if target == nil || target.GetNotifiableID() == "" {
-		return "", "", oops.Code(errs.CodeNotificationMissingRecipientID).Errorf("database: recipient ID cannot be empty")
-	}
-	return cmp.Or(target.GetNotifiableType(), contract.DefaultNotifiableType), target.GetNotifiableID(), nil
 }
 
 // MarkAllAsRead 将指定接收者的所有未读通知标记为已读。
@@ -218,10 +218,9 @@ func (c *Channel) Paginate(ctx context.Context, notifiable any, page, perPage in
 	if len(rows) > 0 {
 		total = int(rows[0].TotalCount)
 	}
-	items := make([]sqlc.Notification, 0, len(rows))
-	for _, row := range rows {
-		items = append(items, row.Notification)
-	}
+	items := lo.Map(rows, func(row sqlc.ListNotificationsRow, _ int) sqlc.Notification {
+		return row.Notification
+	})
 
 	return items, total, nil
 }
@@ -259,4 +258,13 @@ func (c *Channel) ClearAll(ctx context.Context, notifiable any) error {
 		return oops.Code(errs.CodeInternal).In("DatabaseChannel.ClearAll").Wrap(err)
 	}
 	return nil
+}
+
+// resolveRecipient 解析可通知实体的类型标识与主键 ID。
+func resolveRecipient(notifiable any) (string, string, error) {
+	target := contract.ToNotifiable(notifiable)
+	if target == nil || target.GetNotifiableID() == "" {
+		return "", "", oops.Code(errs.CodeNotificationMissingRecipientID).Errorf("database: recipient ID cannot be empty")
+	}
+	return cmp.Or(target.GetNotifiableType(), contract.DefaultNotifiableType), target.GetNotifiableID(), nil
 }

@@ -136,10 +136,16 @@ func (r *Runner) Call(ctx context.Context, seeders ...Seeder) error {
 // catalog 是内置播种器的只读索引；构造后不再变化。
 //
 // 不再依赖各文件 init() 自我注册：谁能被 db:seed 调用，在这一处就能读全。
-var catalog = buildCatalog(
-	&DatabaseSeeder{},
-	&AdminSeeder{},
-	&UserSeeder{},
+var (
+	_ NamedSeeder = (*DatabaseSeeder)(nil)
+	_ NamedSeeder = (*AdminSeeder)(nil)
+	_ NamedSeeder = (*UserSeeder)(nil)
+
+	catalog = buildCatalog(
+		&DatabaseSeeder{},
+		&AdminSeeder{},
+		&UserSeeder{},
+	)
 )
 
 // Get 按名称查找内置播种器。

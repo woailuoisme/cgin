@@ -85,7 +85,7 @@ func (h *Handler) ExportUsers(c *gin.Context) {
 // @x-order      2
 // @Router       /admin/users/{id} [get]
 func (h *Handler) GetUser(c *gin.Context) {
-	var params GetUserPathParams
+	var params UserPathParams
 	if err := c.ShouldBindUri(&params); err != nil {
 		_ = c.Error(err)
 		return
@@ -140,7 +140,7 @@ func (h *Handler) CreateUser(c *gin.Context) {
 // @x-order      4
 // @Router       /admin/users/{id} [patch]
 func (h *Handler) UpdateUser(c *gin.Context) {
-	var params UpdateUserPathParams
+	var params UserPathParams
 	if err := c.ShouldBindUri(&params); err != nil {
 		_ = c.Error(err)
 		return
@@ -173,7 +173,7 @@ func (h *Handler) UpdateUser(c *gin.Context) {
 // @x-order      5
 // @Router       /admin/users/{id} [delete]
 func (h *Handler) DeleteUser(c *gin.Context) {
-	var params DeleteUserPathParams
+	var params UserPathParams
 	if err := c.ShouldBindUri(&params); err != nil {
 		_ = c.Error(err)
 		return

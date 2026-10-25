@@ -23,11 +23,6 @@ import (
 // DriverFactory 定义支付渠道驱动的构造工厂函数契约。
 type DriverFactory func(application string, appCfg any, isProd bool, certsDir string, logger *zap.Logger) (Provider, error)
 
-var (
-	driverMu              sync.RWMutex
-	customDriverFactories = make(map[enums.PaymentChannel]DriverFactory)
-)
-
 // wechatFactory 内置微信支付驱动构造函数。
 func wechatFactory(application string, rawCfg any, isProd bool, certsDir string, logger *zap.Logger) (Provider, error) {
 	cfg, ok := rawCfg.(config.WechatPaymentAppConfig)
@@ -46,14 +41,7 @@ func alipayFactory(application string, rawCfg any, isProd bool, certsDir string,
 	return newAlipayProvider(application, cfg, isProd, certsDir, logger)
 }
 
-// RegisterDriver 注册指定支付渠道的自定义驱动构造工厂（遵循开闭原则 OCP）。
-func RegisterDriver(channel enums.PaymentChannel, factory DriverFactory) {
-	driverMu.Lock()
-	defer driverMu.Unlock()
-	customDriverFactories[channel] = factory
-}
-
-// GetDriverFactory 获取已注册的渠道驱动工厂（内置渠道无需 init 注册，支持静态无副作用分发）。
+// GetDriverFactory 获取渠道驱动工厂（内置渠道静态分发，不支持运行期注册）。
 func GetDriverFactory(channel enums.PaymentChannel) (DriverFactory, bool) {
 	switch channel {
 	case enums.PaymentChannelWechat:
@@ -61,10 +49,7 @@ func GetDriverFactory(channel enums.PaymentChannel) (DriverFactory, bool) {
 	case enums.PaymentChannelAlipay:
 		return alipayFactory, true
 	default:
-		driverMu.RLock()
-		defer driverMu.RUnlock()
-		factory, ok := customDriverFactories[channel]
-		return factory, ok
+		return nil, false
 	}
 }
 

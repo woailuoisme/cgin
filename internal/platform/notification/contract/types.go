@@ -4,6 +4,7 @@ package contract
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 )
 
@@ -84,7 +85,7 @@ type SendOptions struct {
 // Via 在单次发送时覆盖 Notification.Via 所声明的渠道列表。
 func Via(channels ...string) SendOption {
 	return func(o *SendOptions) {
-		o.Channels = channels
+		o.Channels = slices.Clone(channels)
 	}
 }
 

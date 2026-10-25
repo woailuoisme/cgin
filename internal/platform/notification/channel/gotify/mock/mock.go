@@ -3,6 +3,7 @@ package mock
 
 import (
 	"context"
+	"slices"
 	"sync"
 
 	"cgin/internal/platform/notification/channel/gotify"
@@ -18,9 +19,7 @@ var _ gotify.Driver = (*Driver)(nil)
 
 // NewDriver 创建内存 Mock Gotify 驱动实例。
 func NewDriver() *Driver {
-	return &Driver{
-		messages: make([]*gotify.Message, 0),
-	}
+	return &Driver{}
 }
 
 // Name 返回驱动标识名。
@@ -50,14 +49,12 @@ func (d *Driver) GetLastMessage() *gotify.Message {
 func (d *Driver) GetMessages() []*gotify.Message {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	res := make([]*gotify.Message, len(d.messages))
-	copy(res, d.messages)
-	return res
+	return slices.Clone(d.messages)
 }
 
 // Clear 清空所有已记录的消息。
 func (d *Driver) Clear() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.messages = make([]*gotify.Message, 0)
+	d.messages = nil
 }

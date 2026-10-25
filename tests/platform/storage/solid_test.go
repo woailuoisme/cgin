@@ -42,23 +42,24 @@ func TestStorage_CapabilityDetection(t *testing.T) {
 	assert.False(t, ok)
 }
 
-// TestStorage_DriverRegistry 验证存储驱动工厂注册机制 (OCP)。
-func TestStorage_DriverRegistry(t *testing.T) {
-	customDriverCalled := false
-	storage.RegisterDriver("custom_mock", func(cfg config.StorageConfig) (storage.Disk, error) {
-		customDriverCalled = true
-		d, _ := newLocalDisk(t, "")
-		return d, nil
+// TestStorage_DriverDispatch 验证内置驱动按名称分发，未知驱动立即报错。
+func TestStorage_DriverDispatch(t *testing.T) {
+	t.Run("本地驱动按名称分发", func(t *testing.T) {
+		cfg := config.StorageConfig{
+			Driver: config.StorageDriverLocal,
+			Local:  config.LocalStorageConfig{Root: t.TempDir()},
+		}
+
+		disk, err := storage.Open(t.Context(), cfg)
+		require.NoError(t, err)
+		require.NotNil(t, disk)
 	})
 
-	cfg := config.StorageConfig{
-		Driver: "custom_mock",
-	}
-
-	disk, err := storage.Open(t.Context(), cfg)
-	require.NoError(t, err)
-	require.NotNil(t, disk)
-	assert.True(t, customDriverCalled)
+	t.Run("未知驱动返回错误", func(t *testing.T) {
+		_, err := storage.Open(t.Context(), config.StorageConfig{Driver: "custom_mock"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unknown storage driver")
+	})
 }
 
 // TestStorage_NullByteSecurity 验证路径解析对 Null-Byte (\x00) 注入的拦截防御。

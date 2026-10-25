@@ -24,9 +24,7 @@ var _ Mailer = (*MemoryMailer)(nil)
 
 // NewMemoryMailer 创建全新的内存邮件发送器。
 func NewMemoryMailer() *MemoryMailer {
-	return &MemoryMailer{
-		messages: make([]Message, 0),
-	}
+	return &MemoryMailer{}
 }
 
 // Send 记录单封邮件至内存消息列表。

@@ -6,17 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
-
-// serverURL 构造本地服务访问 URL。
-func serverURL(port int) string {
-	return fmt.Sprintf("http://localhost:%d", port)
-}
 
 // Serve 阻塞式启动 HTTP 服务与后台路由器，收到 ctx 取消信号后执行有序停机。
 //
@@ -25,7 +21,7 @@ func serverURL(port int) string {
 func (a *Application) Serve(ctx context.Context) error {
 	srvCfg := a.cfg.App.Server
 	server := &http.Server{
-		Addr:              fmt.Sprintf(":%d", a.cfg.App.Port),
+		Addr:              ":" + strconv.Itoa(a.cfg.App.Port),
 		Handler:           a.engine,
 		ReadHeaderTimeout: srvCfg.ReadHeaderTimeout,
 		ReadTimeout:       srvCfg.ReadTimeout,
@@ -80,15 +76,21 @@ func (a *Application) Serve(ctx context.Context) error {
 // logStartup 输出一次启动横幅，便于本地与容器日志定位监听地址。
 func (a *Application) logStartup(server *http.Server) {
 	base := serverURL(a.cfg.App.Port)
-	fields := []zap.Field{
+	fields := make([]zap.Field, 0, 6)
+	fields = append(fields,
 		zap.String("addr", server.Addr),
 		zap.String("url", base),
 		zap.String("env", a.cfg.App.Env),
 		zap.String("gin", gin.Mode()),
 		zap.String("storage", a.cfg.Storage.Driver),
-	}
+	)
 	if a.cfg.App.EnableDocs {
 		fields = append(fields, zap.String("docs", base+docsPagePath))
 	}
 	a.logger.Info("HTTP server started and listening", fields...)
+}
+
+// serverURL 构造本地服务访问 URL。
+func serverURL(port int) string {
+	return "http://localhost:" + strconv.Itoa(port)
 }

@@ -25,8 +25,3 @@ type CallbackAckResource struct {
 	// 应答说明
 	Message string `json:"message" example:"OK"`
 }
-
-type (
-	AlipayReturnQuery   = AlipayReturnQueryParams
-	CallbackAckResponse = CallbackAckResource
-)

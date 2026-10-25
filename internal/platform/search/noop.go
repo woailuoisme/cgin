@@ -68,21 +68,13 @@ func (n *noopIndex) DeleteAllDocuments(_ context.Context) error {
 
 func (n *noopIndex) Search(_ context.Context, _ string, _ ...SearchOption) (*SearchResult, error) {
 	return &SearchResult{
-		Hits:               []map[string]any{},
-		EstimatedTotalHits: 0,
-		Limit:              0,
-		Offset:             0,
-		ProcessingTimeMs:   0,
+		Hits: []map[string]any{},
 	}, nil
 }
 
 func (n *noopIndex) SearchDirect(_ context.Context, _ string, _ any, _ ...SearchOption) (*SearchResult, error) {
 	return &SearchResult{
-		Hits:               []map[string]any{},
-		EstimatedTotalHits: 0,
-		Limit:              0,
-		Offset:             0,
-		ProcessingTimeMs:   0,
+		Hits: []map[string]any{},
 	}, nil
 }
 

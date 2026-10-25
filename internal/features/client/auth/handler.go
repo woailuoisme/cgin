@@ -4,7 +4,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"cgin/internal/platform/authentication"
-	"cgin/internal/platform/errs"
 	"cgin/internal/platform/response"
 	"cgin/internal/platform/validator"
 )
@@ -112,8 +111,8 @@ func (h *Handler) SignInUsername(c *gin.Context) {
 // @x-order      6
 // @Router       /auth/sign-out [post]
 func (h *Handler) SignOut(c *gin.Context) {
-	if !h.service.guard.Check(c.Request.Context()) {
-		_ = c.Error(errs.Unauthorized(errs.CodeAuthTokenInvalid, "Authentication is required"))
+	if _, err := authentication.RequireIdentity(c.Request.Context()); err != nil {
+		_ = c.Error(err)
 		return
 	}
 

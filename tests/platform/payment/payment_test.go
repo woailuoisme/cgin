@@ -322,20 +322,16 @@ func TestPaymentCapabilityISP(t *testing.T) {
 	require.ErrorIs(t, err, payment.ErrCapabilityNotSupported)
 }
 
-func TestPaymentDriverRegistry(t *testing.T) {
-	// 验证动态注册驱动工厂 (OCP 原则)
-	called := false
-	payment.RegisterDriver("custom_driver", func(application string, appCfg any, isProd bool, certsDir string, logger *zap.Logger) (payment.Provider, error) {
-		called = true
-		return &stubPayOnlyProvider{}, nil
+func TestPaymentDriverDispatch(t *testing.T) {
+	t.Run("内置渠道可直接取到工厂", func(t *testing.T) {
+		factory, ok := payment.GetDriverFactory(enums.PaymentChannelWechat)
+		require.True(t, ok)
+		require.NotNil(t, factory)
 	})
 
-	factory, ok := payment.GetDriverFactory("custom_driver")
-	require.True(t, ok)
-	require.NotNil(t, factory)
-
-	p, err := factory("test_app", nil, false, "", zap.NewNop())
-	require.NoError(t, err)
-	assert.True(t, called)
-	assert.Equal(t, "stub", p.Application())
+	t.Run("未注册渠道返回 false", func(t *testing.T) {
+		factory, ok := payment.GetDriverFactory("custom_driver")
+		assert.False(t, ok)
+		assert.Nil(t, factory)
+	})
 }

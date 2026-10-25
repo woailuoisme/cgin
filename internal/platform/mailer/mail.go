@@ -4,9 +4,7 @@ package mailer
 import (
 	"cmp"
 	"context"
-	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/samber/oops"
 	"go.uber.org/zap"
@@ -69,21 +67,6 @@ type Mailer interface {
 	Ping(ctx context.Context) error
 }
 
-// DriverFactory 定义发信器驱动工厂函数。
-type DriverFactory func(cfg config.MailConfig, log *zap.Logger) (Mailer, error)
-
-var (
-	driverMu      sync.RWMutex
-	customDrivers = make(map[string]DriverFactory)
-)
-
-// RegisterDriver 注册自定义邮件发送器驱动工厂（遵循开闭原则 OCP，便于测试或第三方驱动接入）。
-func RegisterDriver(name string, factory DriverFactory) {
-	driverMu.Lock()
-	defer driverMu.Unlock()
-	customDrivers[strings.ToLower(strings.TrimSpace(name))] = factory
-}
-
 // New 根据 MailConfig 创建邮件发送器驱动实例（内置驱动静态分发，无 init 副作用）。
 func New(cfg config.MailConfig, log *zap.Logger) (Mailer, error) {
 	if log == nil {
@@ -108,22 +91,15 @@ func New(cfg config.MailConfig, log *zap.Logger) (Mailer, error) {
 	case "memory":
 		return NewMemoryMailer(), nil
 	default:
-		driverMu.RLock()
-		factory, exists := customDrivers[driverName]
-		driverMu.RUnlock()
-
-		if !exists {
-			return nil, oops.Code(string(errs.CodeInternal)).
-				Errorf("unsupported mail driver: %s", cfg.Driver)
-		}
-		return factory(cfg, log)
+		return nil, oops.Code(errs.CodeInternal).
+			Errorf("unsupported mail driver: %s", cfg.Driver)
 	}
 }
 
 // sendMailable 将 Mailable 实体渲染为消息并通过目标驱动发送。
 func sendMailable(ctx context.Context, sender Mailer, to string, mailable Mailable) error {
 	if sender == nil {
-		return oops.Code(string(errs.CodeInternal)).Errorf("mail driver cannot be nil")
+		return oops.Code(errs.CodeInternal).Errorf("mail driver cannot be nil")
 	}
 	if mailable == nil {
 		return errs.BadRequest("mailable cannot be nil")
@@ -132,7 +108,7 @@ func sendMailable(ctx context.Context, sender Mailer, to string, mailable Mailab
 	tmplName, data := mailable.Template()
 	htmlBody, err := RenderTemplate(tmplName, data)
 	if err != nil {
-		return oops.Code(string(errs.CodeInternal)).Wrap(fmt.Errorf("mailer: render template %s failed: %w", tmplName, err))
+		return oops.Code(errs.CodeInternal).Wrapf(err, "mailer: render template %s", tmplName)
 	}
 
 	return sender.Send(ctx, Message{

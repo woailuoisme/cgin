@@ -1,6 +1,7 @@
 package idempotency
 
 import (
+	"bytes"
 	"context"
 	"sync"
 	"time"
@@ -51,20 +52,20 @@ func (s *MemoryStorage) Get(_ context.Context, key string) ([]byte, error) {
 		s.mu.Unlock()
 		return nil, nil
 	}
-	return entry.value, nil
+	return bytes.Clone(entry.value), nil
 }
 
 // Set 写入缓存，并周期性清理过期记录，避免键空间无限增长。
 func (s *MemoryStorage) Set(_ context.Context, key string, val []byte, exp time.Duration) error {
-	entry := memoryEntry{value: append([]byte(nil), val...)}
+	entry := memoryEntry{value: bytes.Clone(val)}
 	if exp > 0 {
 		entry.expiresAt = time.Now().Add(exp)
 	}
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.entries[key] = entry
 	s.collectLocked()
-	s.mu.Unlock()
 	return nil
 }
 

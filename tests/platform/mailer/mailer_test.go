@@ -421,15 +421,10 @@ func TestAttachmentAndAllAttachments(t *testing.T) {
 	})
 }
 
-func TestCustomDriverRegistry(t *testing.T) {
-	mailer.RegisterDriver("custom-mock", func(_ config.MailConfig, _ *zap.Logger) (mailer.Mailer, error) {
-		return mailer.NewMemoryMailer(), nil
-	})
-
-	client, err := mailer.New(config.MailConfig{Driver: "custom-mock"}, zap.NewNop())
-	require.NoError(t, err)
-	require.NotNil(t, client)
-	require.NoError(t, client.Close())
+func TestUnsupportedMailDriver(t *testing.T) {
+	_, err := mailer.New(config.MailConfig{Driver: "custom-mock"}, zap.NewNop())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported mail driver: custom-mock")
 }
 
 // TestMail_DisabledFallbackToLog 验证当 MAIL_ENABLED=false 时自动降级为 LogMailer。

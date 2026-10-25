@@ -156,11 +156,11 @@ func Init(
 	otel.SetLoggerProvider(lp)
 
 	mu.Lock()
+	defer mu.Unlock()
 	initialized = true
 	tracerProv = tp
 	meterProv = mp
 	loggerProv = lp
-	mu.Unlock()
 
 	return Shutdown, nil
 }
@@ -248,6 +248,8 @@ type zapCore struct {
 	zapcore.Core
 	minLevel zapcore.Level
 }
+
+var _ zapcore.Core = (*zapCore)(nil)
 
 func (c *zapCore) Enabled(lvl zapcore.Level) bool {
 	return lvl >= c.minLevel && c.Core.Enabled(lvl)

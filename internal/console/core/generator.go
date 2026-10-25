@@ -202,6 +202,8 @@ type Pipeline struct {
 }
 
 // NewPipeline 构造带有默认配置的生成管线实例。
+//
+// force 表示覆盖已存在文件；dryRun 表示只输出计划、不落盘。
 func NewPipeline(templateFS fs.FS, rootDir string, force, dryRun bool) *Pipeline {
 	if templateFS == nil {
 		templateFS = stubs.FS

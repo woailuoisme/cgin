@@ -1,13 +1,14 @@
 package queue
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"time"
+
+	"cgin/internal/platform/logger"
 )
 
 const (
@@ -87,13 +88,9 @@ func unwrapEnvelope(raw []byte, job Job) (map[string]string, error) {
 	return make(map[string]string), nil
 }
 
+// extractRequestID 从上下文提取非空的请求追踪 ID。
 func extractRequestID(ctx context.Context) (string, bool) {
-	if ctx == nil {
-		return "", false
-	}
-	v1, _ := ctx.Value("request_id").(string)
-	v2, _ := ctx.Value("X-Request-ID").(string)
-	if id := cmp.Or(v1, v2); id != "" {
+	if id := logger.RequestIDFromContext(ctx); id != "" {
 		return id, true
 	}
 	return "", false

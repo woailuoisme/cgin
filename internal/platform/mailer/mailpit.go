@@ -44,10 +44,10 @@ func newMailpitMailer(cfg config.MailConfig, log *zap.Logger) (*mailpitMailer, e
 
 	client, err := gomail.NewClient(host, opts...)
 	if err != nil {
-		return nil, oops.Code(string(errs.CodeInternal)).
+		return nil, oops.Code(errs.CodeInternal).
 			With("host", host).
 			With("port", port).
-			Wrap(fmt.Errorf("mailpit: create client failed: %w", err))
+			Wrapf(err, "mailpit: create client failed")
 	}
 
 	return &mailpitMailer{
@@ -73,10 +73,10 @@ func (m *mailpitMailer) Send(ctx context.Context, msg Message) error {
 	}
 
 	if err := m.client.DialAndSendWithContext(ctx, emailMsg); err != nil {
-		return oops.Code(string(errs.CodeInternal)).
+		return oops.Code(errs.CodeInternal).
 			With("to", maskRecipient(msg.To)).
 			With("subject", msg.Subject).
-			Wrap(fmt.Errorf("mailpit: send email failed: %w", err))
+			Wrapf(err, "mailpit: send email failed")
 	}
 
 	m.logger.Debug("mailpit email delivered successfully",
@@ -112,7 +112,7 @@ func (m *mailpitMailer) Ping(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("mailpit: tcp dial %s failed: %w", addr, err)
 	}
-	_ = conn.Close()
+	defer func() { _ = conn.Close() }()
 	return nil
 }
 
@@ -131,22 +131,22 @@ func (m *mailpitMailer) buildMessage(msg Message) (*gomail.Msg, error) {
 	emailMsg := gomail.NewMsg()
 
 	if err := emailMsg.FromFormat(m.cfg.FromName, m.cfg.FromAddress); err != nil {
-		return nil, oops.Code(string(errs.CodeInternal)).Wrap(fmt.Errorf("mailpit: set from address failed: %w", err))
+		return nil, oops.Code(errs.CodeInternal).Wrapf(err, "mailpit: set from address failed")
 	}
 
 	if err := emailMsg.To(msg.To); err != nil {
-		return nil, oops.Code(string(errs.CodeBadRequest)).Wrap(fmt.Errorf("mailpit: set to address failed: %w", err))
+		return nil, oops.Code(errs.CodeBadRequest).Wrapf(err, "mailpit: set to address failed")
 	}
 
 	if len(msg.Cc) > 0 {
 		if err := emailMsg.Cc(msg.Cc...); err != nil {
-			return nil, oops.Code(string(errs.CodeBadRequest)).Wrap(fmt.Errorf("mailpit: set cc address failed: %w", err))
+			return nil, oops.Code(errs.CodeBadRequest).Wrapf(err, "mailpit: set cc address failed")
 		}
 	}
 
 	if len(msg.Bcc) > 0 {
 		if err := emailMsg.Bcc(msg.Bcc...); err != nil {
-			return nil, oops.Code(string(errs.CodeBadRequest)).Wrap(fmt.Errorf("mailpit: set bcc address failed: %w", err))
+			return nil, oops.Code(errs.CodeBadRequest).Wrapf(err, "mailpit: set bcc address failed")
 		}
 	}
 
@@ -157,7 +157,7 @@ func (m *mailpitMailer) buildMessage(msg Message) (*gomail.Msg, error) {
 	for _, att := range msg.AllAttachments() {
 		if len(att.Content) > 0 {
 			if err := emailMsg.AttachReader(att.Filename, bytes.NewReader(att.Content)); err != nil {
-				return nil, oops.Code(string(errs.CodeInternal)).Wrap(fmt.Errorf("mailpit: attach reader failed: %w", err))
+				return nil, oops.Code(errs.CodeInternal).Wrapf(err, "mailpit: attach reader failed")
 			}
 		} else if strings.TrimSpace(att.Path) != "" {
 			emailMsg.AttachFile(att.Path)

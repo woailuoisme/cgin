@@ -20,6 +20,12 @@ import (
 // sanitizedSuffixBytes 原始名策略随机后缀的字节数（3 字节 → 6 位十六进制）。
 const sanitizedSuffixBytes = 3
 
+var (
+	_ NamingStrategy = (*HashNamingStrategy)(nil)
+	_ NamingStrategy = (*UUIDNamingStrategy)(nil)
+	_ NamingStrategy = (*SanitizedOriginalNamingStrategy)(nil)
+)
+
 // HashNamingStrategy 采用 SHA-256 内容哈希策略生成不可变、自带去重特性的文件名。
 type HashNamingStrategy struct {
 	HashLength int // 取哈希前缀的字符长度（缺省 16 位，最大 64 位）

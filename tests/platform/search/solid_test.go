@@ -18,34 +18,22 @@ type SampleHit struct {
 	Score int    `json:"score"`
 }
 
-// TestSearch_DriverRegistry 验证全文搜索驱动工厂注册与扩展机制 (OCP)。
-func TestSearch_DriverRegistry(t *testing.T) {
-	customFactoryCalled := false
-	search.RegisterDriver("custom_test", func(cfg config.SearchConfig) (search.Client, error) {
-		customFactoryCalled = true
-		return search.NewNoop(), nil
+// TestSearch_DriverDispatch 验证内置搜索驱动按名称分发，未知驱动给出明确错误。
+func TestSearch_DriverDispatch(t *testing.T) {
+	t.Run("noop 驱动直接返回客户端", func(t *testing.T) {
+		client, err := search.New(config.SearchConfig{Driver: search.DriverNoop})
+		require.NoError(t, err)
+		require.NotNil(t, client)
 	})
 
-	// 1. 成功调用自定义注册的驱动
-	client, err := search.New(config.SearchConfig{
-		Driver: "custom_test",
-		Meilisearch: config.MeilisearchConfig{
-			Host: "http://127.0.0.1:7700",
-		},
+	t.Run("未注册驱动返回明确的不支持错误", func(t *testing.T) {
+		_, err := search.New(config.SearchConfig{
+			Driver:      "unsupported_engine",
+			Meilisearch: config.MeilisearchConfig{Host: "http://127.0.0.1:7700"},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported search driver: unsupported_engine")
 	})
-	require.NoError(t, err)
-	require.NotNil(t, client)
-	assert.True(t, customFactoryCalled)
-
-	// 2. 未注册驱动返回明确的不支持错误
-	_, err = search.New(config.SearchConfig{
-		Driver: "unsupported_engine",
-		Meilisearch: config.MeilisearchConfig{
-			Host: "http://127.0.0.1:7700",
-		},
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported search driver: unsupported_engine")
 }
 
 // TestSearch_TypedSearchResult 验证泛型搜索与直接解码契约。
