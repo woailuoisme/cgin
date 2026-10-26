@@ -40,10 +40,8 @@ import (
 	"cgin/pkg/validator"
 )
 
-// NewApplication 按依赖顺序完成装配：配置 → 日志 → 基础设施 → 领域 → HTTP。
-//
-// 装配中途失败时由 defer 逆序释放已登记资源，调用方无需逐处包装错误；
-// 装配成功则把同一个关闭栈交给 Application，进程退出时复用，不再维护第二份清单。
+// NewApplication 按依赖顺序装配：配置 → 日志 → 基础设施 → 领域 → HTTP。
+// 中途失败由 defer 逆序释放已登记资源；成功则把同一个关闭栈交给 Application 复用。
 func NewApplication(ctx context.Context, portOverride int) (_ *Application, err error) {
 	cfg, err := config.Load()
 	if err != nil {
@@ -73,7 +71,7 @@ func NewApplication(ctx context.Context, portOverride int) (_ *Application, err 
 		return nil, err
 	}
 
-	engine, err := buildEngine(cfg, features.global, features.route, features.handlers)
+	engine, err := buildEngine(cfg, features.globalMW, features.routeMW, features.handlers)
 	if err != nil {
 		return nil, err
 	}
@@ -87,9 +85,8 @@ func NewApplication(ctx context.Context, portOverride int) (_ *Application, err 
 	}, nil
 }
 
-// infrastructure 汇总装配期构建的基础设施依赖。
-//
-// 字段只在这一层被赋值，功能层只读，避免组装过程变成一条几十个局部变量的长链。
+// infrastructure 汇总装配期构建的基础设施依赖；字段只在此赋值、功能层只读，
+// 避免组装过程退化成一长串局部变量。
 type infrastructure struct {
 	cfg        *config.Config
 	log        *zerolog.Logger
@@ -172,14 +169,14 @@ func initInfrastructure(ctx context.Context, cfg *config.Config, lc *lifecycle) 
 	}, nil
 }
 
-// featureSet 汇总领域装配产物：HTTP 处理器与两层中间件。
+// featureSet 汇总领域装配产物：HTTP 处理器与全局/路由两层中间件。
 type featureSet struct {
 	handlers routeHandlers
-	global   *global.Middleware
-	route    *middleware.Middleware
+	globalMW *global.Middleware
+	routeMW  *middleware.Middleware
 }
 
-// initFeatures 装配用户域、认证守卫、通知网关与各垂直切片的 HTTP 处理器。
+// initFeatures 装配用户域、认证守卫、通知网关与各模块的 HTTP 处理器。
 func initFeatures(in *infrastructure, lc *lifecycle) (*featureSet, error) {
 	userProvider := user.MustNewProvider(in.db, in.hasher)
 	userService := user.MustNewService(in.db, in.hasher)
@@ -201,6 +198,12 @@ func initFeatures(in *infrastructure, lc *lifecycle) (*featureSet, error) {
 		Register("admin", adminGuard).
 		SetDefault("client")
 
+	if in.cfg.Session.Generated {
+		in.log.Warn().
+			Str("session_name", in.cfg.Session.Name).
+			Msg("SESSION_SECRET is not configured, using an ephemeral key for this process; sessions are invalidated on restart")
+	}
+
 	globalMW := global.New(global.Deps{
 		Cache:          in.cache,
 		Logger:         in.log,
@@ -209,6 +212,9 @@ func initFeatures(in *infrastructure, lc *lifecycle) (*featureSet, error) {
 		Translator:     in.translator,
 		Validator:      in.validator,
 		RequestTimeout: in.cfg.App.Server.RequestTimeout,
+		SessionName:    in.cfg.Session.Name,
+		SessionSecret:  in.cfg.Session.Secret,
+		SessionMaxAge:  in.cfg.Session.MaxAge,
 		// multipart 上传按媒体单文件配额放行；批量上传（UploadMultiple）受此单请求上限约束，
 		// ponytail: 单请求上限 == 单文件配额，需要一次传多个大文件时再加 MaxFiles 配置。
 		UploadMaxBody: in.cfg.Media.MaxFileSize,
@@ -250,19 +256,17 @@ func initFeatures(in *infrastructure, lc *lifecycle) (*featureSet, error) {
 
 	mediaManager := media.New(in.cfg.Media, in.cfg.Storage, in.disk, in.db)
 
-	systemHandler := handler.NewSystemHandler(
-		service.NewSystemService(service.SystemDeps{
-			Database: &databasePinger{db: in.db},
-			Cache:    in.cache,
-			Storage:  in.disk,
-			Search:   searchClient,
-			Realtime: notifications.gateway,
-			// 媒体门面自身实现 Ping/Driver/Enabled，探针直接依赖它而不需要伸手取内部件。
-			Imgproxy: mediaManager,
-			Mailer:   in.mailer,
-		}),
-		in.log,
-	)
+	systemService := service.NewSystemService(service.SystemDeps{
+		Database: &databasePinger{db: in.db},
+		Cache:    in.cache,
+		Storage:  in.disk,
+		Search:   searchClient,
+		Realtime: notifications.gateway,
+		// 媒体门面自身实现 Ping/Driver/Enabled，探针直接依赖它而不必取内部件。
+		Imgproxy: mediaManager,
+		Mailer:   in.mailer,
+	})
+	systemHandler := handler.NewSystemHandler(systemService, in.log)
 
 	realtimeService := service.NewRealtimeService(service.RealtimeDeps{
 		Gateway: notifications.gateway,
@@ -276,18 +280,21 @@ func initFeatures(in *infrastructure, lc *lifecycle) (*featureSet, error) {
 		return nil, err
 	}
 
+	profileService := service.MustNewProfileService(service.ProfileDeps{Users: userService, Avatars: mediaManager})
+	paymentService := service.NewPaymentService(paymentManager, in.cache, in.cfg, in.eventbus)
+
 	return &featureSet{
 		handlers: routeHandlers{
 			system:    systemHandler,
 			auth:      handler.NewAuthHandler(authService),
-			profile:   handler.NewProfileHandler(service.MustNewProfileService(service.ProfileDeps{Users: userService, Avatars: mediaManager})),
+			profile:   handler.NewProfileHandler(profileService),
 			admin:     adminhandler.NewUserHandler(adminService),
 			adminAuth: adminhandler.NewAuthHandler(adminAuthService),
 			realtime:  handler.NewRealtimeHandler(realtimeService),
-			payment:   handler.NewPaymentHandler(service.NewPaymentService(paymentManager, in.cache, in.cfg, in.eventbus)),
+			payment:   handler.NewPaymentHandler(paymentService),
 		},
-		global: globalMW,
-		route:  routeMW,
+		globalMW: globalMW,
+		routeMW:  routeMW,
 	}, nil
 }
 
@@ -355,9 +362,8 @@ type infraServices struct {
 	mailer mailer.Mailer
 }
 
-// initInfraServices 初始化缓存、分布式锁与邮件客户端基础设施。
-//
-// 分布式锁与缓存共用同一条连接，由 cache.Client.Close 内部一并释放，此处不重复登记。
+// initInfraServices 初始化缓存、分布式锁与邮件客户端。
+// 分布式锁与缓存共用同一条连接，由 cache.Client.Close 一并释放，此处不重复登记。
 func initInfraServices(ctx context.Context, cfg *config.Config, log *zerolog.Logger, lc *lifecycle) (*infraServices, error) {
 	cacheClient, err := cache.Open(ctx, cfg.Cache)
 	if err != nil {

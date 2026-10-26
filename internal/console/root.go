@@ -69,7 +69,7 @@ func NewRootCommand() *cobra.Command {
 	return NewRootCommandWithFactory(NewDefaultFactory())
 }
 
-// NewRootCommandWithFactory 注入依赖工厂并组装根命令与全部子命令 (IoC & DIP)。
+// NewRootCommandWithFactory 注入依赖工厂并组装根命令与全部子命令。
 func NewRootCommandWithFactory(f Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "cgin",
@@ -107,15 +107,10 @@ func NewRootCommandWithFactory(f Factory) *cobra.Command {
 		return &UsageError{CommandPath: c.CommandPath(), Err: err}
 	})
 
-	// 注册色彩丰富且对齐严密的终端帮助与用法模板（色彩能力源自注入的 IOStreams）
+	// 帮助与用法模板（色彩能力来自注入的 IOStreams）
 	core.SetupColoredHelp(cmd, f.IOStreams())
 
-	// 注册以命名空间命名的业务命令分类组（Laravel Artisan 风格分组）
-	for _, id := range []string{"db", "geoip", "jwt", "make", "queue", "route", "scout"} {
-		cmd.AddGroup(&cobra.Group{ID: id, Title: id})
-	}
-
-	// 挂载纯冒号 Artisan 风格一等公民命令
+	// Artisan 风格命令：名字里的冒号前缀即分组，分组随命令自动派生，无需另行维护清单。
 	commands := []*cobra.Command{
 		newServeCmd(f),
 		newDBMigrateCmd(f),
@@ -132,16 +127,29 @@ func NewRootCommandWithFactory(f Factory) *cobra.Command {
 		newScoutImportCmd(f),
 		newScoutFlushCmd(f),
 	}
-
-	for _, subCmd := range commands {
-		if prefix, _, ok := strings.Cut(subCmd.Name(), ":"); ok {
-			subCmd.GroupID = prefix
-		}
-	}
+	registerCommandGroups(cmd, commands)
 
 	cmd.AddCommand(commands...)
 
 	return cmd
+}
+
+// registerCommandGroups 按命令名前缀建立分组（保持首次出现顺序），并回填每个命令的 GroupID。
+func registerCommandGroups(root *cobra.Command, commands []*cobra.Command) {
+	seen := make(map[string]struct{}, len(commands))
+	for _, subCmd := range commands {
+		prefix, _, ok := strings.Cut(subCmd.Name(), ":")
+		if !ok {
+			continue
+		}
+
+		subCmd.GroupID = prefix
+		if _, exists := seen[prefix]; exists {
+			continue
+		}
+		seen[prefix] = struct{}{}
+		root.AddGroup(&cobra.Group{ID: prefix, Title: prefix})
+	}
 }
 
 // commandOptions 统一 CLI 命令的补全、校验与执行三段式生命周期。

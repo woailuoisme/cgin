@@ -58,7 +58,7 @@ func tokenLockKey(appID string) string {
 	return cache.Key("wechat", "token", appID, "lock")
 }
 
-// redisTokenStore 基于 internal/platform/cache 实现 TokenStore 接口。
+// redisTokenStore 基于 pkg/cache 实现 TokenStore 接口。
 type redisTokenStore struct {
 	cache cache.Store
 }

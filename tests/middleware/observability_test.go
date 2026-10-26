@@ -67,7 +67,7 @@ func TestAccessLog404SingleWarn(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "warn", entry.Level)
-	assert.Equal(t, "access", entry.Message)
+	assert.Contains(t, entry.Message, "access")
 	assert.Equal(t, 404, entry.Status)
 	assert.Equal(t, "NOT_FOUND", entry.Code)
 	assert.Equal(t, "The requested resource was not found", entry.Error)
@@ -124,7 +124,7 @@ func TestAccessLog500ErrorWithStack(t *testing.T) {
 	assert.NotEmpty(t, errLog.Stack)
 
 	assert.Equal(t, "error", accessLog.Level)
-	assert.Equal(t, "access", accessLog.Message)
+	assert.Contains(t, accessLog.Message, "access")
 	assert.Equal(t, 500, accessLog.Status)
 }
 

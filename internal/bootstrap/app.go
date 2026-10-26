@@ -11,8 +11,7 @@ import (
 
 // Application 聚合装配完成的 HTTP 引擎与资源关闭栈。
 //
-// 只保留运行期真正被读取的依赖：数据库、缓存、邮件、队列与通知引擎都仅在退出时
-// 需要释放，统一交由 resources 登记，不再挂只写不读的字段。
+// 只保留运行期真正读取的依赖；数据库、缓存、队列等仅需释放的资源统一登记在 resources。
 type Application struct {
 	cfg       *config.Config
 	logger    *zerolog.Logger

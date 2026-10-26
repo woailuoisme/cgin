@@ -1,7 +1,6 @@
 package core
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 	"sync"
@@ -58,22 +57,18 @@ func StyleHeader(title string) string {
 	return headerStyle.Render(title)
 }
 
-// StyleCmd 为子命令名称添加亮绿高亮，并补齐右侧空格以确保描述列严格对齐。
+// StyleCmd 为子命令名称添加亮绿高亮，并补齐右侧空格确保描述列严格对齐。
+// ANSI 渲染后不能再按字节长度对齐，需按可见宽度手工补空格。
 func StyleCmd(name string, pad int) string {
-	if !IsColorEnabled() {
-		return rpad(name, pad)
+	text := name
+	if IsColorEnabled() {
+		text = cmdNameStyle.Render(name)
 	}
-	styled := cmdNameStyle.Render(name)
-	w := lipgloss.Width(name)
-	if pad > w {
-		return styled + strings.Repeat(" ", pad-w)
-	}
-	return styled
-}
 
-func rpad(s string, padding int) string {
-	template := fmt.Sprintf("%%-%ds", padding)
-	return fmt.Sprintf(template, s)
+	if extra := pad - lipgloss.Width(name); extra > 0 {
+		return text + strings.Repeat(" ", extra)
+	}
+	return text
 }
 
 // StyleUseLine 为命令 Usage 行添加语法高亮（程序与子命令路径、参数占位符、选项开关）。
@@ -190,8 +185,8 @@ const coloredUsageTemplate = `{{styleHeader "Usage:"}}{{if .Runnable}}
 Use "{{styleUseLine (printf "%s [command] --help" .CommandPath)}}" for more information about a command.{{end}}
 `
 
-// SetupColoredHelp 为目标命令（通常是根命令）配置色彩丰富且对齐完美的终端帮助模板。
-// 色彩能力取自注入的 IOStreams；未注入时回退为操作系统标准流探测。
+// SetupColoredHelp 配置带色彩与列对齐的帮助模板；色彩能力取自注入的 IOStreams，
+// 未注入时回退为操作系统标准流探测。
 func SetupColoredHelp(cmd *cobra.Command, streams *IOStreams) {
 	if cmd == nil {
 		return

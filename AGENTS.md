@@ -10,6 +10,7 @@
 
 - **运行时与语言规范**：[Go 1.27+](file:///Users/seaside/Projects/backend/go/gin-sqlc/go.mod) 现代标准，开启严格并发安全与类型安全。
 - **Web 引擎**：[Gin](file:///Users/seaside/Projects/backend/go/gin-sqlc/internal/bootstrap/engine.go) (`github.com/gin-gonic/gin`)，统一错误恢复、链路追踪、CORS 与限流中间件。
+- **中间件生态**：传输层全面采用 [gin-contrib](https://github.com/gin-contrib) 官方中间件 —— `cors` / `sessions` / `authz` / `cache` / `requestid` / `timeout` / `logger` / `i18n` / `graceful`；官方未覆盖的能力（错误信封、幂等、限流、请求体配额、探针降噪、资源级鉴权）由 `internal/middleware` 自建，归属见 §3.1 对照表。
 - **数据访问**：[sqlc 1.31.1](file:///Users/seaside/Projects/backend/go/gin-sqlc/sqlc.yaml) 离线生成类型安全查询集（`pgx/v5`，输出 `internal/database/sqlc`）+ [pgxpool 原生连接池](file:///Users/seaside/Projects/backend/go/gin-sqlc/internal/database/client.go)，底层运行 PostgreSQL 18。
 - **数据库迁移 (Migrations)**：[Atlas CLI](file:///Users/seaside/Projects/backend/go/gin-sqlc/atlas.hcl)，采用声明式 Schema 驱动的版本化 SQL 迁移。
 - **缓存体系**：[Valkey (Redis 兼容)](file:///Users/seaside/Projects/backend/go/gin-sqlc/pkg/cache/cache.go) + 高性能驱动 (`redis/rueidis`)。
@@ -60,9 +61,9 @@
 
 ---
 
-## 3. 领域优先分层架构与依赖红线 (Domain-First Architecture & Boundaries)
+## 3. 分层优先架构与依赖红线 (Layer-First Architecture & Boundaries)
 
-项目采用**领域优先（Domain-First）**切片设计，结构清晰且边界严格：
+项目采用**分层优先（Layer-First）**设计，依赖方向固定为 `route → handler → service → dto`，边界严格：
 
 ```
 cmd/api/main.go                 # 应用程序唯一入口，控制权移交 internal/console
@@ -112,7 +113,7 @@ pkg/                            # 可复用的横切基础设施与跨切片基�
 ├── excel/                      # 流式 XLSX 导出
 ├── geoip/                      # ip2region 离线归属地检索与热重载
 ├── hasher/                     # Argon2id / Bcrypt 密码哈希
-├── i18n/                       # 基于 TOML 的多语言字段与提示信息翻译
+├── i18n/                       # 语言装载与文案渲染门面（基于 go-i18n，底层同 gin-contrib/i18n）
 ├── logger/                     # Zerolog 结构化日志构建、脱敏与请求作用域透传
 ├── mailer/                     # SMTP 邮件发送抽象（Mailpit / Resend / Log）
 ├── money/                      # 不可变高精度货币值对象 (Money)、ISO-4217 元数据、金融舍入与无损分摊
@@ -142,6 +143,31 @@ tests/                          # 外部测试包（测试代码与业务逻辑�
 ├── integration/                # 真实外部依赖的集成测试（声明 //go:build integration）
 └── testutil/                   # 公共测试夹具与辅助函数
 ```
+
+### 3.1 中间件 ↔ gin-contrib 对照表 (Middleware Provenance)
+
+传输层能力优先薄封装 gin-contrib 官方中间件；只有官方生态确实没有对应实现时，才在 `internal/middleware` 自建，并在注释中标注归属。**清理"重复造轮子"时，下表「自建」一栏不得删除。**
+
+| 能力 | 实现归属 | 代码位置 |
+| :--- | :--- | :--- |
+| 跨域预检 | 官方 `gin-contrib/cors` | `internal/middleware/global/cors.go` |
+| 会话 Cookie | 官方 `gin-contrib/sessions` | `internal/middleware/global/session.go` |
+| 路径级 Casbin 鉴权 | 官方 `gin-contrib/authz` | `internal/middleware/auth.go` `Authz()` |
+| 文档响应缓存 | 官方 `gin-contrib/cache` | `internal/bootstrap/docs.go` |
+| 请求标识 | 官方 `gin-contrib/requestid` | `internal/middleware/global/observability.go` `RequestID()` |
+| 请求超时 | 官方 `gin-contrib/timeout` | `internal/middleware/global/timeout.go` |
+| 访问日志 | 官方 `gin-contrib/logger` | `internal/middleware/global/observability.go` `AccessLog()` |
+| 多语言协商 | 官方 `gin-contrib/i18n` | `internal/middleware/global/i18n.go` |
+| 优雅停机 | 官方 `gin-contrib/graceful` | `internal/bootstrap/server.go` |
+| **统一错误信封 + 校验文案翻译** | 自建（官方无对应物） | `internal/middleware/global/error.go` |
+| **panic → 统一 500 信封** | 自建（官方 Recovery 绕过错误码契约） | `internal/middleware/global/observability.go` `Recovery()` |
+| **请求体配额 / JSON 类型强校验** | 自建（官方无对应物） | `internal/middleware/global/security.go` |
+| **Idempotency-Key 幂等重放** | 自建（官方无对应物） | `internal/middleware/global/idempotency.go` |
+| **分级滑动窗口限流** | 自建（官方无对应物） | `internal/middleware/throttle.go` |
+| **探针路由降噪** | 自建（官方 skipper 无该语义） | `internal/middleware/global/observability.go` |
+| **资源+动作级鉴权** | 自建（官方 authz 只支持 URL+Method） | `internal/middleware/auth.go` `Can()` |
+
+> 会话密钥由 `SESSION_SECRET` 提供：生产环境必填（≥32 字符）缺失即启动失败；非生产缺失时生成一次性随机密钥并打 Warn，详见 `.env.example`。
 
 ### 🚨 架构分层绝对红线
 
@@ -323,6 +349,9 @@ tests/                          # 外部测试包（测试代码与业务逻辑�
    - **解除旧约束**：取消原 ADR-0005 中“管理端不添加 swag 注解”的旧约束，管理端 Handler 与 DTO 必须全量规范书写 Swag 注解。
 3. **环境与访问控制**：
    - 两份文档统一受 `ENABLE_DOCS` 配置项控制，生产环境未开启时均返回 404。
+4. **组件定义命名 (Component Definitions)**：
+   - 分层扁平化后 DTO 统一收敛到 `dto` / `admindto` 两个包，OpenAPI 组件定义名相应为 `dto.<Struct>` 与 `admindto.<Struct>`（客户端与管理端各自独立）。
+   - 按组件名生成客户端 SDK / 类型定义的消费方，在包结构变更后必须重新执行一次生成同步。
 
 ### 5.3 Swag / OpenAPI 注解编写约束与规范 (Swag Annotation Standards)
 

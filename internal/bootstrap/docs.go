@@ -2,7 +2,10 @@ package bootstrap
 
 import (
 	"net/http"
+	"time"
 
+	"github.com/gin-contrib/cache"
+	"github.com/gin-contrib/cache/persistence"
 	"github.com/gin-gonic/gin"
 
 	"cgin/shared/apidocs"
@@ -147,13 +150,15 @@ func buildReferencePage(title, specPath string) string {
 </html>`
 }
 
-// registerDocs 挂载 API 文档，仅在 ENABLE_DOCS 开启时调用。
+// registerDocs 挂载 API 文档（仅在 ENABLE_DOCS 开启时调用），页面与规范均走 gin-contrib/cache 响应缓存。
 func registerDocs(engine *gin.Engine) {
-	engine.GET(docsPagePath, serveClientReference)
-	engine.GET(referenceSpecPath, serveClientReferenceSpec)
+	store := persistence.NewInMemoryStore(time.Hour)
 
-	engine.GET(adminDocsPagePath, serveAdminReference)
-	engine.GET(adminReferenceSpecPath, serveAdminReferenceSpec)
+	engine.GET(docsPagePath, cache.CachePage(store, time.Hour, serveClientReference))
+	engine.GET(referenceSpecPath, cache.CachePageAtomic(store, time.Hour, serveClientReferenceSpec))
+
+	engine.GET(adminDocsPagePath, cache.CachePage(store, time.Hour, serveAdminReference))
+	engine.GET(adminReferenceSpecPath, cache.CachePageAtomic(store, time.Hour, serveAdminReferenceSpec))
 }
 
 // serveClientReference 返回客户端 Scalar 的宿主页。

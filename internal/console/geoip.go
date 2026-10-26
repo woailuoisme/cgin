@@ -28,7 +28,7 @@ var defaultGeoIPDownloadURLs = []string{
 // 缺省存储路径。
 const defaultGeoIPDBPath = "storage/app/geoip/ip2region_v4.xdb"
 
-// GeoIPUpdateOptions 封装 geoip:update 命令的参数与依赖容器 (SRP & DIP)。
+// GeoIPUpdateOptions 封装 geoip:update 命令的参数与依赖容器。
 type GeoIPUpdateOptions struct {
 	Path       string
 	URL        string
@@ -69,7 +69,6 @@ func (o *GeoIPUpdateOptions) Validate() error {
 func (o *GeoIPUpdateOptions) Run(ctx context.Context) error {
 	streams := o.Factory.IOStreams()
 
-	// 检查目标文件是否已存在
 	if _, err := os.Stat(o.Path); err == nil && !o.Force {
 		confirmed, err := o.Factory.Prompter().Confirm(
 			fmt.Sprintf("GeoIP database already exists at [%s]. Overwrite it?", o.Path),
@@ -126,7 +125,6 @@ func (o *GeoIPUpdateOptions) Run(ctx context.Context) error {
 		return fmt.Errorf("downloaded database file verification failed: %w", err)
 	}
 
-	// 原子替换文件
 	if err := os.Rename(tmpFile, o.Path); err != nil {
 		return fmt.Errorf("failed to replace database file at [%s]: %w", o.Path, err)
 	}

@@ -7,7 +7,7 @@ import (
 	"charm.land/huh/v2"
 )
 
-// Prompter 抽象控制台的人机交互提问契约 (DIP & ISP)。
+// Prompter 抽象控制台的人机交互提问契约。
 type Prompter interface {
 	Confirm(title, description string, affirmative ...string) (bool, error)
 	Input(title, description, defaultValue string) (string, error)

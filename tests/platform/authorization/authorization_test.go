@@ -41,6 +41,39 @@ func TestEnforcer_CanRole(t *testing.T) {
 	}
 }
 
+// TestEnforcer_PathRuleBoundary 锁定 matcher 双语义的边界。
+//
+// matcher 同时服务资源级鉴权（裸资源名）与路径级鉴权（请求路径 + HTTP 方法）：
+// 路径通配规则（如 /v1/admin/*）会让 URL 形态的 resource 名在资源级调用中被放行，
+// 因此 Can() 的调用方必须始终传裸资源名——这里把该边界固化为断言，防止策略演进时悄然漂移。
+func TestEnforcer_PathRuleBoundary(t *testing.T) {
+	e, err := authorization.New()
+	require.NoError(t, err)
+
+	tests := []struct {
+		name     string
+		role     string
+		resource string
+		action   string
+		expected bool
+	}{
+		{"admin 命中自身路径通配", "admin", "/v1/admin/users", "GET", true},
+		{"admin 通配覆盖子路径", "admin", "/v1/admin/users/1", "DELETE", true},
+		{"client 路径对 admin 不放行", "admin", "/v1/users/me", "PATCH", false},
+		{"client 不得进入 admin 通配", "client", "/v1/admin/users", "GET", false},
+		{"client 仅限白名单方法", "client", "/v1/users/me", "DELETE", false},
+		{"既有资源语义不受影响", "admin", authorization.ResourceUsers, authorization.ActionDelete, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			allowed, err := e.CanRole(tt.role, tt.resource, tt.action)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, allowed)
+		})
+	}
+}
+
 func TestEnforcer_CanRoles(t *testing.T) {
 	e, err := authorization.New()
 	require.NoError(t, err)

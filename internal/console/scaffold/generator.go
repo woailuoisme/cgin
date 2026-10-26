@@ -51,7 +51,7 @@ type TemplateData struct {
 	RoutesPackage  string
 	// ScopePascal 是作用域首字母大写形式（Admin/Client），用于拼接全局唯一的路由注册函数名。
 	ScopePascal string
-	// RoutesFunc 是注册到 internal/route 单包后的唯一函数名。
+	// RoutesFunc 是注册到 internal/routes 单包后的唯一函数名。
 	RoutesFunc   string
 	PascalName   string
 	CamelName    string
@@ -182,7 +182,7 @@ type PlannedFile struct {
 	Data     any
 }
 
-// Plan 描述任意脚手架生成规划契约 (OCP & ISP)。
+// Plan 描述任意脚手架生成规划契约。
 type Plan interface {
 	Name() string
 	Files() ([]PlannedFile, error)
@@ -239,7 +239,7 @@ func (p *CRUDPlan) CleanupDirs() []string {
 	return []string{dtoDir, handlerDir, serviceDir}
 }
 
-// Pipeline 提供可插拔的代码生成与回退执行管线引擎 (SRP & OCP)。
+// Pipeline 提供可插拔的代码生成与回退执行管线引擎。
 type Pipeline struct {
 	TemplateFS fs.FS
 	RootDir    string

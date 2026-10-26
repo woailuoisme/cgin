@@ -6,6 +6,7 @@
 package idempotency
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"net/http"
@@ -60,13 +61,12 @@ func configDefault(config ...Config) Config {
 	if cfg.KeyHeaderValidate == nil {
 		cfg.KeyHeaderValidate = ConfigDefault.KeyHeaderValidate
 	}
-	if cfg.KeyHeader == "" {
-		cfg.KeyHeader = ConfigDefault.KeyHeader
-	}
+	cfg.KeyHeader = cmp.Or(cfg.KeyHeader, ConfigDefault.KeyHeader)
 	if cfg.Lifetime <= 0 {
 		cfg.Lifetime = ConfigDefault.Lifetime
 	}
-	if cfg.KeepResponseHeaders != nil && len(cfg.KeepResponseHeaders) == 0 {
+	// 空切片与 nil 同义：都表示"保留全部响应头但排除 Cookie"。
+	if len(cfg.KeepResponseHeaders) == 0 {
 		cfg.KeepResponseHeaders = nil
 	}
 	if cfg.Lock == nil {

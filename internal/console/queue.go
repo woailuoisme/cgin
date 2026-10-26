@@ -20,7 +20,7 @@ import (
 	"cgin/pkg/queue"
 )
 
-// QueueWorkOptions 封装 queue:work 命令的参数与依赖容器 (SRP & DIP)。
+// QueueWorkOptions 封装 queue:work 命令的参数与依赖容器。
 type QueueWorkOptions struct {
 	noopComplete
 
@@ -116,7 +116,21 @@ func newQueueWorkCmd(f Factory) *cobra.Command {
 	return cmd
 }
 
-// QueueFailedOptions 封装 queue:failed 命令的参数与依赖容器 (SRP & DIP)。
+// openQueueClient 从 Factory 读取配置并创建队列客户端；调用方需 defer 返回的 cleanup。
+func openQueueClient(f Factory) (*queue.Client, func(), error) {
+	cfg, err := f.Config()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	client, cleanup, err := queue.NewClient(cfg.Queue)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to initialize queue client: %w", err)
+	}
+	return client, cleanup, nil
+}
+
+// QueueFailedOptions 封装 queue:failed 命令的参数与依赖容器。
 type QueueFailedOptions struct {
 	Queue    string
 	Page     int
@@ -152,14 +166,9 @@ func (o *QueueFailedOptions) Validate() error {
 
 // Run 列出失败任务清单。
 func (o *QueueFailedOptions) Run(_ context.Context) error {
-	cfg, err := o.Factory.Config()
+	client, cleanup, err := openQueueClient(o.Factory)
 	if err != nil {
 		return err
-	}
-
-	client, cleanup, err := queue.NewClient(cfg.Queue)
-	if err != nil {
-		return fmt.Errorf("failed to initialize queue client: %w", err)
 	}
 	defer cleanup()
 
@@ -216,7 +225,7 @@ func newQueueFailedCmd(f Factory) *cobra.Command {
 	return cmd
 }
 
-// QueueRetryOptions 封装 queue:retry 命令的参数与依赖容器 (SRP & DIP)。
+// QueueRetryOptions 封装 queue:retry 命令的参数与依赖容器。
 type QueueRetryOptions struct {
 	Target  string
 	Factory Factory
@@ -245,14 +254,9 @@ func (o *QueueRetryOptions) Validate() error {
 
 // Run 重新投递指定的失败任务或全部失败任务。
 func (o *QueueRetryOptions) Run(_ context.Context) error {
-	cfg, err := o.Factory.Config()
+	client, cleanup, err := openQueueClient(o.Factory)
 	if err != nil {
 		return err
-	}
-
-	client, cleanup, err := queue.NewClient(cfg.Queue)
-	if err != nil {
-		return fmt.Errorf("failed to initialize queue client: %w", err)
 	}
 	defer cleanup()
 
@@ -286,7 +290,7 @@ func newQueueRetryCmd(f Factory) *cobra.Command {
 	}
 }
 
-// QueueFlushOptions 封装 queue:flush 命令的参数与依赖容器 (SRP & DIP)。
+// QueueFlushOptions 封装 queue:flush 命令的参数与依赖容器。
 type QueueFlushOptions struct {
 	noopValidate
 
@@ -308,11 +312,6 @@ func (o *QueueFlushOptions) Complete(_ []string) error {
 
 // Run 清空全部或指定队列中的失败任务。
 func (o *QueueFlushOptions) Run(_ context.Context) error {
-	cfg, err := o.Factory.Config()
-	if err != nil {
-		return err
-	}
-
 	streams := o.Factory.IOStreams()
 	if !o.Force {
 		promptText := "Are you sure you want to flush all failed jobs across all queues?"
@@ -333,9 +332,9 @@ func (o *QueueFlushOptions) Run(_ context.Context) error {
 		}
 	}
 
-	client, cleanup, err := queue.NewClient(cfg.Queue)
+	client, cleanup, err := openQueueClient(o.Factory)
 	if err != nil {
-		return fmt.Errorf("failed to initialize queue client: %w", err)
+		return err
 	}
 	defer cleanup()
 

@@ -16,6 +16,7 @@ type Config struct {
 	Auth         AuthConfig
 	Limiter      LimiterConfig
 	CORS         CORSConfig
+	Session      SessionConfig
 	Seed         SeedConfig
 	Queue        QueueConfig
 	Search       SearchConfig
@@ -53,6 +54,7 @@ func (c *Config) Validate() error {
 		c.validateSearch(),
 		c.validateRealtime(),
 		c.validateCORS(),
+		c.validateSession(),
 		c.validateLimiter(),
 		c.validateWeChat(),
 		c.validatePayment(),

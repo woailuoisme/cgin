@@ -65,10 +65,10 @@ func getHTTPMetrics() *httpMetrics {
 	return metrics
 }
 
-// Telemetry 【全局中间件】负责 HTTP 链路追踪 (Traces) 上下文提取/注入与多维指标 (Metrics) 采集。
+// Telemetry 负责 HTTP 链路追踪上下文提取/注入与请求指标采集。
 func (m *Middleware) Telemetry() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 若遥测未激活或为高频系统探针心跳，则零侵入快速放行，规避 Span 分配与度量计算
+		// 遥测未启用或探测心跳时直接放行，省掉 Span 与度量开销。
 		if !telemetry.IsInitialized() || isProbeRequest(c) {
 			c.Next()
 			return
@@ -77,10 +77,10 @@ func (m *Middleware) Telemetry() gin.HandlerFunc {
 		tr := telemetry.Tracer(tracerScope)
 		httpM := getHTTPMetrics()
 
-		// 1. 从入站 HTTP 请求头提取 W3C TraceContext 与 Baggage
+		// 从入站请求头提取 W3C TraceContext 与 Baggage。
 		ctx := otel.GetTextMapPropagator().Extract(c.Request.Context(), propagation.HeaderCarrier(c.Request.Header))
 
-		// 2. 创建 Server 类型的根 Span
+		// 建立 Server 类型的根 Span。
 		spanName := c.Request.Method + " " + c.Request.URL.Path
 		ctx, span := tr.Start(ctx, spanName,
 			trace.WithSpanKind(trace.SpanKindServer),
@@ -93,11 +93,8 @@ func (m *Middleware) Telemetry() gin.HandlerFunc {
 		defer span.End()
 
 		c.Writer.Header().Set(headerTraceID, span.SpanContext().TraceID().String())
-
-		// 3. 将携带 TraceContext 的 context 注入 gin 请求上下文
 		c.Request = c.Request.WithContext(ctx)
 
-		// 4. 统计并发请求数
 		if httpM.activeRequests != nil {
 			httpM.activeRequests.Add(ctx, 1)
 			defer httpM.activeRequests.Add(ctx, -1)
@@ -110,7 +107,7 @@ func (m *Middleware) Telemetry() gin.HandlerFunc {
 		status := c.Writer.Status()
 		route := cmp.Or(c.FullPath(), "unmatched")
 
-		// 5. 路由匹配后修正 Span 名称（如 "GET /v1/users/:id"），防止路径参数导致高基数
+		// 路由匹配后再命名，避免路径参数造成指标高基数。
 		span.SetName(c.Request.Method + " " + route)
 		span.SetAttributes(
 			attribute.String("http.route", route),
@@ -123,7 +120,6 @@ func (m *Middleware) Telemetry() gin.HandlerFunc {
 			span.SetStatus(codes.Ok, "")
 		}
 
-		// 6. 记录请求耗时直方图与请求总量
 		metricAttrs := metric.WithAttributes(
 			attribute.String("http.route", route),
 			attribute.String("http.method", c.Request.Method),

@@ -3,6 +3,7 @@ package global
 import (
 	"errors"
 
+	gini18n "github.com/gin-contrib/i18n"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	govalidator "github.com/go-playground/validator/v10"
@@ -10,7 +11,8 @@ import (
 	"cgin/pkg/errs"
 )
 
-// ErrorHandler 【全局中间件】拦截请求链路中的全部错误，集中解析业务码、执行多语言翻译并写回统一 JSON 响应。
+// ErrorHandler 把 c.Errors 渲染为统一 JSON 错误信封，并把校验明细翻译成请求语言。
+// 官方无统一错误信封，属项目自建。
 func (m *Middleware) ErrorHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()
@@ -28,14 +30,23 @@ func (m *Middleware) ErrorHandler() gin.HandlerFunc {
 	}
 }
 
-// extractValidationFields 提取并翻译入参校验错误字典。
-func (m *Middleware) extractValidationFields(c *gin.Context, err error) (map[string][]string, bool) {
-	lang := c.GetHeader("Accept-Language")
-	if m.translator != nil {
-		lang = m.translator.Language(lang)
+// resolveLanguage 取当前请求语言：优先 gin-contrib/i18n 的协商结果，其次 Translator 协商。
+func (m *Middleware) resolveLanguage(c *gin.Context) string {
+	if c.Value("i18n") != nil {
+		return gini18n.GetCurrentLanguage(c).String()
 	}
 
-	// 提取基于语言包键表达的字段级校验错误。
+	lang := c.GetHeader("Accept-Language")
+	if m.translator == nil {
+		return lang
+	}
+	return m.translator.Language(lang)
+}
+
+// extractValidationFields 提取并翻译入参校验错误字典。
+func (m *Middleware) extractValidationFields(c *gin.Context, err error) (map[string][]string, bool) {
+	lang := m.resolveLanguage(c)
+
 	if fields, ok := m.translateFieldKeys(lang, err); ok {
 		return fields, true
 	}

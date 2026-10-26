@@ -18,7 +18,7 @@ const (
 	scopeClient = "client"
 )
 
-// MakeCRUDOptions 封装 make:crud 命令的参数与依赖容器 (SRP & DIP)。
+// MakeCRUDOptions 封装 make:crud 命令的参数与依赖容器。
 type MakeCRUDOptions struct {
 	Name    string
 	Client  bool
@@ -270,7 +270,7 @@ func newMakeCRUDCmd(f Factory) *cobra.Command {
 
 Generates / Removes (admin scope lands in each layer's admin/ subdirectory):
   - internal/handler/<module>.go
-  - internal/route/<module>.go
+  - internal/routes/<module>.go
   - internal/service/<module>.go
   - internal/dto/<module>.go
   - database/schemas/<plural>.sql + database/queries/<plural>.sql

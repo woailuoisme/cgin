@@ -58,32 +58,37 @@ func WithThrottleResponse(fn func(c *gin.Context)) ThrottleOption {
 }
 
 // RateLimiterStore 定义限流中间件所需的缓存原语接口。
-// platform/cache.Client 结构体天然完整实现该接口。
+// pkg/cache.Client 天然满足该接口。
 type RateLimiterStore interface {
 	Increment(ctx context.Context, key string, ttl time.Duration) (int64, error)
 	Get(ctx context.Context, key string) (string, error)
 }
 
-// Throttle 【路由/路由组中间件】按业务档位预设配额执行平滑滑动窗口限流（Sliding Window Counter）。
-// 配额自动从系统配置中读取（Anonymous, Authenticated, Sensitive）。
+// Throttle 按档位预设配额执行平滑滑动窗口限流（分布式配额见 pkg/cache）。
+// 官方无限流中间件，属项目自建。
 func (m *Middleware) Throttle(tier Tier, opts ...ThrottleOption) gin.HandlerFunc {
 	if m != nil && !m.limiter.IsEnabled() {
-		return func(c *gin.Context) { c.Next() }
+		return passthrough()
 	}
-	allOpts := make([]ThrottleOption, 0, len(opts)+1)
-	allOpts = append(allOpts, WithThrottleTier(tier))
-	allOpts = append(allOpts, opts...)
-	return ThrottleWithStore(m.resolveLimiterStore(), m.limitFor(tier), rateLimitWindow, allOpts...)
+
+	opts = append([]ThrottleOption{WithThrottleTier(tier)}, opts...)
+	return ThrottleWithStore(m.resolveLimiterStore(), m.limitFor(tier), rateLimitWindow, opts...)
 }
 
-// ThrottleRate 【路由/路由组中间件】按指定的具体配额与时间周期执行平滑滑动窗口限流。
+// ThrottleRate 按显式配额与时间周期执行平滑滑动窗口限流。
 func (m *Middleware) ThrottleRate(limit int, window time.Duration, opts ...ThrottleOption) gin.HandlerFunc {
 	if m != nil && !m.limiter.IsEnabled() {
-		return func(c *gin.Context) { c.Next() }
+		return passthrough()
 	}
 	return ThrottleWithStore(m.resolveLimiterStore(), limit, window, opts...)
 }
 
+// passthrough 返回不做任何限流的空中间件。
+func passthrough() gin.HandlerFunc {
+	return func(c *gin.Context) { c.Next() }
+}
+
+// resolveLimiterStore 优先使用显式注入的存储，其次复用平台缓存。
 func (m *Middleware) resolveLimiterStore() RateLimiterStore {
 	if m == nil {
 		return nil
@@ -91,10 +96,7 @@ func (m *Middleware) resolveLimiterStore() RateLimiterStore {
 	if m.limiterStore != nil {
 		return m.limiterStore
 	}
-	if m.cache != nil {
-		return m.cache
-	}
-	return nil
+	return m.cache
 }
 
 // ThrottleWithStore 构造独立的平滑滑动窗口限流中间件实例，方便测试与自定义注入。
@@ -122,18 +124,16 @@ func ThrottleWithStore(store RateLimiterStore, limit int, window time.Duration, 
 		scope := resolveThrottleScope(c, options)
 		tierName := throttleTierLabel(options.tier)
 
-		key := cache.Key("ratelimit", tierName, scope, strconv.FormatInt(windowSeconds, 10), strconv.FormatInt(bucket, 10))
-		currCount, err := store.Increment(c.Request.Context(), key, 2*window)
+		currCount, err := store.Increment(c.Request.Context(), rateLimitKey(tierName, scope, windowSeconds, bucket), 2*window)
 		if err != nil {
-			// 计数器故障时降级放行并记录错误。
+			// 计数器故障降级放行，避免限流器拖垮业务。
 			logger.FromContext(c.Request.Context()).Error().Err(err).Msg("throttle counter failed, request allowed")
 			c.Next()
 			return
 		}
 
-		// 平滑滑动窗口算法 (Sliding Window Counter)：结合前一窗口的加权余量，平滑消除窗口临界双倍突发流量。
-		prevKey := cache.Key("ratelimit", tierName, scope, strconv.FormatInt(windowSeconds, 10), strconv.FormatInt(bucket-1, 10))
-		prevCount := previousWindowCount(c, store, prevKey)
+		// 加权前一窗口余量，消除窗口临界处的双倍突发。
+		prevCount := previousWindowCount(c, store, rateLimitKey(tierName, scope, windowSeconds, bucket-1))
 		weight := float64(windowSeconds-offset) / float64(windowSeconds)
 		estimatedCount := currCount + int64(float64(prevCount)*weight)
 
@@ -173,6 +173,12 @@ func throttleTierLabel(tier Tier) string {
 		return "custom"
 	}
 	return string(tier)
+}
+
+// rateLimitKey 组装固定维度的限流计数器键。
+func rateLimitKey(tier, scope string, windowSeconds, bucket int64) string {
+	return cache.Key("ratelimit", tier, scope,
+		strconv.FormatInt(windowSeconds, 10), strconv.FormatInt(bucket, 10))
 }
 
 // previousWindowCount 读取前一窗口的计数；缺失或解析失败时按 0 处理。
@@ -215,9 +221,6 @@ func logRateLimitExceeded(c *gin.Context, tier, scope string, limit int, windowS
 
 // limitFor 按档位读取配额，未知档位回退至未认证配额。
 func (m *Middleware) limitFor(tier Tier) int {
-	if m != nil && !m.limiter.IsEnabled() {
-		return 0
-	}
 	switch tier {
 	case TierAuthenticated:
 		return m.limiter.Authenticated

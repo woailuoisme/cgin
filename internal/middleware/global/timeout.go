@@ -2,54 +2,42 @@ package global
 
 import (
 	"context"
-	"errors"
 	"strings"
 
+	"github.com/gin-contrib/timeout"
 	"github.com/gin-gonic/gin"
 
 	"cgin/pkg/errs"
 )
 
-// Timeout 【全局中间件】向请求上下文注入超时截止期，超时由下层 I/O 响应并经 ErrorHandler 统一渲染为 504 错误。
-//
-// 自动对 WebSocket 升级握手及 SSE (text/event-stream) 流式长连接进行超时豁免。
+// Timeout 基于 gin-contrib/timeout 控制请求超时，超时输出 504，长连接自动豁免。
 func (m *Middleware) Timeout() gin.HandlerFunc {
+	if m.requestTimeout <= 0 {
+		return func(c *gin.Context) {
+			c.Next()
+		}
+	}
+
+	base := timeout.New(
+		timeout.WithTimeout(m.requestTimeout),
+		timeout.WithResponse(func(c *gin.Context) {
+			errs.Render(c, errs.GatewayTimeout(context.DeadlineExceeded))
+		}),
+	)
+
 	return func(c *gin.Context) {
-		if m.requestTimeout <= 0 || isStreamingRequest(c) {
+		// 对 WebSocket 升级握手及 SSE 流式长连接请求进行超时豁免
+		if isStreamingRequest(c) {
 			c.Next()
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(c.Request.Context(), m.requestTimeout)
-		defer cancel()
-
-		c.Request = c.Request.WithContext(ctx)
-		c.Next()
-
-		if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return
-		}
-		if !c.Writer.Written() {
-			if len(c.Errors) == 0 || !errors.Is(c.Errors.Last().Err, context.DeadlineExceeded) {
-				_ = c.Error(errs.GatewayTimeout(context.DeadlineExceeded))
-			}
-			c.Abort()
-			return
-		}
-		m.logger.Warn().
-			Str("path", c.Request.URL.Path).
-			Str("method", c.Request.Method).
-			Msg("request timed out after partial response")
+		base(c)
 	}
 }
 
-// isStreamingRequest 检测是否为 WebSocket 握手或 SSE (Server-Sent Events) 流式长连接请求。
+// isStreamingRequest 判断是否为 WebSocket 握手或 SSE 长连接，这类请求豁免超时。
 func isStreamingRequest(c *gin.Context) bool {
-	if strings.EqualFold(c.GetHeader("Upgrade"), "websocket") {
-		return true
-	}
-	if strings.Contains(c.GetHeader("Accept"), "text/event-stream") {
-		return true
-	}
-	return false
+	return strings.EqualFold(c.GetHeader("Upgrade"), "websocket") ||
+		strings.Contains(c.GetHeader("Accept"), "text/event-stream")
 }

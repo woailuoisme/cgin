@@ -18,7 +18,7 @@ import (
 // jwtSecretRegexp 匹配 .env 中已存在的 JWT_SECRET 配置行。
 var jwtSecretRegexp = regexp.MustCompile(`(?m)^JWT_SECRET=(.*)$`)
 
-// JWTSecretOptions 封装 jwt:secret 命令的参数与依赖容器 (SRP & DIP)。
+// JWTSecretOptions 封装 jwt:secret 命令的参数与依赖容器。
 type JWTSecretOptions struct {
 	noopComplete
 

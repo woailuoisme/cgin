@@ -59,78 +59,95 @@ func NewCacheLocker(store cache.Store, ttl time.Duration) Locker {
 		ttl = defaultLockTTL
 	}
 	if provider, ok := store.(cache.LockProvider); ok && provider.Locker() != nil {
-		return &nativeLockerAdapter{
-			inner:   provider.Locker(),
-			ttl:     ttl,
-			cancels: make(map[string][]context.CancelFunc),
-		}
+		return &nativeLockerAdapter{inner: provider.Locker(), ttl: ttl}
 	}
-	return &cacheLocker{
-		store:  store,
-		ttl:    ttl,
-		tokens: make(map[string][]string),
+	return &cacheLocker{store: store, ttl: ttl}
+}
+
+// holderStack 记录每个键的持有者栈，支持同一键重入；零值可直接使用。
+type holderStack[T any] struct {
+	mu     sync.Mutex
+	stacks map[string][]T
+}
+
+// push 压入持有者，供嵌套获取同一把锁时按层释放。
+func (s *holderStack[T]) push(key string, value T) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.stacks == nil {
+		s.stacks = make(map[string][]T)
 	}
+	s.stacks[key] = append(s.stacks[key], value)
+}
+
+// pop 弹出并返回栈顶持有者；栈空时返回 false。
+func (s *holderStack[T]) pop(key string) (T, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var zero T
+	stack := s.stacks[key]
+	if len(stack) == 0 {
+		return zero, false
+	}
+
+	top := stack[len(stack)-1]
+	if len(stack) == 1 {
+		delete(s.stacks, key)
+	} else {
+		s.stacks[key] = stack[:len(stack)-1]
+	}
+	return top, true
 }
 
 // nativeLockerAdapter 将平台 cache.Locker 适配为幂等中间件 Locker，消除 10ms 轮询。
 type nativeLockerAdapter struct {
 	inner   cache.Locker
 	ttl     time.Duration
-	mu      sync.Mutex
-	cancels map[string][]context.CancelFunc
+	holders holderStack[context.CancelFunc]
 }
 
-// Lock 阻塞等待底层锁并在超时上限内持有。
+// Lock 阻塞等待底层锁并在租期内持有。
 func (l *nativeLockerAdapter) Lock(ctx context.Context, key string) error {
-	lockCtx := ctx
-	var timeoutCancel context.CancelFunc
-	if l.ttl > 0 {
-		lockCtx, timeoutCancel = context.WithTimeout(ctx, l.ttl)
-	}
-	_, cancel, err := l.inner.Lock(lockCtx, cacheLockKey(key))
+	lockCtx, cancelTimeout := l.lockContext(ctx)
+	_, release, err := l.inner.Lock(lockCtx, cacheLockKey(key))
 	if err != nil {
-		if timeoutCancel != nil {
-			timeoutCancel()
-		}
+		cancelTimeout()
 		return err
 	}
-	l.mu.Lock()
-	l.cancels[key] = append(l.cancels[key], func() {
-		cancel()
-		if timeoutCancel != nil {
-			timeoutCancel()
-		}
+
+	l.holders.push(key, func() {
+		release()
+		cancelTimeout()
 	})
-	l.mu.Unlock()
 	return nil
+}
+
+// lockContext 给等待加上租期超时；ttl 未配置时直接复用入参上下文。
+func (l *nativeLockerAdapter) lockContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if l.ttl <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, l.ttl)
 }
 
 // Unlock 释放当前持有的锁。
 func (l *nativeLockerAdapter) Unlock(_ context.Context, key string) error {
-	l.mu.Lock()
-	stack := l.cancels[key]
-	if len(stack) == 0 {
-		l.mu.Unlock()
+	release, ok := l.holders.pop(key)
+	if !ok {
 		return nil
 	}
-	cancel := stack[len(stack)-1]
-	if len(stack) == 1 {
-		delete(l.cancels, key)
-	} else {
-		l.cancels[key] = stack[:len(stack)-1]
-	}
-	l.mu.Unlock()
 
-	cancel()
+	release()
 	return nil
 }
 
 // cacheLocker 基于 SetNX 抢占、DeleteIfMatch 释放的分布式锁。
 type cacheLocker struct {
-	store  cache.Store
-	ttl    time.Duration
-	mu     sync.Mutex
-	tokens map[string][]string
+	store   cache.Store
+	ttl     time.Duration
+	holders holderStack[string]
 }
 
 // Lock 轮询抢占锁，直到成功或请求上下文取消。
@@ -147,9 +164,7 @@ func (l *cacheLocker) Lock(ctx context.Context, key string) error {
 			return err
 		}
 		if acquired {
-			l.mu.Lock()
-			l.tokens[key] = append(l.tokens[key], token)
-			l.mu.Unlock()
+			l.holders.push(key, token)
 			return nil
 		}
 
@@ -161,22 +176,14 @@ func (l *cacheLocker) Lock(ctx context.Context, key string) error {
 	}
 }
 
-// Unlock 仅删除自己持有的锁，避免误删已过期后他人重新获取的锁。
+// Unlock 仅删除自己持有的锁，避免误删过期后他人重新获取的锁。
 func (l *cacheLocker) Unlock(ctx context.Context, key string) error {
-	l.mu.Lock()
-	stack := l.tokens[key]
-	if len(stack) == 0 {
-		l.mu.Unlock()
+	token, ok := l.holders.pop(key)
+	if !ok {
 		return nil
 	}
-	token := stack[len(stack)-1]
-	if len(stack) == 1 {
-		delete(l.tokens, key)
-	} else {
-		l.tokens[key] = stack[:len(stack)-1]
-	}
-	l.mu.Unlock()
 
+	// 请求即使已取消也要完成解锁，否则锁会一直阻塞到租期结束。
 	unlockCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), unlockTimeout)
 	defer cancel()
 

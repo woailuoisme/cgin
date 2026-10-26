@@ -40,13 +40,19 @@ func (l *MemoryLock) Lock(_ context.Context, key string) error {
 
 // Unlock 释放指定键的锁，最后一个持有者退出时清理映射。
 func (l *MemoryLock) Unlock(_ context.Context, key string) error {
-	lock := l.lookup(key)
-	if lock == nil {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	lock, ok := l.keys[key]
+	if !ok {
 		return nil
 	}
 
 	lock.mu.Unlock()
-	l.release(key, lock)
+	lock.locked--
+	if lock.locked <= 0 {
+		delete(l.keys, key)
+	}
 	return nil
 }
 
@@ -65,25 +71,6 @@ func (l *MemoryLock) retain(key string) *countedLock {
 	}
 	lock.locked++
 	return lock
-}
-
-// lookup 查询指定键关联的计数锁。
-func (l *MemoryLock) lookup(key string) *countedLock {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	return l.keys[key]
-}
-
-// release 递减指定键的引用计数，归零时移除键映射。
-func (l *MemoryLock) release(key string, lock *countedLock) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	lock.locked--
-	if lock.locked <= 0 {
-		delete(l.keys, key)
-	}
 }
 
 var _ Locker = (*MemoryLock)(nil)

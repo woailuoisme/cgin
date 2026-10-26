@@ -58,19 +58,15 @@ func terminalWidth(w io.Writer) int {
 	return 80
 }
 
-// NewProgressBarTo 构造写入指定 writer 的全新终端进度条。
+// NewProgressBarTo 构造写入指定 writer 的终端进度条。
 //
-// interactive 决定是否实时重绘（调用方通常传 streams.CanPrompt()，非 TTY 时应为 false）；
-// total 为预期总量，传负值时按 0 处理。
+// interactive 决定是否实时重绘（非 TTY 时应传 false）；total 为负数时按 0 处理。
 func NewProgressBarTo(w io.Writer, interactive bool, total int64, label string) *ProgressBar {
 	if total < 0 {
 		total = 0
 	}
-	if w == nil {
-		w = os.Stdout
-	}
 	return &ProgressBar{
-		w:           w,
+		w:           orStdout(w),
 		model:       progress.New(progress.WithColors(lipgloss.Color("39"), lipgloss.Color("42")), progress.WithWidth(20), progress.WithoutPercentage()),
 		total:       total,
 		label:       label,
@@ -152,7 +148,7 @@ func (b *ProgressBar) renderInteractive(currStr, totalStr, rateStr string) {
 		ratio = float64((b.current/(128*1024))%10+1) / 10.0
 	}
 
-	// 宽终端 (>= 75 列)：展示宽幅进度条与完整指标
+	// 宽终端（≥75 列）直接铺满完整指标。
 	if termWidth >= 75 {
 		b.model.SetWidth(18)
 		barStr := b.model.ViewAs(ratio)
@@ -165,18 +161,18 @@ func (b *ProgressBar) renderInteractive(currStr, totalStr, rateStr string) {
 		return
 	}
 
-	// 窄终端 (< 75 列)：精确度量各组件可见列宽，自适应计算条宽，严禁对含 ANSI 码的字符串做切片截断
+	// 窄终端按各组件可见列宽反推条宽；含 ANSI 码的字符串不可切片截断，只能用 lipgloss.Width 度量。
 	metrics := b.formatCompactMetrics(ratio, currStr, totalStr, rateStr)
 	metricsWidth := lipgloss.Width(metrics)
 
-	// 终端列宽大于等于 60 时保留前缀标签，极窄终端时省略标签以保障进度条与数值完整展示
+	// 列宽 ≥60 保留标签，极窄时省略以保证数值完整。
 	prefix := "  "
 	if termWidth >= 60 {
 		prefix = fmt.Sprintf("  %-11s ", b.label)
 	}
 	prefixWidth := lipgloss.Width(prefix)
 
-	// 动态计算进度条可见列宽（至少 8 列，至多 14 列，且整体必定小于 termWidth）
+	// 条宽夹在 8~14 列，整体不超出终端宽度。
 	availBar := termWidth - prefixWidth - metricsWidth - 2
 	barWidth := max(8, min(14, availBar))
 	b.model.SetWidth(barWidth)

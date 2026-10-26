@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -51,13 +52,12 @@ func New(config ...Config) gin.HandlerFunc {
 	return handler.handle
 }
 
-// handler 持有单次构造时快照的配置，避免运行期读取可变的调用方状态。
+// handler 持有构造时快照的配置，避免运行期受调用方状态变更影响。
 type handler struct {
 	cfg        Config
 	keepHeader func(string) bool
 }
 
-// handle 执行完整的幂等处理流程。
 func (h *handler) handle(c *gin.Context) {
 	if h.cfg.Next != nil && h.cfg.Next(c) {
 		c.Next()
@@ -138,7 +138,7 @@ func (h *handler) replay(c *gin.Context, storageKey string) (bool, error) {
 	}
 
 	var cached response
-	if err := cached.unmarshal(value); err != nil {
+	if err := json.Unmarshal(value, &cached); err != nil {
 		return false, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
@@ -168,7 +168,7 @@ func (h *handler) replay(c *gin.Context, storageKey string) (bool, error) {
 
 // persist 序列化并写入缓存；失败时记录日志并返回 false。
 func (h *handler) persist(c *gin.Context, key, storageKey string, snapshot *response) bool {
-	payload, err := snapshot.marshal()
+	payload, err := json.Marshal(snapshot)
 	if err != nil {
 		logger.FromContext(c.Request.Context()).Error().
 			Str("key", h.maskKey(key)).
@@ -241,19 +241,17 @@ func newHeaderFilter(configured []string) func(string) bool {
 	}
 }
 
-// responseBufferWriter 将处理器写入的响应体同时写入缓存副本。
+// responseBufferWriter 把处理器写入的响应体同时抄送一份到缓存。
 type responseBufferWriter struct {
 	gin.ResponseWriter
 	body *bytes.Buffer
 }
 
-// Write 透传响应并捕获正文。
 func (w *responseBufferWriter) Write(data []byte) (int, error) {
 	w.body.Write(data)
 	return w.ResponseWriter.Write(data)
 }
 
-// WriteString 透传响应并捕获正文。
 func (w *responseBufferWriter) WriteString(value string) (int, error) {
 	w.body.WriteString(value)
 	return w.ResponseWriter.WriteString(value)

@@ -5,14 +5,15 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/gin-contrib/authz"
 	"github.com/gin-gonic/gin"
 
 	"cgin/pkg/authentication"
 	"cgin/pkg/errs"
 )
 
-// Auth 【路由/路由组中间件】仿照 Laravel auth 中间件设计，校验 Bearer 访问令牌并注入认证身份载荷。
-// 支持未指定（使用默认守卫）、单个守卫（如 "client"、"admin"）以及多守卫顺序回退（如 mw.Auth("admin", "client") 或 mw.Auth("admin,client")）。
+// Auth 校验 Bearer 令牌并把认证身份注入上下文。
+// 守卫可缺省（用默认守卫）、指定单个（"client"/"admin"）或按序回退（mw.Auth("admin", "client")）。
 func (m *Middleware) Auth(guardNames ...string) gin.HandlerFunc {
 	guards := parseGuards(guardNames)
 
@@ -38,6 +39,11 @@ func (m *Middleware) Auth(guardNames ...string) gin.HandlerFunc {
 			reqCtx = authentication.WithGate(reqCtx, m.authz)
 		}
 		c.Request = c.Request.WithContext(reqCtx)
+
+		// 将已认证的角色信息注入 BasicAuth，使 gin-contrib/authz 原生自动提取 subject
+		if id, ok := authentication.FromContext(reqCtx); ok && id.Role != "" {
+			c.Request.SetBasicAuth(id.Role, "")
+		}
 
 		c.Next()
 	}
@@ -78,7 +84,16 @@ func (m *Middleware) authenticateWithManager(ctx context.Context, raw string, gu
 	return nil, lastErr
 }
 
-// Can 【路由级中间件】仿照 Laravel can 中间件设计，基于令牌角色执行 Casbin RBAC 细粒度权限校验。
+// Authz 【路由/组中间件】基于官方 gin-contrib/authz 执行 Casbin RESTful 路径与 HTTP 方法访问控制。
+func (m *Middleware) Authz() gin.HandlerFunc {
+	if m.authz == nil {
+		return func(c *gin.Context) { c.Next() }
+	}
+	return authz.NewAuthorizer(m.authz.CasbinEnforcer())
+}
+
+// Can 按资源+动作做 Casbin 资源级鉴权。
+// 官方 authz 只支持 URL+Method，无法表达资源语义，故保留自建（路径级鉴权由 Authz 承担）。
 func (m *Middleware) Can(resource, action string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if _, ok := authentication.FromContext(c.Request.Context()); !ok {

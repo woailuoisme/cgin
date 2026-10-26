@@ -21,6 +21,8 @@ const (
 )
 
 // Idempotency 构造全局挂载的请求幂等中间件。
+//
+// 归属：gin-contrib 官方无幂等重放控制，此处为项目自建能力。
 func (m *Middleware) Idempotency(configs ...idempotency.Config) gin.HandlerFunc {
 	return NewIdempotency(m.cache, configs...)
 }

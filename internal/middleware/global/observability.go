@@ -1,11 +1,13 @@
 package global
 
 import (
+	"cmp"
 	"encoding/hex"
 	"runtime/debug"
 	"strings"
-	"time"
 
+	ginlogger "github.com/gin-contrib/logger"
+	"github.com/gin-contrib/requestid"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -22,28 +24,31 @@ const headerRequestID = "x-request-id"
 // requestIDPrefix 是追踪标识前缀。
 const requestIDPrefix = "req_"
 
-// RequestID 【全局中间件】生成或透传全链路追踪请求标识。
+// RequestID 基于 gin-contrib/requestid 生成或透传全链路请求标识。
 func (m *Middleware) RequestID() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		requestID := strings.TrimSpace(c.GetHeader(headerRequestID))
-		if requestID == "" {
-			// 对未显式传递追踪头的高频健康探针路由快速放行，规避高频 UUIDv7 生成与子日志器上下文分配开销
-			if isProbeRequest(c) {
-				c.Next()
-				return
-			}
+	base := requestid.New(
+		requestid.WithCustomHeaderStrKey(headerRequestID),
+		requestid.WithGenerator(newRequestID),
+		requestid.WithHandler(func(c *gin.Context, rid string) {
+			c.Request = c.Request.WithContext(logger.WithContext(c.Request.Context(), m.logger, rid))
+		}),
+	)
 
-			// 优先使用当前活跃 OTel Span 的 TraceID（实现请求标识、后端链路与日志三位一体统一）
+	return func(c *gin.Context) {
+		// 探针无外部追踪头时跳过，省掉 UUIDv7 生成与子日志器分配。
+		if isProbeRequest(c) && strings.TrimSpace(c.GetHeader(headerRequestID)) == "" {
+			c.Next()
+			return
+		}
+
+		// 已有 OTel Span 时复用其 TraceID 作为请求标识。
+		if strings.TrimSpace(c.GetHeader(headerRequestID)) == "" {
 			if span := trace.SpanFromContext(c.Request.Context()); span.SpanContext().IsValid() {
-				requestID = span.SpanContext().TraceID().String()
-			} else {
-				requestID = newRequestID()
+				c.Request.Header.Set(headerRequestID, span.SpanContext().TraceID().String())
 			}
 		}
 
-		c.Writer.Header().Set(headerRequestID, requestID)
-		c.Request = c.Request.WithContext(logger.WithContext(c.Request.Context(), m.logger, requestID))
-		c.Next()
+		base(c)
 	}
 }
 
@@ -59,51 +64,50 @@ func newRequestID() string {
 	return string(hex.AppendEncode(buf, id[:]))
 }
 
-// AccessLog 【全局中间件】记录每个请求的方法、路径、状态码与耗时。
+// AccessLog 基于 gin-contrib/logger 记录请求方法、路径、状态码与耗时。
 func (m *Middleware) AccessLog() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		isProbe := isProbeRequest(c)
+	baseLog := cmp.Or(m.logger, logger.Default())
 
-		start := time.Now()
-		c.Next()
-
-		status := c.Writer.Status()
-
-		// 健康检查探针正常状态（2xx/3xx）完全静默，避免高频心跳刷屏；异常（4xx/5xx）依然保留日志
-		if isProbe && status < 400 {
-			return
-		}
-
-		log := logger.FromContext(c.Request.Context())
-
-		var event *zerolog.Event
-		switch {
-		case status >= 500:
-			event = log.Error()
-		case status >= 400:
-			event = log.Warn()
-		default:
-			event = log.Info()
-		}
-
-		if errMsg := formatErrors(c.Errors); errMsg != "" {
-			event = event.Str("error", errMsg)
-		}
-		if code := errs.ErrorCodeFromContext(c); code != "" {
-			event = event.Str("code", code)
-		}
-
-		event.
-			Str("method", c.Request.Method).
-			Str("path", c.Request.URL.Path).
-			Int("status", status).
-			Str("latency", time.Since(start).String()).
-			Str("ip", c.ClientIP()).
-			Msg("access")
-	}
+	return ginlogger.SetLogger(
+		ginlogger.WithUTC(true),
+		ginlogger.WithMessage("access"),
+		ginlogger.WithDefaultLevel(zerolog.InfoLevel),
+		ginlogger.WithClientErrorLevel(zerolog.WarnLevel),
+		ginlogger.WithServerErrorLevel(zerolog.ErrorLevel),
+		ginlogger.WithSkipper(func(c *gin.Context) bool {
+			// 探针 2xx/3xx 静默避免心跳刷屏，异常仍记录。
+			return isProbeRequest(c) && c.Writer.Status() < 400
+		}),
+		ginlogger.WithLogger(func(c *gin.Context, _ zerolog.Logger) zerolog.Logger {
+			reqLogger := *baseLog
+			rid := strings.TrimSpace(c.Writer.Header().Get(headerRequestID))
+			if rid == "" {
+				rid = requestid.Get(c)
+			}
+			if rid != "" {
+				reqLogger = reqLogger.With().Str("request_id", rid).Logger()
+			}
+			if span := trace.SpanFromContext(c.Request.Context()); span.SpanContext().IsValid() {
+				reqLogger = reqLogger.With().
+					Str("trace_id", span.SpanContext().TraceID().String()).
+					Str("span_id", span.SpanContext().SpanID().String()).
+					Logger()
+			}
+			return reqLogger
+		}),
+		ginlogger.WithContext(func(c *gin.Context, e *zerolog.Event) *zerolog.Event {
+			if errMsg := formatErrors(c.Errors); errMsg != "" {
+				e = e.Str("error", errMsg)
+			}
+			if code := errs.ErrorCodeFromContext(c); code != "" {
+				e = e.Str("code", code)
+			}
+			return e
+		}),
+	)
 }
 
-// formatErrors 提取并拼接上下文错误文本，去除内部格式前缀与换行。
+// formatErrors 拼接上下文错误文本。
 func formatErrors(errs []*gin.Error) string {
 	if len(errs) == 0 {
 		return ""
@@ -117,7 +121,7 @@ func formatErrors(errs []*gin.Error) string {
 	return strings.Join(msgs, "; ")
 }
 
-// isProbeRequest 判断当前请求是否属于高频系统探针心跳路由。
+// isProbeRequest 判断是否为高频探针路由（官方 skipper 无此语义，属项目自建）。
 func isProbeRequest(c *gin.Context) bool {
 	return isProbePath(c.Request.URL.Path) || isProbePath(c.FullPath())
 }
@@ -127,7 +131,8 @@ func isProbePath(path string) bool {
 	return path == "/livez" || path == "/readyz" || path == "/healthz"
 }
 
-// Recovery 【全局中间件】捕获 panic 转为统一 500 响应，堆栈仅进入日志。
+// Recovery 捕获 panic 转为统一 500 信封，堆栈仅进日志。
+// 官方 Recovery 绕过 code/message 契约，故保留自建。
 func (m *Middleware) Recovery() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {

@@ -3,6 +3,8 @@ x-app: &app
   image: cgin:local
   pull_policy: build
   restart: unless-stopped
+  # .env.production 必须提供 SESSION_SECRET（≥32 字符，生成方式见 .env.example）：
+  # 应用在生产环境检测到缺失会直接启动失败（fail-fast，防止静默弱密钥）。
   env_file:
     - path: .env.production
   volumes:

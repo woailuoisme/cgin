@@ -10,7 +10,7 @@ import (
 	"cgin/internal/bootstrap"
 )
 
-// ServeOptions 持有 HTTP 服务启动命令的配置与依赖容器 (SRP & DIP)。
+// ServeOptions 持有 HTTP 服务启动命令的配置与依赖容器。
 type ServeOptions struct {
 	noopComplete
 

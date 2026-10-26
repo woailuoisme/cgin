@@ -13,9 +13,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/casbin/casbin/v3"
-	"github.com/casbin/casbin/v3/model"
-	stringadapter "github.com/casbin/casbin/v3/persist/string-adapter"
+	"github.com/casbin/casbin/v2"
+	"github.com/casbin/casbin/v2/model"
+	stringadapter "github.com/casbin/casbin/v2/persist/string-adapter"
 
 	"cgin/pkg/authentication"
 	"cgin/pkg/errs"
@@ -78,6 +78,14 @@ func New() (*Enforcer, error) {
 		enforcer:   enforcer,
 		fastLookup: fastLookup,
 	}, nil
+}
+
+// CasbinEnforcer 返回底层的 Casbin Enforcer 实例，供 gin-contrib/authz 等官方中间件直通使用。
+func (e *Enforcer) CasbinEnforcer() *casbin.Enforcer {
+	if e == nil {
+		return nil
+	}
+	return e.enforcer
 }
 
 // buildFastLookup 解析 policy.csv 规则集，构建 role -> "resource:action" 索引

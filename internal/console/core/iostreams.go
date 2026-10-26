@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/x/term"
 )
 
-// IOStreams 统筹终端的标准输入、输出与错误流，并提供 TTY 能力判定与色彩控制 (ISP & LSP)。
+// IOStreams 统筹终端的标准输入、输出与错误流，并提供 TTY 能力判定与色彩控制。
 type IOStreams struct {
 	In     io.Reader
 	Out    io.Writer

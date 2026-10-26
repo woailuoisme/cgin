@@ -3,3 +3,5 @@ p, admin, users, list
 p, admin, users, read
 p, admin, users, update
 p, admin, users, delete
+p, admin, /v1/admin/*, *
+p, client, /v1/users/me, (GET)|(PATCH)

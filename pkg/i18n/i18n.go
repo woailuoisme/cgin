@@ -1,4 +1,7 @@
 // Package i18n 装载语言包，并负责语言协商与文案渲染。
+//
+// 语言资源的解析、分节合并、语言协商与模板渲染全部委托给 go-i18n（gin-contrib/i18n 的底层实现），
+// 本包只保留项目需要的轻量门面：分节寻址、"section.key" 语法、缺键回退与字段标签回退。
 package i18n
 
 import (
@@ -6,14 +9,16 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"maps"
 	"slices"
 	"strconv"
 	"strings"
 	"unicode"
 
+	goi18n "github.com/nicksnyder/go-i18n/v2/i18n"
+	i18ntemplate "github.com/nicksnyder/go-i18n/v2/i18n/template"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/samber/lo"
+	"golang.org/x/text/language"
 
 	"cgin/internal/config"
 	"cgin/message"
@@ -27,43 +32,70 @@ const (
 	sectionInvoice    = "invoice"
 )
 
-// bundle 是一门语言的文案集合，动态管理任意分节命名空间，遵循开闭原则。
-type bundle struct {
-	sections map[string]map[string]string
-}
+// messageParser 让模板缺失变量渲染为空串，而不是把 "<no value>" 泄漏进用户可见文案。
+var messageParser = &i18ntemplate.TextParser{Option: "missingkey=zero"}
 
 // Translator 按请求语言渲染文案；缺失的键一律回退到默认语言。
 type Translator struct {
-	fallback string
-	bundles  map[string]*bundle
+	fallback  string
+	languages []string
+	sections  []string
+	matcher   language.Matcher
+	bundle    *goi18n.Bundle
+	// localizers 预置全部已知语言的查找器，只读共享，避免并发访问时加锁。
+	localizers map[string]*goi18n.Localizer
 }
 
 // NewWithFS 遵循依赖倒置原则，从指定的文件系统装载全部语言包。
 func NewWithFS(defaultLanguage string, fsys fs.FS) (*Translator, error) {
-	entries, err := fs.ReadDir(fsys, ".")
-	if err != nil {
-		return nil, fmt.Errorf("i18n: read language directory failed: %w", err)
-	}
+	loader := Loader{FS: fsys}
 
-	bundles := make(map[string]*bundle, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		loaded, err := loadBundle(fsys, entry.Name())
-		if err != nil {
-			return nil, err
-		}
-		bundles[entry.Name()] = loaded
+	languages, err := loader.Languages()
+	if err != nil {
+		return nil, err
 	}
-	if len(bundles) == 0 {
+	if len(languages) == 0 {
 		return nil, errors.New("i18n: no language bundle found")
 	}
-
-	if _, ok := bundles[defaultLanguage]; !ok {
+	if !slices.Contains(languages, defaultLanguage) {
 		return nil, fmt.Errorf("i18n: default language %q bundle not found", defaultLanguage)
 	}
-	return &Translator{fallback: defaultLanguage, bundles: bundles}, nil
+
+	bundle := goi18n.NewBundle(language.Make(defaultLanguage))
+	bundle.RegisterUnmarshalFunc("toml", toml.Unmarshal)
+
+	translator := &Translator{
+		fallback:   defaultLanguage,
+		languages:  languages,
+		bundle:     bundle,
+		localizers: make(map[string]*goi18n.Localizer, len(languages)),
+	}
+
+	tags := make([]language.Tag, 0, len(languages))
+	for _, lang := range languages {
+		raw, readErr := loader.LoadMessage(lang + ".toml")
+		if readErr != nil {
+			return nil, readErr
+		}
+		if _, parseErr := bundle.ParseMessageFileBytes(raw, lang+".toml"); parseErr != nil {
+			return nil, fmt.Errorf("i18n: parse language bundle %q failed: %w", lang, parseErr)
+		}
+
+		sections, sectionErr := loader.Sections(lang)
+		if sectionErr != nil {
+			return nil, sectionErr
+		}
+		translator.sections = append(translator.sections, sections...)
+
+		tags = append(tags, language.Make(lang))
+		translator.localizers[lang] = newLocalizer(bundle, lang, defaultLanguage)
+	}
+
+	slices.Sort(translator.sections)
+	translator.sections = slices.Compact(translator.sections)
+	translator.matcher = language.NewMatcher(tags)
+
+	return translator, nil
 }
 
 // New 装载内嵌的全部语言包，保持现有配置签名兼容。
@@ -71,139 +103,82 @@ func New(cfg *config.Config) (*Translator, error) {
 	return NewWithFS(cfg.I18n.DefaultLanguage, message.FS)
 }
 
-// loadBundle 动态遍历并读取单门语言目录下的全部 TOML 文案文件。
-func loadBundle(fsys fs.FS, langDir string) (*bundle, error) {
-	entries, err := fs.ReadDir(fsys, langDir)
-	if err != nil {
-		return nil, fmt.Errorf("i18n: read language directory %s failed: %w", langDir, err)
+// newLocalizer 构造带默认语言回退的查找器，语言与默认语言相同时只保留一个标签。
+func newLocalizer(bundle *goi18n.Bundle, lang, fallback string) *goi18n.Localizer {
+	if lang == fallback {
+		return goi18n.NewLocalizer(bundle, lang)
 	}
-
-	loaded := &bundle{
-		sections: make(map[string]map[string]string, len(entries)),
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".toml") {
-			continue
-		}
-		section := strings.TrimSuffix(entry.Name(), ".toml")
-		target := make(map[string]string)
-		filePath := langDir + "/" + entry.Name()
-		if err := decode(fsys, filePath, &target); err != nil {
-			return nil, err
-		}
-		loaded.sections[section] = target
-	}
-	return loaded, nil
+	return goi18n.NewLocalizer(bundle, lang, fallback)
 }
 
-// decode 读取并解析一个 TOML 资源文件。
-func decode(fsys fs.FS, name string, dst any) error {
-	raw, err := fs.ReadFile(fsys, name)
-	if err != nil {
-		return fmt.Errorf("i18n: read %s failed: %w", name, err)
+// Fallback 返回配置的兜底默认语言标识。
+func (t *Translator) Fallback() string {
+	if t == nil {
+		return "en"
 	}
-	if err := toml.Unmarshal(raw, dst); err != nil {
-		return fmt.Errorf("i18n: decode %s failed: %w", name, err)
-	}
-	return nil
+	return t.fallback
 }
 
 // Language 从 Accept-Language 协商出可用语言，无法匹配时回退默认语言。
 // 按优先级逐个候选取值尝试，谁先命中就用谁。
 func (t *Translator) Language(acceptLanguage string) string {
+	if t == nil {
+		return "en"
+	}
+
 	for part := range strings.SplitSeq(acceptLanguage, ",") {
 		tag, _, _ := strings.Cut(part, ";")
 		tag = strings.TrimSpace(tag)
 		if tag == "" {
 			continue
 		}
-		if matched := t.match(tag); matched != "" {
-			return matched
+
+		_, index, confidence := t.matcher.Match(language.Make(tag))
+		if confidence == language.No {
+			continue
 		}
+		return t.languages[index]
 	}
 	return t.fallback
 }
 
-// match 依次尝试精确匹配、逐级去掉子标签，最后按主语言前缀匹配已有语言包。
-// 因此 en-GB 命中 en，zh-Hans-CN 命中 zh-CN。
-func (t *Translator) match(tag string) string {
-	for candidate := tag; candidate != ""; {
-		if _, ok := t.bundles[candidate]; ok {
-			return candidate
-		}
-
-		prefix, _, found := strings.CutLast(candidate, "-")
-		if !found {
-			break
-		}
-		candidate = prefix
-	}
-
-	primary, _, _ := strings.Cut(tag, "-")
-	for _, name := range t.sortedNames() {
-		if name == primary || strings.HasPrefix(name, primary+"-") {
-			return name
-		}
-	}
-	return ""
-}
-
-// sortedNames 返回排序后的语言包名，保证前缀匹配的结果稳定可预期。
-func (t *Translator) sortedNames() []string {
-	return slices.Sorted(maps.Keys(t.bundles))
-}
-
 // ValidationMessage 渲染一条校验失败文案；键或语言缺失时回退默认语言。
 func (t *Translator) ValidationMessage(language, key, field, param string) string {
-	tpl := t.template(language, sectionValidation, key)
-	if tpl == "" {
+	if t == nil {
 		return ""
 	}
 
 	label := cmp.Or(t.FieldLabel(language, field), humanize(field))
-	return render(tpl, map[string]string{"Field": label, "Param": param})
+	return t.localize(language, sectionValidation, key, map[string]string{"Field": label, "Param": param})
 }
 
 // Mail 渲染一封邮件的主题与正文；共用一个 <key>_subject / <key>_body 的键对。
 func (t *Translator) Mail(language, key string, vars map[string]string) (subject, body string) {
-	subject = render(t.template(language, sectionMail, key+"_subject"), vars)
-	body = render(t.template(language, sectionMail, key+"_body"), vars)
-	return subject, body
+	return t.localize(language, sectionMail, key+"_subject", vars),
+		t.localize(language, sectionMail, key+"_body", vars)
 }
 
 // Invoice 渲染发票与结算凭据的展示文案；键或语言缺失时回退默认语言。
 func (t *Translator) Invoice(language, key string, vars map[string]string) string {
-	return render(t.template(language, sectionInvoice, key), vars)
+	return t.localize(language, sectionInvoice, key, vars)
 }
 
-// T 统一通用翻译契约：支持 "section.key" 路径语法（例如 "auth.login_failed" 或 "validation.required"）。
-// 支持传入可选变量映射 vars 进行 {{.Key}} 占位符动态替换；缺键时返回 key 自身。
+// T 统一通用翻译契约：支持 "section.key" 路径语法（例如 "validation.required"）。
+// 支持传入可选变量映射 vars 进行 {{.Key}} 占位符动态替换；缺键时返回空串。
 func (t *Translator) T(language, key string, vars ...map[string]string) string {
-	section, subKey, found := strings.Cut(key, ".")
-	if !found {
-		section, subKey = "", key
-	}
-
-	tpl := lo.Ternary(section != "", t.template(language, section, subKey), t.findAnySection(language, subKey))
-	if tpl == "" {
+	if t == nil {
 		return ""
 	}
 
-	if v := lo.FirstOrEmpty(vars); v != nil {
-		return render(tpl, v)
+	data := lo.FirstOrEmpty(vars)
+	if section, subKey, found := strings.Cut(key, "."); found {
+		return t.localize(language, section, subKey, data)
 	}
-	return tpl
-}
 
-func (t *Translator) findAnySection(language, key string) string {
-	for _, lang := range []string{language, t.fallback} {
-		if b, ok := t.bundles[lang]; ok {
-			for _, sec := range b.sections {
-				if val, exists := sec[key]; exists {
-					return val
-				}
-			}
+	// 未给出分节时按固定顺序探测，保证同一键的解析结果稳定可预期。
+	for _, section := range t.sections {
+		if rendered := t.localize(language, section, key, data); rendered != "" {
+			return rendered
 		}
 	}
 	return ""
@@ -211,46 +186,52 @@ func (t *Translator) findAnySection(language, key string) string {
 
 // FieldLabel 返回字段路径对应的可读标签，缺键时支持末级字段名回退，仍缺失时返回空串交由调用方兜底。
 func (t *Translator) FieldLabel(language, field string) string {
-	if label := t.template(language, sectionFields, field); label != "" {
+	if t == nil {
+		return ""
+	}
+
+	if label := t.localize(language, sectionFields, field, nil); label != "" {
 		return label
 	}
 
 	// 支持路径解构回退（例如 items.0.email 或 user.avatar 回退查找 email 或 avatar）
 	if _, last, found := strings.CutLast(field, "."); found && last != "" {
 		if _, err := strconv.Atoi(last); err != nil {
-			return t.template(language, sectionFields, last)
+			return t.localize(language, sectionFields, last, nil)
 		}
 	}
 	return ""
 }
 
-// template 按语言与分节取模板，缺键时用默认语言兜底。
-func (t *Translator) template(language, section, key string) string {
-	return cmp.Or(lookup(t.bundles[language], section, key), lookup(t.bundles[t.fallback], section, key))
-}
-
-// lookup 从语言包中取出指定分节的模板。
-func lookup(b *bundle, section, key string) string {
-	if b == nil || b.sections == nil {
+// localize 按 "section.key" 组装消息 ID 并交给 go-i18n 渲染。
+//
+// 查找器自带默认语言回退，因此缺键会顺次落到默认语言；两者都缺时 Localize 返回错误，
+// 这里统一收敛为空串，保持"缺键返回空"的既有契约。
+func (t *Translator) localize(lang, section, key string, data map[string]string) string {
+	if section == "" || key == "" {
 		return ""
 	}
-	if sec, ok := b.sections[section]; ok {
-		return sec[key]
+	if data == nil {
+		data = map[string]string{}
 	}
-	return ""
+
+	rendered, err := t.localizer(lang).Localize(&goi18n.LocalizeConfig{
+		MessageID:      section + "." + key,
+		TemplateData:   data,
+		TemplateParser: messageParser,
+	})
+	if err != nil {
+		return ""
+	}
+	return rendered
 }
 
-// render 替换模板中的 {{.Key}} 占位符。
-func render(tpl string, vars map[string]string) string {
-	if tpl == "" || len(vars) == 0 {
-		return tpl
+// localizer 返回指定语言的查找器；未知语言按需构造且不缓存，避免缓存无界增长。
+func (t *Translator) localizer(lang string) *goi18n.Localizer {
+	if l, ok := t.localizers[lang]; ok {
+		return l
 	}
-
-	pairs := make([]string, 0, len(vars)*2)
-	for key, value := range vars {
-		pairs = append(pairs, "{{."+key+"}}", value)
-	}
-	return strings.NewReplacer(pairs...).Replace(tpl)
+	return newLocalizer(t.bundle, lang, t.fallback)
 }
 
 // humanize 把字段路径的最后一段（camelCase 或 snake_case）转成空格分隔的小写短语。

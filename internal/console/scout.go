@@ -14,7 +14,7 @@ import (
 	"cgin/pkg/search"
 )
 
-// ScoutImportOptions 封装 scout:import 命令的参数与依赖容器 (SRP & DIP)。
+// ScoutImportOptions 封装 scout:import 命令的参数与依赖容器。
 type ScoutImportOptions struct {
 	Model     string
 	All       bool
@@ -53,20 +53,28 @@ func (o *ScoutImportOptions) Validate() error {
 	return nil
 }
 
+// openSearchClient 从 Factory 读取配置并构建搜索引擎客户端；引擎未启用时直接报错。
+func openSearchClient(f Factory) (search.Client, error) {
+	cfg, err := f.Config()
+	if err != nil {
+		return nil, err
+	}
+	if !cfg.Search.Enabled() {
+		return nil, errors.New("search engine is disabled (check SCOUT_DRIVER and MEILISEARCH_HOST)")
+	}
+
+	client, err := search.New(cfg.Search)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize search client: %w", err)
+	}
+	return client, nil
+}
+
 // Run 执行搜索引擎文档批量导入。
 func (o *ScoutImportOptions) Run(ctx context.Context) error {
-	cfg, err := o.Factory.Config()
+	searchClient, err := openSearchClient(o.Factory)
 	if err != nil {
 		return err
-	}
-
-	if !cfg.Search.Enabled() {
-		return errors.New("search engine is disabled (check SCOUT_DRIVER and MEILISEARCH_HOST)")
-	}
-
-	searchClient, err := search.New(cfg.Search)
-	if err != nil {
-		return fmt.Errorf("failed to initialize search client: %w", err)
 	}
 
 	db, err := o.Factory.DB(ctx)
@@ -121,7 +129,7 @@ func newScoutImportCmd(f Factory) *cobra.Command {
 	return cmd
 }
 
-// ScoutFlushOptions 封装 scout:flush 命令的参数与依赖容器 (SRP & DIP)。
+// ScoutFlushOptions 封装 scout:flush 命令的参数与依赖容器。
 type ScoutFlushOptions struct {
 	Model   string
 	Force   bool
@@ -153,13 +161,9 @@ func (o *ScoutFlushOptions) Validate() error {
 
 // Run 清空指定可搜索模型的全文检索索引文档。
 func (o *ScoutFlushOptions) Run(ctx context.Context) error {
-	cfg, err := o.Factory.Config()
+	searchClient, err := openSearchClient(o.Factory)
 	if err != nil {
 		return err
-	}
-
-	if !cfg.Search.Enabled() {
-		return errors.New("search engine is disabled (check SCOUT_DRIVER and MEILISEARCH_HOST)")
 	}
 
 	desc, ok := index.Catalog(nil).Lookup(o.Model)
@@ -181,11 +185,6 @@ func (o *ScoutFlushOptions) Run(ctx context.Context) error {
 			core.WarnTo(streams.Out, "Scout flush operation cancelled.")
 			return core.ErrCanceled
 		}
-	}
-
-	searchClient, err := search.New(cfg.Search)
-	if err != nil {
-		return fmt.Errorf("failed to initialize search client: %w", err)
 	}
 
 	idx := searchClient.Index(desc.IndexName)

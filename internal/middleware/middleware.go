@@ -1,11 +1,7 @@
-// Package middleware 提供业务路由/路由组级 HTTP 中间件。
+// Package middleware 提供按路由/路由组挂载的业务中间件：
+// Throttle（滑动窗口限流）、Auth（JWT 守卫，支持多守卫顺序回退）、Can（Casbin 资源级鉴权）。
 //
-// 包含按需挂载于特定业务路由或 Group 的端点保护与控制中间件：
-//   - Throttle: 类似 Laravel 的平滑滑动窗口限流（支持字符串表达式 "60,1"、命名限流器、预设档位 Tier 及强类型参数）
-//   - Auth: JWT 认证守卫（支持 "client"、"admin" 等多守卫策略与多 Guard 顺序回退）
-//   - Can: 基于 Casbin RBAC 的细粒度资源与操作权限校验
-//
-// 全局传输层中间件请参见子包 cgin/internal/middleware/global。
+// 全局传输层中间件见子包 cgin/internal/middleware/global。
 package middleware
 
 import (

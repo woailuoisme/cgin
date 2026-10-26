@@ -33,6 +33,7 @@ func TestCORS_OptionsPreflightShortCircuit(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodOptions, "/api/test", nil)
+	req.Host = "api.cgin.com"
 	req.Header.Set("Origin", "https://example.com")
 	req.Header.Set("Access-Control-Request-Method", "POST")
 	w := httptest.NewRecorder()

@@ -14,13 +14,14 @@ import (
 	"cgin/internal/config"
 )
 
-// setRequiredEnv 提供三个必填项，使断言只围绕被测的那一条失败原因展开。
+// setRequiredEnv 提供全部必填项，使断言只围绕被测的那一条失败原因展开。
 // 它们走的是进程环境，因此真实 shell 里的取值都会被盖掉。
 func setRequiredEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("DB_URL", "postgres://app:secret@127.0.0.1:5432/cgin?sslmode=disable")
 	t.Setenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 	t.Setenv("JWT_SECRET", strings.Repeat("s", 32))
+	t.Setenv("SESSION_SECRET", strings.Repeat("k", 32))
 }
 
 // unsetEnv 真正摘掉这些变量，用例结束后还原。

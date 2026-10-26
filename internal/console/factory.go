@@ -25,7 +25,7 @@ func (e *ValidationError) Error() string {
 	return e.Message
 }
 
-// Factory 统筹控制台命令执行所需的外部依赖与基础设施 (DIP & IoC)。
+// Factory 按需提供控制台命令所需的外部依赖与基础设施（懒加载）。
 // 命令通过依赖工厂按需获取服务，实现对底层物理依赖（配置、数据库连接、终端流、交互 Prompt）的彻底解耦。
 type Factory interface {
 	IOStreams() *core.IOStreams

@@ -16,10 +16,8 @@ const maxBodyBytes = 1 << 20
 // defaultUploadBodyBytes multipart 上传请求的兜底上限（32 MiB，与 gin 的默认内存阈值一致）。
 const defaultUploadBodyBytes = 32 << 20
 
-// BodyLimit 【全局中间件】限制请求体大小上限，防止超大请求耗尽内存。
-//
-// multipart/form-data 上传按 UploadMaxBody（媒体配额）单独放行，
-// 否则 20MB 的媒体上传会被 1 MiB 的普通请求上限提前拦掉。
+// BodyLimit 限制请求体大小；multipart 上传按 UploadMaxBody 单独放行，否则媒体上传会被普通上限提前拦掉。
+// 官方无请求体配额中间件，属项目自建。
 func (m *Middleware) BodyLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if c.Request.Body == nil {
@@ -37,12 +35,10 @@ func (m *Middleware) BodyLimit() gin.HandlerFunc {
 	}
 }
 
-// EnforceJSONContentType 【全局/路由中间件】对携带实体的变更请求（POST/PUT/PATCH）严格校验 Content-Type 为 application/json。
-// 旁路放行规则：
-// 1. 无 Body 或 Content-Length 为 0 的空载荷请求；
-// 2. 文件或流式上传（multipart/form-data、application/octet-stream）；
-// 3. 渠道外部 Webhook 异步回调（如支付网关携带 application/x-www-form-urlencoded）。
-// 注意：分块传输（Transfer-Encoding: chunked，Content-Length 为 -1）按安全防御优先原则同样进入类型校验，杜绝非标注入。
+// EnforceJSONContentType 要求 POST/PUT/PATCH 的实体载荷为 application/json。
+//
+// 旁路放行空载荷、文件/二进制上传与表单型 Webhook（如支付网关回调）；
+// 分块传输（Content-Length 为 -1）仍进入校验，避免非标注入。官方无对应实现，属项目自建。
 func (m *Middleware) EnforceJSONContentType() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		switch c.Request.Method {

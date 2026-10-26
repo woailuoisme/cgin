@@ -115,7 +115,7 @@ func TestTimeoutMiddleware_PartialResponseWithoutLogger(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	require.NotPanics(t, func() { router.ServeHTTP(w, req) })
-	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, http.StatusGatewayTimeout, w.Code)
 }
 
 // TestTimeoutMiddleware_StreamingBypass 验证 WebSocket 升级与 SSE 流式请求自动豁免固定超时。

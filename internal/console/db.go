@@ -14,7 +14,7 @@ import (
 	"cgin/internal/database/seeders"
 )
 
-// DBMigrateOptions 封装 db:migrate 命令的参数与依赖容器 (SRP & DIP)。
+// DBMigrateOptions 封装 db:migrate 命令的参数与依赖容器。
 type DBMigrateOptions struct {
 	noopComplete
 
@@ -59,7 +59,7 @@ func newDBMigrateCmd(f Factory) *cobra.Command {
 	return cmd
 }
 
-// DBSeedOptions 封装 db:seed 命令的参数与依赖容器 (SRP & DIP)。
+// DBSeedOptions 封装 db:seed 命令的参数与依赖容器。
 type DBSeedOptions struct {
 	noopComplete
 
@@ -129,7 +129,7 @@ func newDBSeedCmd(f Factory) *cobra.Command {
 	return cmd
 }
 
-// DBFreshOptions 封装 db:fresh 命令的参数与依赖容器 (SRP & DIP)。
+// DBFreshOptions 封装 db:fresh 命令的参数与依赖容器。
 type DBFreshOptions struct {
 	noopComplete
 	noopValidate

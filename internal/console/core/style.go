@@ -22,36 +22,32 @@ var (
 	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 )
 
-// TitleTo 渲染并打印一行标题至指定输出流。
+// orStdout 返回非空输出流，nil 时回退标准输出。
+func orStdout(w io.Writer) io.Writer {
+	if w == nil {
+		return os.Stdout
+	}
+	return w
+}
+
+// TitleTo 渲染并打印一行标题。
 func TitleTo(w io.Writer, text string) {
-	if w == nil {
-		w = os.Stdout
-	}
-	_, _ = fmt.Fprintln(w, titleStyle.Render("• "+text))
+	_, _ = fmt.Fprintln(orStdout(w), titleStyle.Render("• "+text))
 }
 
-// SuccessTo 渲染一行成功提示至指定输出流。
+// SuccessTo 渲染一行成功提示。
 func SuccessTo(w io.Writer, format string, args ...any) {
-	if w == nil {
-		w = os.Stdout
-	}
-	_, _ = fmt.Fprintln(w, successStyle.Render("✓ "+fmt.Sprintf(format, args...)))
+	_, _ = fmt.Fprintln(orStdout(w), successStyle.Render("✓ "+fmt.Sprintf(format, args...)))
 }
 
-// WarnTo 渲染一行告警提示至指定输出流。
+// WarnTo 渲染一行告警提示。
 func WarnTo(w io.Writer, format string, args ...any) {
-	if w == nil {
-		w = os.Stdout
-	}
-	_, _ = fmt.Fprintln(w, warnStyle.Render("! "+fmt.Sprintf(format, args...)))
+	_, _ = fmt.Fprintln(orStdout(w), warnStyle.Render("! "+fmt.Sprintf(format, args...)))
 }
 
-// InfoTo 渲染一行常规信息提示至指定输出流。
+// InfoTo 渲染一行常规信息。
 func InfoTo(w io.Writer, format string, args ...any) {
-	if w == nil {
-		w = os.Stdout
-	}
-	_, _ = fmt.Fprintln(w, fmt.Sprintf(format, args...))
+	_, _ = fmt.Fprintln(orStdout(w), fmt.Sprintf(format, args...))
 }
 
 // ErrCanceled 表示用户在交互式确认中主动放弃了操作。

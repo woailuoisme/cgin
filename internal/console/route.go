@@ -29,7 +29,7 @@ type RouteEntry struct {
 	RawHandler string `json:"rawHandler"`
 }
 
-// RouteListOptions 封装 route:list 命令的参数与依赖容器 (SRP & DIP)。
+// RouteListOptions 封装 route:list 命令的参数与依赖容器。
 type RouteListOptions struct {
 	noopComplete
 
