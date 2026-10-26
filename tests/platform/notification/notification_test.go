@@ -12,16 +12,16 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/cache"
-	"cgin/internal/platform/notification"
-	"cgin/internal/platform/notification/async"
-	"cgin/internal/platform/notification/channel/chat"
-	"cgin/internal/platform/notification/channel/mail"
-	"cgin/internal/platform/notification/channel/realtime"
-	"cgin/internal/platform/notification/channel/sms"
-	"cgin/internal/platform/notification/contract"
-	"cgin/internal/platform/queue"
-	"cgin/internal/shared/notification/database"
+	"cgin/pkg/cache"
+	"cgin/pkg/notification"
+	"cgin/pkg/notification/async"
+	"cgin/pkg/notification/channel/chat"
+	"cgin/pkg/notification/channel/mail"
+	"cgin/pkg/notification/channel/realtime"
+	"cgin/pkg/notification/channel/sms"
+	"cgin/pkg/notification/contract"
+	"cgin/pkg/queue"
+	"cgin/shared/notification/database"
 )
 
 // mockNotifiable 模拟实现 Notifiable 契约的测试用户实体。

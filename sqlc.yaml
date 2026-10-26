@@ -1,11 +1,11 @@
 version: "2"
 
-# sqlc 与 Atlas 共用同一份声明式 DDL 事实源：internal/database/schemas。
-# 查询只写在 internal/database/queries，生成物落在 internal/database/sqlc 且禁止手改。
+# sqlc 与 Atlas 共用同一份声明式 DDL 事实源：database/schemas。
+# 查询只写在 database/queries，生成物落在 internal/database/sqlc 且禁止手改。
 sql:
   - engine: "postgresql"
-    schema: "internal/database/schemas"
-    queries: "internal/database/queries"
+    schema: "database/schemas"
+    queries: "database/queries"
     gen:
       go:
         package: "sqlc"
@@ -43,9 +43,9 @@ sql:
           # 角色与账号状态直接复用领域枚举。
           - column: 'user.role'
             go_type:
-              import: "cgin/internal/shared/enums"
+              import: "cgin/shared/enums"
               type: "Role"
           - column: 'user.status'
             go_type:
-              import: "cgin/internal/shared/enums"
+              import: "cgin/shared/enums"
               type: "Status"

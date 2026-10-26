@@ -91,7 +91,7 @@ check: fmt-check lint sqlc-diff test
 # 完整 CI 门禁
 ci: fmt-check lint sqlc-diff test-all
 
-# 由 schemas/ + queries/ 离线生成类型安全数据访问层（输出 internal/database/sqlc）
+# 由 database/schemas + database/queries 离线生成类型安全数据访问层（输出 internal/database/sqlc）
 sqlc:
     sqlc generate
 
@@ -113,13 +113,13 @@ migrate:
 migrate-test:
     atlas migrate apply --env test
 
-# 依 schemas/ 声明式 DDL 生成版本迁移
+# 依 database/schemas 声明式 DDL 生成版本迁移
 migrate-diff name:
     atlas migrate diff {{name}} --env local
 
 # 重算迁移哈希校验链
 migrate-hash:
-    atlas migrate hash --dir file://migrations
+    atlas migrate hash --dir file://database/migrations
 
 # 幂等注入首个管理员
 seed:
@@ -148,11 +148,14 @@ db:
 alias db-shell := db
 
 
-# 生成前后台两套 OpenAPI 文档；客户端只收 client/*+realtime，管理端只收 admin/*，
-# payment 是渠道回调端点，两套都不收录（AGENTS §5.2）
+# 生成前后台两套 OpenAPI 文档。
+# 分层扁平化后同层包混装两侧端点，无法再靠目录切分，改为按 Swagger Tag 收敛收录范围（AGENTS §5.2）：
+#   客户端规范 = 认证中心 + 个人资料 + 实时通信，并排除 admin 子目录减少解析开销；
+#   管理端规范 = 用户管理 + 管理员认证。
+# 支付中心（渠道回调）两套都不收录。
 docs:
-    swag init -d "$(find cmd internal -type f -name '*.go' ! -path '*/admin/*' ! -path '*/admin' ! -path '*/features/payment*' -exec dirname {} + | sort -u | paste -sd, -)" -g main.go -o internal/shared/apidocs --parseInternal --outputTypes json
-    swag init -d "$(find cmd internal -type f -name '*.go' ! -path '*/features/client*' ! -path '*/features/realtime*' ! -path '*/features/payment*' -exec dirname {} + | sort -u | paste -sd, -)" -g admin_doc.go -o internal/shared/apidocs/admin_tmp --parseInternal --outputTypes json
-    mv internal/shared/apidocs/admin_tmp/swagger.json internal/shared/apidocs/admin_swagger.json
-    rm -rf internal/shared/apidocs/admin_tmp
+    swag init -d "$(find cmd internal pkg shared -type f -name '*.go' -exec dirname {} + | sort -u | paste -sd, -)" -g main.go -o shared/apidocs --parseInternal --outputTypes json --exclude internal/handler/admin,internal/dto/admin,internal/service/admin,internal/routes/admin -t "认证中心,个人资料,实时通信"
+    swag init -d "$(find cmd internal pkg shared -type f -name '*.go' -exec dirname {} + | sort -u | paste -sd, -)" -g admin_doc.go -o shared/apidocs/admin_tmp --parseInternal --outputTypes json -t "用户管理,管理员认证"
+    mv shared/apidocs/admin_tmp/swagger.json shared/apidocs/admin_swagger.json
+    rm -rf shared/apidocs/admin_tmp
 

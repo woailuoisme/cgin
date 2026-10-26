@@ -18,12 +18,12 @@ import (
 	"cgin/internal/database/sqlc"
 	"cgin/internal/middleware"
 	"cgin/internal/middleware/global"
-	"cgin/internal/platform/authentication"
-	"cgin/internal/platform/authorization"
-	"cgin/internal/platform/cache"
-	"cgin/internal/platform/errs"
-	"cgin/internal/shared/enums"
-	"cgin/internal/shared/user"
+	"cgin/pkg/authentication"
+	"cgin/pkg/authorization"
+	"cgin/pkg/cache"
+	"cgin/pkg/errs"
+	"cgin/shared/enums"
+	"cgin/shared/user"
 )
 
 type memAuthBlacklistStore struct {

@@ -6,12 +6,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 
-	"cgin/internal/platform/authentication"
-	"cgin/internal/platform/cache"
-	"cgin/internal/platform/errs"
-	"cgin/internal/platform/logger"
+	"cgin/pkg/authentication"
+	"cgin/pkg/cache"
+	"cgin/pkg/errs"
+	"cgin/pkg/logger"
 )
 
 // Tier 定义业务限流预设档位。
@@ -127,7 +126,7 @@ func ThrottleWithStore(store RateLimiterStore, limit int, window time.Duration, 
 		currCount, err := store.Increment(c.Request.Context(), key, 2*window)
 		if err != nil {
 			// 计数器故障时降级放行并记录错误。
-			logger.FromContext(c.Request.Context()).Error("throttle counter failed, request allowed", zap.Error(err))
+			logger.FromContext(c.Request.Context()).Error().Err(err).Msg("throttle counter failed, request allowed")
 			c.Next()
 			return
 		}
@@ -201,18 +200,17 @@ func writeExceededHeaders(c *gin.Context, limit int, resetAt, now int64) {
 
 // logRateLimitExceeded 记录限流拒绝的结构化审计日志。
 func logRateLimitExceeded(c *gin.Context, tier, scope string, limit int, windowSeconds, currentCount, estimatedCount int64) {
-	logger.FromContext(c.Request.Context()).Warn(
-		"rate limit exceeded",
-		zap.String("tier", tier),
-		zap.String("scope", scope),
-		zap.Int("limit", limit),
-		zap.Int64("window_seconds", windowSeconds),
-		zap.Int64("current_count", currentCount),
-		zap.Int64("estimated_count", estimatedCount),
-		zap.String("path", c.Request.URL.Path),
-		zap.String("method", c.Request.Method),
-		zap.String("ip", c.ClientIP()),
-	)
+	logger.FromContext(c.Request.Context()).Warn().
+		Str("tier", tier).
+		Str("scope", scope).
+		Int("limit", limit).
+		Int64("window_seconds", windowSeconds).
+		Int64("current_count", currentCount).
+		Int64("estimated_count", estimatedCount).
+		Str("path", c.Request.URL.Path).
+		Str("method", c.Request.Method).
+		Str("ip", c.ClientIP()).
+		Msg("rate limit exceeded")
 }
 
 // limitFor 按档位读取配额，未知档位回退至未认证配额。

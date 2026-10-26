@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/realtime"
+	"cgin/pkg/realtime"
 )
 
 const testSecret = "centrifugo-test-secret-key-12345"

@@ -17,7 +17,7 @@ import (
 
 	"cgin/internal/middleware/global"
 	"cgin/internal/middleware/global/idempotency"
-	"cgin/internal/platform/errs"
+	"cgin/pkg/errs"
 )
 
 // testIdempotencyKey 是符合默认 36 字符校验的幂等键。

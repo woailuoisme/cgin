@@ -84,6 +84,8 @@ go.work.sum
 # ------------------------------------------
 /tmp/
 .temp/
+# just docs 生成管理端规范时的中间目录，中断时可能残留
+shared/apidocs/admin_tmp/
 .cache/
 .gocache/
 .gopath/

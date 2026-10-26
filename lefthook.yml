@@ -15,12 +15,12 @@ pre-commit:
       run: just lint
 
     - name: migrate-hash
-      glob: "migrations/*.sql"
+      glob: "database/migrations/*.sql"
       run: just migrate-hash
       stage_fixed: true
 
     - name: docs
-      glob: "{cmd/api/**/*.go,internal/features/**/*.go,internal/shared/**/*.go}"
+      glob: "{cmd/api/**/*.go,internal/dto/**/*.go,internal/handler/**/*.go,internal/routes/**/*.go,pkg/**/*.go,shared/**/*.go}"
       run: just docs
       stage_fixed: true
 

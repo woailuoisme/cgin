@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"cgin/internal/console/core"
-	"cgin/internal/platform/resilience"
+	"cgin/pkg/resilience"
 )
 
 // 预设官方源与国内高可用加速镜像源列表。

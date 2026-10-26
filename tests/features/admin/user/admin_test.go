@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	adminuser "cgin/internal/features/admin/user"
-	"cgin/internal/shared/user"
+	admindto "cgin/internal/dto/admin"
+	"cgin/shared/user"
 )
 
 // api.md 6.1 规定的分页默认值与上限。
@@ -52,26 +52,26 @@ func TestNormaliseSortUsesWhitelist(t *testing.T) {
 // TestPaginationContract 校验 api.md 6.1 的分页契约（默认值、上限与越界收敛）由服务层真实承载。
 func TestPaginationContract(t *testing.T) {
 	// 省略全部字段：收敛到默认值。
-	page, pageSize := adminuser.NormalisePagination(0, 0)
+	page, pageSize := admindto.NormalisePagination(0, 0)
 	assert.Equal(t, wantDefaultPage, page)
 	assert.Equal(t, wantDefaultPageSize, pageSize)
 
 	// 越界取值：page 抬到下限，pageSize 压到上限。
-	page, pageSize = adminuser.NormalisePagination(-5, 1000)
+	page, pageSize = admindto.NormalisePagination(-5, 1000)
 	assert.Equal(t, wantDefaultPage, page)
 	assert.Equal(t, wantMaxPageSize, pageSize)
 
 	// 超大页码必须收敛，否则 (page-1)*pageSize 会溢出为负值。
-	page, _ = adminuser.NormalisePagination(math.MaxInt64, wantDefaultPageSize)
+	page, _ = admindto.NormalisePagination(math.MaxInt64, wantDefaultPageSize)
 	assert.Equal(t, wantMaxPage, page)
 
 	// 正常取值原样透传。
-	page, pageSize = adminuser.NormalisePagination(3, 50)
+	page, pageSize = admindto.NormalisePagination(3, 50)
 	assert.Equal(t, 3, page)
 	assert.Equal(t, 50, pageSize)
 
 	// 请求结构体允许省略分页字段，交由服务层收敛。
-	var query adminuser.ListUsersQueryParams
+	var query admindto.ListUsersQueryParams
 	require.NoError(t, json.Unmarshal([]byte(`{}`), &query))
 	assert.Zero(t, query.Page)
 	assert.Zero(t, query.PageSize)
@@ -79,7 +79,7 @@ func TestPaginationContract(t *testing.T) {
 
 // TestListUsersQueryAcceptsCompoundSort 校验查询参数结构体允许复合排序表达式。
 func TestListUsersQueryAcceptsCompoundSort(t *testing.T) {
-	var query adminuser.ListUsersQueryParams
+	var query admindto.ListUsersQueryParams
 	require.NoError(t, json.Unmarshal([]byte(`{"sort":"-createdAt,email"}`), &query))
 	assert.Equal(t, "-createdAt,email", query.Sort)
 	key, desc := user.NormaliseSort(query.Sort)

@@ -11,11 +11,11 @@ import (
 
 	"cgin/internal/config"
 	"cgin/internal/database/sqlc"
-	"cgin/internal/platform/authentication"
-	"cgin/internal/platform/cache"
-	"cgin/internal/platform/errs"
-	"cgin/internal/shared/enums"
-	"cgin/internal/shared/user"
+	"cgin/pkg/authentication"
+	"cgin/pkg/cache"
+	"cgin/pkg/errs"
+	"cgin/shared/enums"
+	"cgin/shared/user"
 )
 
 const testSecret = "0123456789abcdef0123456789abcdef"

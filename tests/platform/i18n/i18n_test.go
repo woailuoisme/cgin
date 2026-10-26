@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/i18n"
+	"cgin/pkg/i18n"
 )
 
 // newTranslator 装载内嵌语言包，默认语言为 en。

@@ -175,17 +175,17 @@ func (o *MakeCRUDOptions) runCreate() error {
 	core.SuccessTo(streams.Out, "Scaffolding finished: %d created, %d overwritten, %d skipped.", created, overwritten, skipped)
 
 	core.InfoTo(streams.Out, "\nNext steps:")
-	registerFn := "RegisterRoutes"
-	if opts.IsAdmin {
-		registerFn = "RegisterAdminRoutes"
-	}
-	core.InfoTo(streams.Out, "  1. Register routes in internal/bootstrap/engine.go:")
+	core.InfoTo(streams.Out, "  1. Generate the query set first (the module cannot compile before this):")
+	core.InfoTo(streams.Out, "     rtk just sqlc")
+	core.InfoTo(streams.Out, "  2. Register routes in internal/bootstrap/engine.go:")
 	data := core.BuildTemplateData(opts)
-	core.InfoTo(streams.Out, "     %s.%s(v1, %sHandler, mw)", data.PackageName, registerFn, data.CamelName)
-	core.InfoTo(streams.Out, "  2. Verify and format code:")
+	core.InfoTo(streams.Out, "     %s.%s(v1, %sHandler, mw)", data.RoutesPackage, data.RoutesFunc, data.CamelName)
+	core.InfoTo(streams.Out, "  3. Verify and format code:")
 	core.InfoTo(streams.Out, "     rtk just check")
-	core.InfoTo(streams.Out, "  3. Regenerate Swagger/OpenAPI documentation:")
+	core.InfoTo(streams.Out, "  4. Regenerate Swagger/OpenAPI documentation:")
 	core.InfoTo(streams.Out, "     rtk just docs")
+	core.InfoTo(streams.Out, "\nNote: `-d` runs the CLI from source, so the module must compile first.")
+	core.InfoTo(streams.Out, "      Run `rtk just sqlc` first, or revert the new files manually (git checkout / git clean).")
 
 	return nil
 }
@@ -261,16 +261,18 @@ func newMakeCRUDCmd(f Factory) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "make:crud [name]",
-		Short: "Generate a complete CRUD feature slice (or delete with -d)",
-		Long: `Generate or delete a complete production-grade CRUD feature slice following the Domain-First architecture.
+		Short: "Generate a complete CRUD module across layers (or delete with -d)",
+		Long: `Generate or delete a complete production-grade CRUD feature slice following the Layer-First architecture (routes → handler → service → dto).
 
-Generates / Removes:
-  - internal/features/[admin|client]/<name>/handler.go
-  - internal/features/[admin|client]/<name>/routes.go
-  - internal/features/[admin|client]/<name>/service.go
-  - internal/features/[admin|client]/<name>/dto.go
-  - internal/database/models/<name>.go
-  - internal/features/[admin|client]/<name>/ (if directory is empty on delete)
+Generates / Removes (admin scope lands in each layer's admin/ subdirectory):
+  - internal/handler/<module>.go
+  - internal/routes/<module>.go
+  - internal/service/<module>.go
+  - internal/dto/<module>.go
+  - database/schemas/<plural>.sql + database/queries/<plural>.sql
+
+Deletion requires a compilable module: run 'just sqlc' after creating a module
+before using -d, otherwise the CLI itself cannot be built from source.
 
 Examples:
   cgin make:crud article

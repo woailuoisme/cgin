@@ -23,9 +23,8 @@ import (
 	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 
-	"cgin/internal/platform/errs"
+	"cgin/pkg/errs"
 )
 
 // api.md 5.2 明文规定的两条文案，不得随意改动。
@@ -343,7 +342,7 @@ func repoRootCandidates() []string {
 // 这两处一旦漂移，客户端按文档分支就会匹配不上真实响应（历史上正是这么错的：
 // codes.go 写小写、api.md 写大写，同一个码两种拼法）。
 func TestCodeContractMatchesAPIDocs(t *testing.T) {
-	source := repoFile(t, "internal/platform/errs/codes.go")
+	source := repoFile(t, "pkg/errs/codes.go")
 
 	declared := make([]string, 0, 64)
 	for _, m := range codesDeclPattern.FindAllStringSubmatch(string(source), -1) {
@@ -452,16 +451,10 @@ func TestRender_Sanitization(t *testing.T) {
 	assert.Equal(t, string(errs.CodeBadRequest), resp.Code)
 }
 
-// TestOopsFields 验证 oops 绑定的上下文能被自动解包为 Zap 字段，且敏感键值被安全脱敏。
+// TestOopsFields 验证 oops 绑定的上下文能被自动解包为结构化字段，且敏感键值被安全脱敏。
 func TestOopsFields(t *testing.T) {
-	extractValue := func(f zap.Field) any {
-		if f.String != "" {
-			return f.String
-		}
-		if f.Integer != 0 {
-			return int(f.Integer)
-		}
-		return f.Interface
+	extractValue := func(f errs.Field) any {
+		return f.Value
 	}
 
 	t.Run("非 oops 错误返回 nil", func(t *testing.T) {

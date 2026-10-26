@@ -7,14 +7,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	clientauth "cgin/internal/features/client/auth"
-	"cgin/internal/platform/notification"
+	"cgin/internal/service"
+	"cgin/pkg/notification"
 )
 
 func TestSignupVerificationNotification(t *testing.T) {
 	t.Parallel()
 
-	n := clientauth.NewSignupVerificationNotification("Alice", "123456")
+	n := service.NewSignupVerificationNotification("Alice", "123456")
 	assert.Equal(t, []string{"mail"}, n.Via(nil))
 	assert.Equal(t, "Verify your email", n.Subject())
 
@@ -31,7 +31,7 @@ func TestSignupVerificationNotification(t *testing.T) {
 func TestPasswordResetNotification(t *testing.T) {
 	t.Parallel()
 
-	n := clientauth.NewPasswordResetNotification("Bob", "654321")
+	n := service.NewPasswordResetNotification("Bob", "654321")
 	assert.Equal(t, []string{"mail"}, n.Via(nil))
 	assert.Equal(t, "Password reset verification code", n.Subject())
 
@@ -47,7 +47,7 @@ func TestPasswordResetNotification(t *testing.T) {
 func TestPhoneOTPNotification(t *testing.T) {
 	t.Parallel()
 
-	n := clientauth.NewPhoneOTPNotification("+8613800138000", "888888")
+	n := service.NewPhoneOTPNotification("+8613800138000", "888888")
 	assert.Equal(t, []string{"sms"}, n.Via(nil))
 
 	smsObj := n.ToSMS(nil)
@@ -63,7 +63,7 @@ func TestPhoneOTPNotification(t *testing.T) {
 func TestNotificationTimeouts(t *testing.T) {
 	t.Parallel()
 
-	n := clientauth.NewSignupVerificationNotification("", "999999")
+	n := service.NewSignupVerificationNotification("", "999999")
 	n.ExpiresIn = 5 * time.Minute
 
 	_, data := n.Template()

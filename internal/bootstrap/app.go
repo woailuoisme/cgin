@@ -5,16 +5,16 @@ import (
 	"context"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 
 	"cgin/internal/config"
 	"cgin/internal/database"
-	"cgin/internal/platform/cache"
-	"cgin/internal/platform/eventbus"
-	"cgin/internal/platform/mailer"
-	"cgin/internal/platform/notification"
-	"cgin/internal/platform/queue"
-	"cgin/internal/platform/telemetry"
+	"cgin/pkg/cache"
+	"cgin/pkg/eventbus"
+	"cgin/pkg/mailer"
+	"cgin/pkg/notification"
+	"cgin/pkg/queue"
+	"cgin/pkg/telemetry"
 )
 
 // Application 聚合装配完成的系统依赖与 HTTP 引擎。
@@ -23,7 +23,7 @@ import (
 // 已由各自的调用方持有，不需要在此额外挂一个只写不读的字段。
 type Application struct {
 	cfg          *config.Config
-	logger       *zap.Logger
+	logger       *zerolog.Logger
 	db           *database.DB
 	cache        *cache.Client
 	locker       cache.Locker
@@ -70,12 +70,12 @@ func (a *Application) Close() {
 		a.closeResource("database connection", a.db.Close)
 	}
 	if err := telemetry.Shutdown(context.Background()); err != nil {
-		a.logger.Warn("failed to shutdown telemetry", zap.Error(err))
+		a.logger.Warn().Err(err).Msg("failed to shutdown telemetry")
 	}
 }
 
 func (a *Application) closeResource(name string, closeFn func() error) {
 	if err := closeFn(); err != nil {
-		a.logger.Warn("failed to close "+name, zap.Error(err))
+		a.logger.Warn().Err(err).Msg("failed to close " + name)
 	}
 }

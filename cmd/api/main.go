@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"os"
 
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 
 	"cgin/internal/console"
-	"cgin/internal/platform/logger"
+	"cgin/pkg/logger"
 )
 
 // 构建元信息，通过 -ldflags "-X main.version=..." 注入。
@@ -56,11 +56,10 @@ func main() {
 
 		log := logger.Default()
 		// 通过结构化日志记录致命退出事件（生产 JSON 模式下供 APM/Loki 搜集）
-		log.Error("process terminated with error", zap.Error(err))
-		_ = log.Sync()
+		log.Error().Err(err).Msg("process terminated with error")
 
 		// 在开发控制台终端下输出高亮错误及 oops 调用堆栈，方便开发者直观排查
-		if log.Core().Enabled(zap.DebugLevel) {
+		if log.GetLevel() <= zerolog.DebugLevel {
 			_, _ = fmt.Fprintf(os.Stderr, "\n\033[1;31m[FATAL ERROR]\033[0m %+v\n\n", err)
 		} else {
 			_, _ = fmt.Fprintf(os.Stderr, "cgin: %v\n", err)

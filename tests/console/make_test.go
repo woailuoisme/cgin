@@ -113,33 +113,42 @@ func TestGenerateCRUD_Execution(t *testing.T) {
 	}
 
 	// 2. 校验特定关键代码模式
-	dtoPath := filepath.Join(tempDir, "internal", "features", "admin", "article", "dto.go")
+	dtoPath := filepath.Join(tempDir, "internal", "dto", "admin", "article.go")
 	dtoContent, err := os.ReadFile(dtoPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(dtoContent), "ArticlePathParams")
 	assert.Contains(t, string(dtoContent), "ListArticleQueryParams")
 	assert.Contains(t, string(dtoContent), "ArticleResource")
 
-	handlerPath := filepath.Join(tempDir, "internal", "features", "admin", "article", "handler.go")
+	// service 层跨包调用投影函数时必须带包名、不能再带一次模块前缀，
+	// 出现 admindto.Toadmindto 即表明 service.tmpl 的类型插值出错。
+	servicePath := filepath.Join(tempDir, "internal", "service", "admin", "article.go")
+	serviceContent, err := os.ReadFile(servicePath)
+	require.NoError(t, err)
+	assert.Contains(t, string(serviceContent), "package adminservice")
+	assert.Contains(t, string(serviceContent), "admindto.ToArticleResource(")
+	assert.NotContains(t, string(serviceContent), "admindto.Toadmindto")
+
+	handlerPath := filepath.Join(tempDir, "internal", "handler", "admin", "article.go")
 	handlerContent, err := os.ReadFile(handlerPath)
 	require.NoError(t, err)
-	assert.Contains(t, string(handlerContent), "package adminarticle")
+	assert.Contains(t, string(handlerContent), "package adminhandler")
 	assert.Contains(t, string(handlerContent), "response.Paginated(c, items, meta)")
 	assert.Contains(t, string(handlerContent), "@Tags         文章管理")
 
-	routesPath := filepath.Join(tempDir, "internal", "features", "admin", "article", "routes.go")
+	routesPath := filepath.Join(tempDir, "internal", "routes", "admin", "article.go")
 	routesContent, err := os.ReadFile(routesPath)
 	require.NoError(t, err)
-	assert.Contains(t, string(routesContent), "RegisterAdminRoutes")
+	assert.Contains(t, string(routesContent), "RegisterAdminArticlesRoutes")
 	assert.Contains(t, string(routesContent), `mw.Can(authorization.Resource("articles")`)
 
-	queriesPath := filepath.Join(tempDir, "internal", "database", "queries", "articles.sql")
+	queriesPath := filepath.Join(tempDir, "database", "queries", "articles.sql")
 	queriesContent, err := os.ReadFile(queriesPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(queriesContent), "name: ListArticles :many")
 	assert.Contains(t, string(queriesContent), "sqlc.embed(a)")
 
-	schemaPath := filepath.Join(tempDir, "internal", "database", "schemas", "articles.sql")
+	schemaPath := filepath.Join(tempDir, "database", "schemas", "articles.sql")
 	schemaContent, err := os.ReadFile(schemaPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(schemaContent), "CREATE TABLE IF NOT EXISTS articles")
@@ -216,7 +225,7 @@ func TestDestroyCRUD_Execution(t *testing.T) {
 	}
 
 	// 验证文件依然存在
-	handlerPath := filepath.Join(tempDir, "internal", "features", "admin", "article", "handler.go")
+	handlerPath := filepath.Join(tempDir, "internal", "handler", "admin", "article.go")
 	_, err = os.Stat(handlerPath)
 	require.NoError(t, err)
 
@@ -237,9 +246,9 @@ func TestDestroyCRUD_Execution(t *testing.T) {
 	}
 
 	// 验证空的 feature 目录也被清理
-	featureDir := filepath.Join(tempDir, "internal", "features", "admin", "article")
+	featureDir := filepath.Join(tempDir, "internal", "handler", "admin")
 	_, statErr := os.Stat(featureDir)
-	assert.True(t, os.IsNotExist(statErr), "Feature directory should be removed: "+featureDir)
+	assert.True(t, os.IsNotExist(statErr), "Module file parent directory should be removed: "+featureDir)
 
 	// 4. 重复执行回退删除，应安全跳过（ActionSkipped）
 	destroyAgain, err := core.DestroyCRUD(opts)

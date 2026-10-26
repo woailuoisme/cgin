@@ -16,8 +16,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"cgin/internal/features/system"
-	"cgin/internal/platform/logger"
+	"cgin/internal/dto"
+	"cgin/internal/handler"
+	"cgin/internal/routes"
+	"cgin/internal/service"
+	"cgin/pkg/logger"
 )
 
 // errInternal 模拟底层驱动的真实报错：它带着目标地址与凭据，这类内容绝不能出现在响应体里。
@@ -45,7 +48,7 @@ func (s stubPinger) Ping(ctx context.Context) error {
 }
 
 // newProbe 按给定的探测结果装配探针路由，回传引擎与日志缓冲。
-func newProbe(t *testing.T, database, cache system.Pinger) (*gin.Engine, *bytes.Buffer) {
+func newProbe(t *testing.T, database, cache service.Pinger) (*gin.Engine, *bytes.Buffer) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
@@ -57,7 +60,7 @@ func newProbe(t *testing.T, database, cache system.Pinger) (*gin.Engine, *bytes.
 	)
 
 	engine := gin.New()
-	system.RegisterRoutes(engine, system.NewHandler(system.NewService(system.Deps{
+	routes.RegisterSystemRoutes(engine, handler.NewSystemHandler(service.NewSystemService(service.SystemDeps{
 		Database: database,
 		Cache:    cache,
 	}), l))
@@ -104,15 +107,15 @@ func TestReadinessAllHealthy(t *testing.T) {
 	status, body := get(t, engine, "/readyz")
 	require.Equal(t, http.StatusOK, status)
 
-	var got system.ReadinessResponse
+	var got dto.ReadinessResponse
 	require.NoError(t, json.Unmarshal([]byte(body), &got))
-	assert.Equal(t, system.StatusReady, got.Status)
-	assert.Equal(t, system.CheckHealthy, got.Checks[system.ComponentDatabase].Status)
-	assert.Equal(t, "postgres", got.Checks[system.ComponentDatabase].Driver)
-	assert.True(t, got.Checks[system.ComponentDatabase].Critical)
-	assert.Equal(t, system.CheckHealthy, got.Checks[system.ComponentCache].Status)
-	assert.Equal(t, "valkey", got.Checks[system.ComponentCache].Driver)
-	assert.False(t, got.Checks[system.ComponentCache].Critical)
+	assert.Equal(t, dto.StatusReady, got.Status)
+	assert.Equal(t, dto.CheckHealthy, got.Checks[service.ComponentDatabase].Status)
+	assert.Equal(t, "postgres", got.Checks[service.ComponentDatabase].Driver)
+	assert.True(t, got.Checks[service.ComponentDatabase].Critical)
+	assert.Equal(t, dto.CheckHealthy, got.Checks[service.ComponentCache].Status)
+	assert.Equal(t, "valkey", got.Checks[service.ComponentCache].Driver)
+	assert.False(t, got.Checks[service.ComponentCache].Critical)
 }
 
 // TestReadinessReportsUnreachableDependency 覆盖关键项失败 503 路径：状态码、状态词与逐组件明细。
@@ -122,11 +125,11 @@ func TestReadinessReportsUnreachableDependency(t *testing.T) {
 	status, body := get(t, engine, "/readyz")
 	require.Equal(t, http.StatusServiceUnavailable, status)
 
-	var got system.ReadinessResponse
+	var got dto.ReadinessResponse
 	require.NoError(t, json.Unmarshal([]byte(body), &got))
-	assert.Equal(t, system.StatusNotReady, got.Status)
-	assert.Equal(t, system.CheckUnreachable, got.Checks[system.ComponentDatabase].Status)
-	assert.Equal(t, system.CheckHealthy, got.Checks[system.ComponentCache].Status)
+	assert.Equal(t, dto.StatusNotReady, got.Status)
+	assert.Equal(t, dto.CheckUnreachable, got.Checks[service.ComponentDatabase].Status)
+	assert.Equal(t, dto.CheckHealthy, got.Checks[service.ComponentCache].Status)
 }
 
 // TestReadinessDegradedWhenNonCriticalFails 验证非关键项（如缓存）失败时降级返回 200 与 degraded 状态。
@@ -136,14 +139,14 @@ func TestReadinessDegradedWhenNonCriticalFails(t *testing.T) {
 	status, body := get(t, engine, "/readyz")
 	require.Equal(t, http.StatusOK, status)
 
-	var got system.ReadinessResponse
+	var got dto.ReadinessResponse
 	require.NoError(t, json.Unmarshal([]byte(body), &got))
-	assert.Equal(t, system.StatusDegraded, got.Status)
-	assert.Equal(t, system.CheckHealthy, got.Checks[system.ComponentDatabase].Status)
-	assert.Equal(t, system.CheckDegraded, got.Checks[system.ComponentCache].Status)
+	assert.Equal(t, dto.StatusDegraded, got.Status)
+	assert.Equal(t, dto.CheckHealthy, got.Checks[service.ComponentDatabase].Status)
+	assert.Equal(t, dto.CheckDegraded, got.Checks[service.ComponentCache].Status)
 
 	assert.Contains(t, logs.String(), "valkey cluster partition")
-	assert.Contains(t, logs.String(), system.ComponentCache)
+	assert.Contains(t, logs.String(), service.ComponentCache)
 }
 
 // TestReadinessKeepsErrorDetailOutOfResponse 是本组里最要紧的一条：底层错误常含目标地址与
@@ -159,7 +162,7 @@ func TestReadinessKeepsErrorDetailOutOfResponse(t *testing.T) {
 	}
 
 	assert.Contains(t, logs.String(), "10.0.0.5", "但细节必须留在日志里，否则无从排查")
-	assert.Contains(t, logs.String(), system.ComponentDatabase, "日志要能指出是哪个组件")
+	assert.Contains(t, logs.String(), service.ComponentDatabase, "日志要能指出是哪个组件")
 }
 
 // TestReadinessAppliesTimeout 锁定"探针必须带超时"：探测收到的 ctx 必须有截止时间，
@@ -187,7 +190,7 @@ func TestReadinessUnconfiguredDependency(t *testing.T) {
 
 	status, body := get(t, engine, "/readyz")
 	assert.Equal(t, http.StatusServiceUnavailable, status)
-	assert.Contains(t, body, system.CheckUnreachable)
+	assert.Contains(t, body, dto.CheckUnreachable)
 }
 
 // stubComponent 模拟实现 Driver 和 Enabled 契约的基础设施组件。
@@ -220,7 +223,7 @@ func TestReadinessWithExtendedComponents(t *testing.T) {
 	)
 
 	engine := gin.New()
-	svc := system.NewService(system.Deps{
+	svc := service.NewSystemService(service.SystemDeps{
 		Database: stubPinger{},
 		Cache:    stubPinger{},
 		Storage:  stubComponent{driver: "garage", enabled: true},
@@ -229,47 +232,47 @@ func TestReadinessWithExtendedComponents(t *testing.T) {
 		Imgproxy: stubComponent{driver: "imgproxy", enabled: false},
 		Mailer:   stubComponent{driver: "mailpit", enabled: true},
 	})
-	system.RegisterRoutes(engine, system.NewHandler(svc, l))
+	routes.RegisterSystemRoutes(engine, handler.NewSystemHandler(svc, l))
 
 	status, body := get(t, engine, "/readyz")
 	require.Equal(t, http.StatusOK, status)
 
-	var got system.ReadinessResponse
+	var got dto.ReadinessResponse
 	require.NoError(t, json.Unmarshal([]byte(body), &got))
-	assert.Equal(t, system.StatusReady, got.Status)
+	assert.Equal(t, dto.StatusReady, got.Status)
 
 	// storage (garage)
-	storageCheck, ok := got.Checks[system.ComponentStorage]
+	storageCheck, ok := got.Checks[service.ComponentStorage]
 	require.True(t, ok)
-	assert.Equal(t, system.CheckHealthy, storageCheck.Status)
+	assert.Equal(t, dto.CheckHealthy, storageCheck.Status)
 	assert.Equal(t, "garage", storageCheck.Driver)
 	assert.False(t, storageCheck.Critical)
 
 	// search (meilisearch)
-	searchCheck, ok := got.Checks[system.ComponentSearch]
+	searchCheck, ok := got.Checks[service.ComponentSearch]
 	require.True(t, ok)
-	assert.Equal(t, system.CheckHealthy, searchCheck.Status)
+	assert.Equal(t, dto.CheckHealthy, searchCheck.Status)
 	assert.Equal(t, "meilisearch", searchCheck.Driver)
 	assert.False(t, searchCheck.Critical)
 
 	// realtime (centrifugo, disabled)
-	realtimeCheck, ok := got.Checks[system.ComponentRealtime]
+	realtimeCheck, ok := got.Checks[service.ComponentRealtime]
 	require.True(t, ok)
-	assert.Equal(t, system.CheckDisabled, realtimeCheck.Status)
+	assert.Equal(t, dto.CheckDisabled, realtimeCheck.Status)
 	assert.Equal(t, "centrifugo", realtimeCheck.Driver)
 	assert.False(t, realtimeCheck.Critical)
 
 	// imgproxy (disabled)
-	imgproxyCheck, ok := got.Checks[system.ComponentImgproxy]
+	imgproxyCheck, ok := got.Checks[service.ComponentImgproxy]
 	require.True(t, ok)
-	assert.Equal(t, system.CheckDisabled, imgproxyCheck.Status)
+	assert.Equal(t, dto.CheckDisabled, imgproxyCheck.Status)
 	assert.Equal(t, "imgproxy", imgproxyCheck.Driver)
 	assert.False(t, imgproxyCheck.Critical)
 
 	// mailer (mailpit, enabled)
-	mailerCheck, ok := got.Checks[system.ComponentMailer]
+	mailerCheck, ok := got.Checks[service.ComponentMailer]
 	require.True(t, ok)
-	assert.Equal(t, system.CheckHealthy, mailerCheck.Status)
+	assert.Equal(t, dto.CheckHealthy, mailerCheck.Status)
 	assert.Equal(t, "mailpit", mailerCheck.Driver)
 	assert.False(t, mailerCheck.Critical)
 }
@@ -285,23 +288,23 @@ func TestReadinessDegradedWhenExtendedComponentFails(t *testing.T) {
 	)
 
 	engine := gin.New()
-	svc := system.NewService(system.Deps{
+	svc := service.NewSystemService(service.SystemDeps{
 		Database: stubPinger{},
 		Cache:    stubPinger{},
 		Storage:  stubComponent{driver: "garage", enabled: true},
 		Imgproxy: stubComponent{driver: "imgproxy", enabled: true, err: errors.New("imgproxy connection refused")},
 	})
-	system.RegisterRoutes(engine, system.NewHandler(svc, l))
+	routes.RegisterSystemRoutes(engine, handler.NewSystemHandler(svc, l))
 
 	status, body := get(t, engine, "/readyz")
 	require.Equal(t, http.StatusOK, status)
 
-	var got system.ReadinessResponse
+	var got dto.ReadinessResponse
 	require.NoError(t, json.Unmarshal([]byte(body), &got))
-	assert.Equal(t, system.StatusDegraded, got.Status)
+	assert.Equal(t, dto.StatusDegraded, got.Status)
 
-	imgCheck := got.Checks[system.ComponentImgproxy]
-	assert.Equal(t, system.CheckDegraded, imgCheck.Status)
+	imgCheck := got.Checks[service.ComponentImgproxy]
+	assert.Equal(t, dto.CheckDegraded, imgCheck.Status)
 	assert.Equal(t, "imgproxy", imgCheck.Driver)
 	assert.Contains(t, logs.String(), "imgproxy connection refused")
 }

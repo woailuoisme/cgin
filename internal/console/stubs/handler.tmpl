@@ -1,19 +1,21 @@
-package {{ .PackageName }}
+package {{ .HandlerPackage }}
 
 import (
 	"github.com/gin-gonic/gin"
 
-	"cgin/internal/platform/response"
+	"{{ .DTOImportPath }}"
+	"{{ .ServiceImportPath }}"
+	"cgin/pkg/response"
 )
 
-// Handler 负责处理 {{ .ChineseName }} 相关的 HTTP 交互。
-type Handler struct {
-	service Service
+// {{ .PascalName }}Handler 负责处理 {{ .ChineseName }} 相关的 HTTP 交互。
+type {{ .PascalName }}Handler struct {
+	svc {{ .ServicePackage }}.{{ .PascalName }}Service
 }
 
-// NewHandler 实例化 {{ .ChineseName }} 控制器。
-func NewHandler(service Service) *Handler {
-	return &Handler{service: service}
+// New{{ .PascalName }}Handler 实例化 {{ .ChineseName }} 控制器。
+func New{{ .PascalName }}Handler(svc {{ .ServicePackage }}.{{ .PascalName }}Service) *{{ .PascalName }}Handler {
+	return &{{ .PascalName }}Handler{svc: svc}
 }
 
 // List 获取{{ .ChineseName }}分页列表
@@ -22,19 +24,19 @@ func NewHandler(service Service) *Handler {
 // @Tags         {{ .TagName }}
 // @Accept       json
 // @Produce      json
-// @Param        query query List{{ .PascalName }}QueryParams false "分页查询条件"
-// @Success      200 {object} {{ .PascalName }}PageResource "查询成功并返回分页列表"
+// @Param        query query {{ .DTOPackage }}.List{{ .PascalName }}QueryParams false "分页查询条件"
+// @Success      200 {object} {{ .DTOPackage }}.{{ .PascalName }}PageResource "查询成功并返回分页列表"
 // @x-order      1
 // @Router       {{ .RoutePath }} [get]
-func (h *Handler) List(c *gin.Context) {
-	var query List{{ .PascalName }}QueryParams
+func (h *{{ .PascalName }}Handler) List(c *gin.Context) {
+	var query {{ .DTOPackage }}.List{{ .PascalName }}QueryParams
 	if err := c.ShouldBindQuery(&query); err != nil {
 		_ = c.Error(err)
 		return
 	}
 	query.Normalize()
 
-	items, meta, err := h.service.List(c.Request.Context(), query)
+	items, meta, err := h.svc.List(c.Request.Context(), query)
 	if err != nil {
 		_ = c.Error(err)
 		return
@@ -49,19 +51,19 @@ func (h *Handler) List(c *gin.Context) {
 // @Tags         {{ .TagName }}
 // @Accept       json
 // @Produce      json
-// @Param        payload body Create{{ .PascalName }}Body true "创建数据载荷"
-// @Success      201 {object} {{ .PascalName }}Resource "创建成功"
+// @Param        payload body {{ .DTOPackage }}.Create{{ .PascalName }}Body true "创建数据载荷"
+// @Success      201 {object} {{ .DTOPackage }}.{{ .PascalName }}Resource "创建成功"
 // @x-order      2
 // @Router       {{ .RoutePath }} [post]
-func (h *Handler) Create(c *gin.Context) {
-	var body Create{{ .PascalName }}Body
+func (h *{{ .PascalName }}Handler) Create(c *gin.Context) {
+	var body {{ .DTOPackage }}.Create{{ .PascalName }}Body
 	if err := c.ShouldBindJSON(&body); err != nil {
 		_ = c.Error(err)
 		return
 	}
 	body.Normalize()
 
-	res, err := h.service.Create(c.Request.Context(), body)
+	res, err := h.svc.Create(c.Request.Context(), body)
 	if err != nil {
 		_ = c.Error(err)
 		return
@@ -77,17 +79,17 @@ func (h *Handler) Create(c *gin.Context) {
 // @Accept       json
 // @Produce      json
 // @Param        id path string true "{{ .ChineseName }} ID"
-// @Success      200 {object} {{ .PascalName }}Resource "获取成功"
+// @Success      200 {object} {{ .DTOPackage }}.{{ .PascalName }}Resource "获取成功"
 // @x-order      3
 // @Router       {{ .RoutePath }}/{id} [get]
-func (h *Handler) GetByID(c *gin.Context) {
-	var pathParams {{ .PascalName }}PathParams
+func (h *{{ .PascalName }}Handler) GetByID(c *gin.Context) {
+	var pathParams {{ .DTOPackage }}.{{ .PascalName }}PathParams
 	if err := c.ShouldBindUri(&pathParams); err != nil {
 		_ = c.Error(err)
 		return
 	}
 
-	res, err := h.service.GetByID(c.Request.Context(), pathParams.ID)
+	res, err := h.svc.GetByID(c.Request.Context(), pathParams.ID)
 	if err != nil {
 		_ = c.Error(err)
 		return
@@ -103,25 +105,25 @@ func (h *Handler) GetByID(c *gin.Context) {
 // @Accept       json
 // @Produce      json
 // @Param        id path string true "{{ .ChineseName }} ID"
-// @Param        payload body Update{{ .PascalName }}Body true "更新字段载荷"
-// @Success      200 {object} {{ .PascalName }}Resource "更新成功"
+// @Param        payload body {{ .DTOPackage }}.Update{{ .PascalName }}Body true "更新字段载荷"
+// @Success      200 {object} {{ .DTOPackage }}.{{ .PascalName }}Resource "更新成功"
 // @x-order      4
 // @Router       {{ .RoutePath }}/{id} [patch]
-func (h *Handler) Update(c *gin.Context) {
-	var pathParams {{ .PascalName }}PathParams
+func (h *{{ .PascalName }}Handler) Update(c *gin.Context) {
+	var pathParams {{ .DTOPackage }}.{{ .PascalName }}PathParams
 	if err := c.ShouldBindUri(&pathParams); err != nil {
 		_ = c.Error(err)
 		return
 	}
 
-	var body Update{{ .PascalName }}Body
+	var body {{ .DTOPackage }}.Update{{ .PascalName }}Body
 	if err := c.ShouldBindJSON(&body); err != nil {
 		_ = c.Error(err)
 		return
 	}
 	body.Normalize()
 
-	res, err := h.service.Update(c.Request.Context(), pathParams.ID, body)
+	res, err := h.svc.Update(c.Request.Context(), pathParams.ID, body)
 	if err != nil {
 		_ = c.Error(err)
 		return
@@ -140,14 +142,14 @@ func (h *Handler) Update(c *gin.Context) {
 // @Success      204 "删除成功无内容返回"
 // @x-order      5
 // @Router       {{ .RoutePath }}/{id} [delete]
-func (h *Handler) Delete(c *gin.Context) {
-	var pathParams {{ .PascalName }}PathParams
+func (h *{{ .PascalName }}Handler) Delete(c *gin.Context) {
+	var pathParams {{ .DTOPackage }}.{{ .PascalName }}PathParams
 	if err := c.ShouldBindUri(&pathParams); err != nil {
 		_ = c.Error(err)
 		return
 	}
 
-	if err := h.service.Delete(c.Request.Context(), pathParams.ID); err != nil {
+	if err := h.svc.Delete(c.Request.Context(), pathParams.ID); err != nil {
 		_ = c.Error(err)
 		return
 	}

@@ -12,9 +12,9 @@ import (
 
 	"cgin/internal/config"
 	"cgin/internal/middleware/global"
-	"cgin/internal/platform/errs"
-	"cgin/internal/platform/i18n"
-	shareduser "cgin/internal/shared/user"
+	"cgin/pkg/errs"
+	"cgin/pkg/i18n"
+	shareduser "cgin/shared/user"
 )
 
 // TestValidationMessageTranslation 验证以语言包键表达的字段级校验文案，

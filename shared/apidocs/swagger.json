@@ -1,0 +1,1205 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "取值为 \"Bearer \u003caccess_token\u003e\"，含 Bearer 前缀与一个空格。",
+        "title": "cgin API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "basePath": "/v1",
+    "paths": {
+        "/auth/change-password": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "校验当前口令后写入新口令。已签发的令牌不会因此失效——这是 ADR-0001 记录在案的取舍。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证中心"
+                ],
+                "summary": "修改口令",
+                "parameters": [
+                    {
+                        "description": "当前口令与新口令",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ChangePasswordBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "修改成功，无响应体"
+                    }
+                },
+                "x-order": 9
+            }
+        },
+        "/auth/forget-password": {
+            "post": {
+                "description": "向邮箱投递一条携带一次性令牌的链接，令牌寿命为 PASSWORD_RESET_TTL。\n邮箱不存在时同样返回 200，避免通过该端点枚举账号。\n与 /auth/request-password-reset 的区别：本端点投递链接，那个端点投递 6 位验证码。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证中心"
+                ],
+                "summary": "请求密码重置链接",
+                "parameters": [
+                    {
+                        "description": "账号邮箱",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ForgetPasswordBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已受理（邮箱不存在时也返回此结果）",
+                        "schema": {
+                            "$ref": "#/definitions/dto.StatusResource"
+                        }
+                    }
+                },
+                "x-order": 10
+            }
+        },
+        "/auth/get-session": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "纯只读、不续签：访问令牌过期即 401，客户端自行用 /auth/token/refresh 换新令牌（Q13）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证中心"
+                ],
+                "summary": "读取当前身份",
+                "responses": {
+                    "200": {
+                        "description": "当前登录用户",
+                        "schema": {
+                            "$ref": "#/definitions/dto.GetSessionResource"
+                        }
+                    }
+                },
+                "x-order": 4
+            }
+        },
+        "/auth/request-password-reset": {
+            "post": {
+                "description": "向邮箱投递一枚 6 位数字验证码，寿命为 OTP_TTL，用户随后连同新口令提交给 /auth/reset-password。\n邮箱不存在时同样返回 200，避免通过该端点枚举账号。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证中心"
+                ],
+                "summary": "请求密码重置验证码",
+                "parameters": [
+                    {
+                        "description": "账号邮箱",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.RequestPasswordResetBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已受理（邮箱不存在时也返回此结果）",
+                        "schema": {
+                            "$ref": "#/definitions/dto.StatusResource"
+                        }
+                    }
+                },
+                "x-order": 11
+            }
+        },
+        "/auth/reset-password": {
+            "post": {
+                "description": "两条重置路径互斥且都必须带 email：带 token 走链接路径，带 otp 走验证码路径，两者都不给将得到 422。\n凭据在库中以「用途 + 邮箱」为标识存储并只存 HMAC 摘要，因此缺了 email 无法反查。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证中心"
+                ],
+                "summary": "重置口令",
+                "parameters": [
+                    {
+                        "description": "重置凭据与新口令",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ResetPasswordBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "口令已重置",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "x-order": 12
+            }
+        },
+        "/auth/send-verification-otp": {
+            "post": {
+                "description": "向邮箱投递一枚 6 位数字验证码，寿命为 OTP_TTL，用于 /auth/verify-email。\n邮箱不存在时同样返回 200，避免向未认证调用方暴露邮箱是否已注册；\n邮箱已通过验证时也直接返回 200 且不重复发信。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证中心"
+                ],
+                "summary": "发送邮箱验证码",
+                "parameters": [
+                    {
+                        "description": "待验证的邮箱",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.SendVerificationOTPBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已受理（邮箱不存在或已验证时也返回此结果）",
+                        "schema": {
+                            "$ref": "#/definitions/dto.StatusResource"
+                        }
+                    }
+                },
+                "x-order": 7
+            }
+        },
+        "/auth/sign-in/email": {
+            "post": {
+                "description": "邮箱不存在与口令错误返回同一个错误码，避免账号枚举。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证中心"
+                ],
+                "summary": "邮箱密码登录",
+                "parameters": [
+                    {
+                        "description": "登录凭据",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.SignInEmailBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "登录成功",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SessionResource"
+                        }
+                    }
+                },
+                "x-order": 2
+            }
+        },
+        "/auth/sign-in/username": {
+            "post": {
+                "description": "与邮箱登录共用同一套凭据校验，失败时的错误码与状态码完全一致。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证中心"
+                ],
+                "summary": "用户名密码登录",
+                "parameters": [
+                    {
+                        "description": "登录凭据",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.SignInUsernameBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "登录成功",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SessionResource"
+                        }
+                    }
+                },
+                "x-order": 3
+            }
+        },
+        "/auth/sign-out": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "作废当前访问令牌。同时传入刷新令牌才会一并作废，否则续签通道仍然敞开。\n传入的刷新令牌已失效或不属于当前用户时静默忽略，因为访问令牌已经作废。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证中心"
+                ],
+                "summary": "登出",
+                "parameters": [
+                    {
+                        "description": "可选的刷新令牌",
+                        "name": "payload",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SignOutBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "已登出，无响应体"
+                    }
+                },
+                "x-order": 6
+            }
+        },
+        "/auth/sign-up/email": {
+            "post": {
+                "description": "创建邮箱密码账号，并按 Q15 的约定直接完成登录、返回一对令牌。\n注册出来的 emailVerified 恒为 false；是否要求先验证邮箱由 REQUIRE_EMAIL_VERIFICATION 决定。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证中心"
+                ],
+                "summary": "邮箱注册",
+                "parameters": [
+                    {
+                        "description": "注册信息",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.SignUpEmailBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "注册成功并已登录",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SessionResource"
+                        }
+                    }
+                },
+                "x-order": 1
+            }
+        },
+        "/auth/token/refresh": {
+            "post": {
+                "description": "用刷新令牌换取新的一对令牌；旧的刷新令牌立即作废（单次消费 + 轮换）。\n响应里的 role 取库中最新值而非旧令牌声明，因此改角色会在续签时自动生效。\n客户端必须始终持有最新一枚刷新令牌，任何\"缓存旧令牌重试\"的实现都会在第二次使用时失败。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证中心"
+                ],
+                "summary": "续签令牌",
+                "parameters": [
+                    {
+                        "description": "刷新令牌",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.RefreshTokenBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "新的一对令牌",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SessionResource"
+                        }
+                    }
+                },
+                "x-order": 5
+            }
+        },
+        "/auth/verify-email": {
+            "post": {
+                "description": "核销验证码并把 emailVerified 置为 true。凭据一次性使用，核销后立即失效。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证中心"
+                ],
+                "summary": "验证邮箱",
+                "parameters": [
+                    {
+                        "description": "邮箱与验证码",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.VerifyEmailBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "验证通过",
+                        "schema": {
+                            "$ref": "#/definitions/dto.StatusResource"
+                        }
+                    }
+                },
+                "x-order": 8
+            }
+        },
+        "/realtime/proxy/subscribe": {
+            "post": {
+                "description": "接收 Centrifugo 反向代理发起的频道订阅鉴权请求，校验 HMAC-SHA256 签名并调度频道权限策略。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "实时通信"
+                ],
+                "summary": "Centrifugo 订阅鉴权代理端点",
+                "parameters": [
+                    {
+                        "description": "Centrifugo 订阅代理请求",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.SubscribeBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Centrifugo 订阅代理响应",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SubscribeResource"
+                        }
+                    }
+                },
+                "x-order": 2
+            }
+        },
+        "/realtime/token": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "为当前已认证用户签发直连 Centrifugo (WSS/SSE) 所需的 JWT 令牌，有效期由 CENTRIFUGO_TOKEN_TTL 决定（默认 2 小时）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "实时通信"
+                ],
+                "summary": "获取实时通信连接凭据",
+                "responses": {
+                    "200": {
+                        "description": "实时通信连接凭据",
+                        "schema": {
+                            "$ref": "#/definitions/dto.TokenResource"
+                        }
+                    }
+                },
+                "x-order": 1
+            }
+        },
+        "/users/me": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取当前登录用户的完整个人档案。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "个人资料"
+                ],
+                "summary": "读取本人档案",
+                "responses": {
+                    "200": {
+                        "description": "本人档案",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ProfileResource"
+                        }
+                    }
+                },
+                "x-order": 1
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "局部更新个人资料，支持更新昵称、头像、用户名、展示名与手机号。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "个人资料"
+                ],
+                "summary": "更新本人档案",
+                "parameters": [
+                    {
+                        "description": "待更新字段，可只提交其中一部分",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateProfileBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的档案",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ProfileResource"
+                        }
+                    }
+                },
+                "x-order": 2
+            }
+        },
+        "/users/me/avatar": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "上传并更新当前登录用户的个人头像。仅允许上传不超过 2MB 的 JPEG、PNG 或 WebP 格式图片，自动按魔数头校验真实图像并清除历史旧头像。",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "个人资料"
+                ],
+                "summary": "上传本人头像",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "头像图片文件 (最大 2MB，支持 JPEG/PNG/WebP)",
+                        "name": "avatar",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新头像后的本人档案",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ProfileResource"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Response"
+                        }
+                    },
+                    "422": {
+                        "description": "文件校验失败",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Response"
+                        }
+                    }
+                },
+                "x-order": 3
+            }
+        }
+    },
+    "definitions": {
+        "dto.ChangePasswordBody": {
+            "type": "object",
+            "required": [
+                "currentPassword",
+                "newPassword"
+            ],
+            "properties": {
+                "currentPassword": {
+                    "description": "当前登录口令",
+                    "type": "string",
+                    "example": "Secret123!"
+                },
+                "newPassword": {
+                    "description": "新登录口令 (8-128位)",
+                    "type": "string",
+                    "maxLength": 128,
+                    "minLength": 8,
+                    "example": "NewSecret456!"
+                }
+            }
+        },
+        "dto.ForgetPasswordBody": {
+            "type": "object",
+            "required": [
+                "email"
+            ],
+            "properties": {
+                "email": {
+                    "description": "用户注册电子邮箱",
+                    "type": "string",
+                    "example": "alex@example.com"
+                }
+            }
+        },
+        "dto.GetSessionResource": {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "description": "当前登录用户身份资料投影",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.UserResource"
+                        }
+                    ]
+                }
+            }
+        },
+        "dto.ProfileResource": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "description": "账号创建时间 (ISO 8601 UTC)",
+                    "type": "string",
+                    "example": "2026-09-27T10:00:00Z"
+                },
+                "displayUsername": {
+                    "description": "用户显示名称",
+                    "type": "string",
+                    "example": "Alex Mercer"
+                },
+                "email": {
+                    "description": "用户电子邮箱",
+                    "type": "string",
+                    "example": "alex@example.com"
+                },
+                "emailVerified": {
+                    "description": "邮箱是否已验证",
+                    "type": "boolean",
+                    "example": true
+                },
+                "id": {
+                    "description": "用户唯一标识",
+                    "type": "string",
+                    "example": "usr_01J9X4N8Y0ABCD"
+                },
+                "image": {
+                    "description": "用户头像 URL",
+                    "type": "string",
+                    "example": "https://example.com/avatar.png"
+                },
+                "name": {
+                    "description": "用户展示昵称",
+                    "type": "string",
+                    "example": "Alex Mercer"
+                },
+                "phoneNumber": {
+                    "description": "E.164 格式手机号",
+                    "type": "string",
+                    "example": "+8613800138000"
+                },
+                "role": {
+                    "description": "用户权限角色 (user: 普通用户, admin: 系统管理员)",
+                    "enum": [
+                        "user",
+                        "admin"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/enums.Role"
+                        }
+                    ],
+                    "example": "user"
+                },
+                "status": {
+                    "description": "账号状态 (active: 正常活跃, inactive: 未激活, banned: 已封禁)",
+                    "enum": [
+                        "active",
+                        "inactive",
+                        "banned"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/enums.Status"
+                        }
+                    ],
+                    "example": "active"
+                },
+                "updatedAt": {
+                    "description": "账号更新时间 (ISO 8601 UTC)",
+                    "type": "string",
+                    "example": "2026-09-27T10:00:00Z"
+                },
+                "username": {
+                    "description": "唯一登录用户名",
+                    "type": "string",
+                    "example": "alexmercer"
+                }
+            }
+        },
+        "dto.RefreshTokenBody": {
+            "type": "object",
+            "required": [
+                "refreshToken"
+            ],
+            "properties": {
+                "refreshToken": {
+                    "description": "刷新令牌凭据",
+                    "type": "string",
+                    "example": "rt_01J9X4N8Y0EFGH"
+                }
+            }
+        },
+        "dto.RequestPasswordResetBody": {
+            "type": "object",
+            "required": [
+                "email"
+            ],
+            "properties": {
+                "email": {
+                    "description": "用户注册电子邮箱",
+                    "type": "string",
+                    "example": "alex@example.com"
+                }
+            }
+        },
+        "dto.ResetPasswordBody": {
+            "type": "object",
+            "required": [
+                "email",
+                "newPassword"
+            ],
+            "properties": {
+                "email": {
+                    "description": "绑定的电子邮箱",
+                    "type": "string",
+                    "example": "alex@example.com"
+                },
+                "newPassword": {
+                    "description": "新登录口令 (8-128位)",
+                    "type": "string",
+                    "maxLength": 128,
+                    "minLength": 8,
+                    "example": "NewSecret456!"
+                },
+                "otp": {
+                    "description": "6位数字重置验证码 (验证码路径凭据，与令牌二选一)",
+                    "type": "string",
+                    "example": "123456"
+                },
+                "token": {
+                    "description": "密码重置令牌 (链接路径凭据，与验证码二选一)",
+                    "type": "string",
+                    "minLength": 16,
+                    "example": "tok_01J9X4N8Y0RESET"
+                }
+            }
+        },
+        "dto.SendVerificationOTPBody": {
+            "type": "object",
+            "required": [
+                "email"
+            ],
+            "properties": {
+                "email": {
+                    "description": "待验证的用户电子邮箱",
+                    "type": "string",
+                    "example": "alex@example.com"
+                }
+            }
+        },
+        "dto.SessionResource": {
+            "type": "object",
+            "properties": {
+                "expiresIn": {
+                    "description": "访问令牌有效期（秒）",
+                    "type": "integer",
+                    "example": 900
+                },
+                "refreshToken": {
+                    "description": "刷新令牌 (Refresh Token)",
+                    "type": "string",
+                    "example": "rt_01J9X4N8Y0EFGH"
+                },
+                "token": {
+                    "description": "访问令牌 (JWT Access Token)",
+                    "type": "string",
+                    "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                },
+                "user": {
+                    "description": "用户身份资料投影",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.UserResource"
+                        }
+                    ]
+                }
+            }
+        },
+        "dto.SignInEmailBody": {
+            "type": "object",
+            "required": [
+                "email",
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "description": "用户电子邮箱",
+                    "type": "string",
+                    "example": "alex@example.com"
+                },
+                "password": {
+                    "description": "登录口令",
+                    "type": "string",
+                    "example": "Secret123!"
+                }
+            }
+        },
+        "dto.SignInUsernameBody": {
+            "type": "object",
+            "required": [
+                "password",
+                "username"
+            ],
+            "properties": {
+                "password": {
+                    "description": "登录口令",
+                    "type": "string",
+                    "example": "Secret123!"
+                },
+                "username": {
+                    "description": "登录用户名 (3-30位)",
+                    "type": "string",
+                    "maxLength": 30,
+                    "minLength": 3,
+                    "example": "alexmercer"
+                }
+            }
+        },
+        "dto.SignOutBody": {
+            "type": "object",
+            "properties": {
+                "refreshToken": {
+                    "description": "待作废的刷新令牌 (可选，同时作废可真正阻断续签)",
+                    "type": "string",
+                    "example": "rt_01J9X4N8Y0EFGH"
+                }
+            }
+        },
+        "dto.SignUpEmailBody": {
+            "type": "object",
+            "required": [
+                "email",
+                "name",
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "description": "用户电子邮箱",
+                    "type": "string",
+                    "maxLength": 254,
+                    "example": "alex@example.com"
+                },
+                "image": {
+                    "description": "用户头像 URL",
+                    "type": "string",
+                    "maxLength": 2048,
+                    "example": "https://example.com/avatar.png"
+                },
+                "name": {
+                    "description": "用户展示昵称",
+                    "type": "string",
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "example": "Alex Mercer"
+                },
+                "password": {
+                    "description": "登录口令 (8-128位)",
+                    "type": "string",
+                    "maxLength": 128,
+                    "minLength": 8,
+                    "example": "Secret123!"
+                },
+                "username": {
+                    "description": "登录用户名 (3-30位小写字母数字及下划线，不可使用系统保留字)",
+                    "type": "string",
+                    "maxLength": 30,
+                    "minLength": 3,
+                    "example": "alexmercer"
+                }
+            }
+        },
+        "dto.StatusResource": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "description": "请求是否已成功受理并处理完毕",
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "dto.SubscribeBody": {
+            "type": "object"
+        },
+        "dto.SubscribeResource": {
+            "type": "object",
+            "properties": {
+                "disconnect": {
+                    "$ref": "#/definitions/realtime.DisconnectCommand"
+                },
+                "error": {
+                    "$ref": "#/definitions/realtime.ProxyError"
+                },
+                "result": {
+                    "$ref": "#/definitions/realtime.SubscribeResult"
+                }
+            }
+        },
+        "dto.TokenResource": {
+            "type": "object",
+            "properties": {
+                "expiresAt": {
+                    "description": "Token 过期时间戳 (RFC3339)",
+                    "type": "string",
+                    "example": "2026-09-27T19:30:00Z"
+                },
+                "token": {
+                    "description": "Centrifugo 客户端连接 Token (JWT)",
+                    "type": "string",
+                    "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                },
+                "wsUrl": {
+                    "description": "Centrifugo WebSocket/SSE 服务端地址",
+                    "type": "string",
+                    "example": "ws://127.0.0.1:8000/connection/websocket"
+                }
+            }
+        },
+        "dto.UpdateProfileBody": {
+            "type": "object",
+            "properties": {
+                "displayUsername": {
+                    "description": "用户显示名称",
+                    "type": "string",
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "x-nullable": true,
+                    "example": "Alex Mercer"
+                },
+                "image": {
+                    "description": "用户头像 URL",
+                    "type": "string",
+                    "maxLength": 2048,
+                    "x-nullable": true,
+                    "example": "https://example.com/avatar.png"
+                },
+                "name": {
+                    "description": "用户展示昵称",
+                    "type": "string",
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "x-nullable": true,
+                    "example": "Alex Mercer"
+                },
+                "phoneNumber": {
+                    "description": "E.164 格式手机号",
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "+8613800138000"
+                },
+                "username": {
+                    "description": "唯一登录用户名 (3-30位)",
+                    "type": "string",
+                    "maxLength": 30,
+                    "minLength": 3,
+                    "x-nullable": true,
+                    "example": "alexmercer"
+                }
+            }
+        },
+        "dto.UserResource": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "description": "账号创建时间 (ISO 8601 UTC)",
+                    "type": "string",
+                    "example": "2026-09-27T10:00:00Z"
+                },
+                "displayUsername": {
+                    "description": "用户显示名称",
+                    "type": "string",
+                    "example": "Alex Mercer"
+                },
+                "email": {
+                    "description": "用户电子邮箱",
+                    "type": "string",
+                    "example": "alex@example.com"
+                },
+                "emailVerified": {
+                    "description": "邮箱是否已完成验证",
+                    "type": "boolean",
+                    "example": true
+                },
+                "id": {
+                    "description": "用户唯一标识",
+                    "type": "string",
+                    "example": "usr_01J9X4N8Y0ABCD"
+                },
+                "image": {
+                    "description": "用户头像 URL",
+                    "type": "string",
+                    "example": "https://example.com/avatar.png"
+                },
+                "name": {
+                    "description": "用户展示昵称",
+                    "type": "string",
+                    "example": "Alex Mercer"
+                },
+                "phoneNumber": {
+                    "description": "E.164 格式手机号",
+                    "type": "string",
+                    "example": "+8613800138000"
+                },
+                "role": {
+                    "description": "用户权限角色 (user: 普通用户, admin: 系统管理员)",
+                    "enum": [
+                        "user",
+                        "admin"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/enums.Role"
+                        }
+                    ],
+                    "example": "user"
+                },
+                "updatedAt": {
+                    "description": "账号更新时间 (ISO 8601 UTC)",
+                    "type": "string",
+                    "example": "2026-09-27T10:00:00Z"
+                },
+                "username": {
+                    "description": "唯一登录用户名",
+                    "type": "string",
+                    "example": "alexmercer"
+                }
+            }
+        },
+        "dto.VerifyEmailBody": {
+            "type": "object",
+            "required": [
+                "email",
+                "otp"
+            ],
+            "properties": {
+                "email": {
+                    "description": "待验证的用户电子邮箱",
+                    "type": "string",
+                    "example": "alex@example.com"
+                },
+                "otp": {
+                    "description": "6位数字邮箱验证码",
+                    "type": "string",
+                    "example": "123456"
+                }
+            }
+        },
+        "enums.Role": {
+            "type": "string",
+            "enum": [
+                "user",
+                "admin"
+            ],
+            "x-enum-varnames": [
+                "RoleUser",
+                "RoleAdmin"
+            ]
+        },
+        "enums.Status": {
+            "type": "string",
+            "enum": [
+                "active",
+                "inactive",
+                "pending",
+                "suspended",
+                "banned",
+                "active",
+                "inactive",
+                "pending",
+                "suspended",
+                "banned"
+            ],
+            "x-enum-varnames": [
+                "StatusActive",
+                "StatusInactive",
+                "StatusPending",
+                "StatusSuspended",
+                "StatusBanned"
+            ]
+        },
+        "errs.Response": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "errors": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "realtime.DisconnectCommand": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "realtime.ProxyError": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "realtime.SubscribeResult": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "expire_at": {
+                    "type": "integer"
+                },
+                "info": {
+                    "type": "object",
+                    "additionalProperties": {}
+                }
+            }
+        }
+    },
+    "tags": [
+        {
+            "description": "账号注册、登录会话、令牌续签与密码重置接口",
+            "name": "认证中心",
+            "x-order": "1"
+        },
+        {
+            "description": "当前登录用户本人资料读取与局部更新接口",
+            "name": "个人资料",
+            "x-order": "2"
+        },
+        {
+            "description": "Centrifugo 实时通信连接凭据与订阅鉴权代理端点",
+            "name": "实时通信",
+            "x-order": "3"
+        }
+    ]
+}

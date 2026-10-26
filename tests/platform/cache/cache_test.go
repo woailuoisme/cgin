@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"cgin/internal/platform/cache"
+	"cgin/pkg/cache"
 )
 
 type userSession struct {

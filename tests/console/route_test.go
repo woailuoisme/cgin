@@ -31,8 +31,8 @@ func TestRouteListCommand_Basic(t *testing.T) {
 	assert.Contains(t, out, "HTTP Route List")
 	assert.Contains(t, out, "/livez")
 	assert.Contains(t, out, "/readyz")
-	assert.Contains(t, out, "system.Handler.Liveness")
-	assert.Contains(t, out, "system.Handler.Index")
+	assert.Contains(t, out, "handler.SystemHandler.Liveness")
+	assert.Contains(t, out, "handler.SystemHandler.Index")
 	assert.Contains(t, out, "Total:")
 }
 

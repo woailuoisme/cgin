@@ -12,11 +12,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
+	"github.com/rs/zerolog"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/logger"
+	"cgin/pkg/logger"
 )
 
 // queryTrace 承载单条 SQL 的起始时间与语句文本。
@@ -29,25 +28,25 @@ type queryTrace struct {
 
 type ctxQueryTraceKey struct{}
 
-// ZapTracer 将 pgx 的查询生命周期映射到系统的结构化日志体系。
+// QueryTracer 将 pgx 的查询生命周期映射到系统的结构化日志体系。
 // 支持全链路 request_id 透传、SQL 参数脱敏、调用栈溯源、慢查询自动捕获告警以及 Debug 级别的 SQL 审计。
-type ZapTracer struct {
+type QueryTracer struct {
 	slowThreshold time.Duration
 	debugEnabled  bool
 }
 
-var _ pgx.QueryTracer = (*ZapTracer)(nil)
+var _ pgx.QueryTracer = (*QueryTracer)(nil)
 
-// NewZapTracer 创建一个基于 zap 的结构化查询追踪器。
-func NewZapTracer(cfg config.DatabaseConfig) *ZapTracer {
-	return &ZapTracer{
+// NewQueryTracer 创建一个基于结构化日志的查询追踪器。
+func NewQueryTracer(cfg config.DatabaseConfig) *QueryTracer {
+	return &QueryTracer{
 		slowThreshold: cfg.SlowThreshold,
 		debugEnabled:  cfg.Debug,
 	}
 }
 
 // TraceQueryStart 记录查询起始时间与语句。
-func (t *ZapTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
+func (t *QueryTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
 	return context.WithValue(ctx, ctxQueryTraceKey{}, queryTrace{start: time.Now(), sql: data.SQL})
 }
 
@@ -55,7 +54,7 @@ func (t *ZapTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.T
 //
 // 日志只携带语句指纹与操作类型：pgx 扩展协议下参数位于 Args，语句文本只有 $n 占位符，
 // 因此无需手写 SQL 词法器去猜字面量边界，也就不存在脱敏遗漏导致的密钥泄漏。
-func (t *ZapTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryEndData) {
+func (t *QueryTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryEndData) {
 	trace, ok := ctx.Value(ctxQueryTraceKey{}).(queryTrace)
 	if !ok {
 		return
@@ -66,50 +65,47 @@ func (t *ZapTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.Tra
 
 	failed := isActionableDBError(data.Err)
 	slow := t.slowThreshold > 0 && dur >= t.slowThreshold
-	debug := t.debugEnabled && log.Core().Enabled(zapcore.DebugLevel)
+	debug := t.debugEnabled && log.GetLevel() <= zerolog.DebugLevel
 	if !failed && !slow && !debug {
 		return
 	}
 
-	fields := func(extra ...zap.Field) []zap.Field {
-		f := make([]zap.Field, 0, 5+len(extra))
-		f = append(f,
-			zap.String("operation", sqlOperation(trace.sql)),
-			zap.String("fingerprint", QueryFingerprint(trace.sql)),
-			zap.String("duration", dur.String()),
-		)
-		// 仅在实际写日志时采集调用栈，避免每条查询都付一次 runtime.Callers。
-		if caller := captureCaller(); caller != "" {
-			f = append(f, zap.String("caller", caller))
-		}
-		return append(f, extra...)
-	}
-
-	// 1. 查询执行失败：排除 pgx.ErrNoRows（正常领域状态）与 context.Canceled（客户端断开连接）
-	if failed {
-		log.Error("database query failed", fields(zap.Error(data.Err))...)
-		return
-	}
-
-	// 2. 慢查询捕获：执行耗时超过阈值记录 Warn 日志
-	if slow {
-		extra := []zap.Field{zap.String("threshold", t.slowThreshold.String())}
+	var event *zerolog.Event
+	switch {
+	case failed:
+		event = log.Error().Err(data.Err)
+	case slow:
+		event = log.Warn().Str("threshold", t.slowThreshold.String())
 		if errors.Is(data.Err, context.Canceled) {
-			extra = append(extra, zap.Bool("canceled", true))
+			event = event.Bool("canceled", true)
 		}
-		log.Warn("slow database query detected", fields(extra...)...)
-		return
+	default:
+		event = log.Debug()
+		if statement, safe := loggableStatement(trace.sql); safe {
+			event = event.Str("statement", statement)
+		}
+		if data.Err != nil {
+			event = event.Err(data.Err)
+		}
 	}
 
-	// 3. 调试输出：仅在语句不含字面量时附带原文，否则只留指纹。
-	var extra []zap.Field
-	if statement, safe := loggableStatement(trace.sql); safe {
-		extra = append(extra, zap.String("statement", statement))
+	event = event.
+		Str("operation", sqlOperation(trace.sql)).
+		Str("fingerprint", QueryFingerprint(trace.sql)).
+		Str("duration", dur.String())
+
+	if caller := captureCaller(); caller != "" {
+		event = event.Str("caller", caller)
 	}
-	if data.Err != nil {
-		extra = append(extra, zap.Error(data.Err))
+
+	switch {
+	case failed:
+		event.Msg("database query failed")
+	case slow:
+		event.Msg("slow database query detected")
+	default:
+		event.Msg("database query executed")
 	}
-	log.Debug("database query executed", fields(extra...)...)
 }
 
 // QueryFingerprint 返回语句的稳定短指纹：折叠连续空白后取 SHA-256 前 8 字节。
@@ -208,7 +204,7 @@ func isInternalDatabaseFrame(file string) bool {
 // formatCaller 将完整文件路径格式化为便于结构化检索的精简定位表示。
 func formatCaller(file string, line int) string {
 	f := filepath.ToSlash(file)
-	for _, root := range []string{"internal/", "tests/", "cmd/"} {
+	for _, root := range []string{"internal/", "pkg/", "shared/", "tests/", "cmd/"} {
 		if _, rest, found := strings.Cut(f, root); found {
 			return fmt.Sprintf("%s%s:%d", root, rest, line)
 		}

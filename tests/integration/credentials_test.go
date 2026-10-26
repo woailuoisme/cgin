@@ -10,10 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/database/sqlc"
-	"cgin/internal/platform/errs"
-	"cgin/internal/platform/hasher"
-	"cgin/internal/shared/enums"
-	shareduser "cgin/internal/shared/user"
+	"cgin/pkg/errs"
+	"cgin/pkg/hasher"
+	"cgin/shared/enums"
+	shareduser "cgin/shared/user"
 )
 
 // TestRegisterCreatesUserAndCredential 覆盖注册深模块的事务写入、归一化与默认值。

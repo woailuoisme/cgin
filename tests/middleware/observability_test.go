@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/middleware/global"
-	"cgin/internal/platform/errs"
-	"cgin/internal/platform/logger"
+	"cgin/pkg/errs"
+	"cgin/pkg/logger"
 )
 
 // TestAccessLog404SingleWarn 验证 404 请求仅输出一条 WARN 访问日志，
@@ -53,7 +53,7 @@ func TestAccessLog404SingleWarn(t *testing.T) {
 
 	type logEntry struct {
 		Level   string `json:"level"`
-		Message string `json:"msg"`
+		Message string `json:"message"`
 		Status  int    `json:"status"`
 		Code    string `json:"code"`
 		Error   string `json:"error"`
@@ -110,7 +110,7 @@ func TestAccessLog500ErrorWithStack(t *testing.T) {
 
 	type logEntry struct {
 		Level   string `json:"level"`
-		Message string `json:"msg"`
+		Message string `json:"message"`
 		Status  int    `json:"status"`
 		Stack   string `json:"stack"`
 	}

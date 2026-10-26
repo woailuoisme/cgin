@@ -2,22 +2,22 @@
 package queue_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-	"go.uber.org/zap/zaptest/observer"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/cache"
-	"cgin/internal/platform/queue"
+	"cgin/pkg/cache"
+	"cgin/pkg/logger"
+	"cgin/pkg/queue"
 )
 
 func TestMain(m *testing.M) {
@@ -159,16 +159,16 @@ func TestScheduleCronExpressions(t *testing.T) {
 // 这条同时是回归防线：队列包的内部告警走包级兜底日志器，若它退回 Nop，
 // 非法配置会被静默吞掉——修复就形同虚设。
 func TestScheduleInvalidTimeWarns(t *testing.T) {
-	core, logs := observer.New(zapcore.ErrorLevel)
-	queue.SetFallbackLogger(zap.New(core))
-	t.Cleanup(func() { queue.SetFallbackLogger(nil) })
+	var buf bytes.Buffer
+	testLogger := zerolog.New(&buf)
+	queue.SetFallbackLogger(&testLogger)
+	t.Cleanup(func() { queue.SetFallbackLogger(logger.Nop()) })
 
 	sched := queue.NewSchedule()
 	entry := sched.Job(&dummyJob{JobMeta: queue.NewJobMeta("report:bad-time")}).DailyAt("25:00")
 
 	require.False(t, entry.IsValid())
-	require.Equal(t, 1, logs.Len(), "非法调度时间必须留下一条 Error 告警")
-	assert.Contains(t, logs.All()[0].Message, "invalid schedule time")
+	assert.Contains(t, buf.String(), "invalid schedule time")
 }
 
 // TestScheduleOptionalDefaultTime 锁定"省略时间即默认零点"的便利语义。

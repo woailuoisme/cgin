@@ -13,13 +13,14 @@ import (
 
 	"cgin/internal/config"
 	"cgin/internal/database/sqlc"
-	adminauth "cgin/internal/features/admin/auth"
-	"cgin/internal/platform/authentication"
-	"cgin/internal/platform/errs"
-	"cgin/internal/platform/hasher"
-	"cgin/internal/platform/validator"
-	"cgin/internal/shared/enums"
-	shareduser "cgin/internal/shared/user"
+	admindto "cgin/internal/dto/admin"
+	adminservice "cgin/internal/service/admin"
+	"cgin/pkg/authentication"
+	"cgin/pkg/errs"
+	"cgin/pkg/hasher"
+	"cgin/pkg/validator"
+	"cgin/shared/enums"
+	shareduser "cgin/shared/user"
 )
 
 func init() {
@@ -120,7 +121,7 @@ func (m *mockRepo) RecordLogin(_ context.Context, userID, _ string) error {
 	return nil
 }
 
-func setupService(repo *mockRepo) (*adminauth.Service, *authentication.TokenIssuer) {
+func setupService(repo *mockRepo) (*adminservice.AuthService, *authentication.TokenIssuer) {
 	tokens := authentication.NewTokenIssuer(config.JWTConfig{
 		Secret:     testJWTSecret,
 		Issuer:     "cgin-test",
@@ -129,7 +130,7 @@ func setupService(repo *mockRepo) (*adminauth.Service, *authentication.TokenIssu
 	}, nil)
 
 	guard := authentication.NewGuard(tokens, repo, shareduser.AdminPolicy{}, shareduser.Identity)
-	service := adminauth.MustNewService(adminauth.Deps{
+	service := adminservice.MustNewAuthService(adminservice.AuthDeps{
 		Guard:     guard,
 		Passwords: repo,
 	})
@@ -177,7 +178,7 @@ func TestAdminSignInEmailAntiEnumeration(t *testing.T) {
 	ctx := t.Context()
 
 	// 1. 邮箱不存在
-	_, err = service.SignInEmail(ctx, adminauth.SignInEmailBody{
+	_, err = service.SignInEmail(ctx, admindto.SignInEmailBody{
 		Email:    "nonexistent@example.com",
 		Password: "Password123!",
 	})
@@ -186,7 +187,7 @@ func TestAdminSignInEmailAntiEnumeration(t *testing.T) {
 	assert.Equal(t, string(errs.CodeAuthInvalidCredentials), resp.Code)
 
 	// 2. 普通用户尝试从管理端登录（必须伪装为凭据错误，防止角色与账号枚举）
-	_, err = service.SignInEmail(ctx, adminauth.SignInEmailBody{
+	_, err = service.SignInEmail(ctx, admindto.SignInEmailBody{
 		Email:    "user@example.com",
 		Password: "User1234!",
 	})
@@ -195,7 +196,7 @@ func TestAdminSignInEmailAntiEnumeration(t *testing.T) {
 	assert.Equal(t, string(errs.CodeAuthInvalidCredentials), resp.Code)
 
 	// 3. 管理员密码错误
-	_, err = service.SignInEmail(ctx, adminauth.SignInEmailBody{
+	_, err = service.SignInEmail(ctx, admindto.SignInEmailBody{
 		Email:    "admin@example.com",
 		Password: "WrongPassword!",
 	})
@@ -204,7 +205,7 @@ func TestAdminSignInEmailAntiEnumeration(t *testing.T) {
 	assert.Equal(t, string(errs.CodeAuthInvalidCredentials), resp.Code)
 
 	// 4. 管理员凭据正确登录成功
-	session, err := service.SignInEmail(ctx, adminauth.SignInEmailBody{
+	session, err := service.SignInEmail(ctx, admindto.SignInEmailBody{
 		Email:    "admin@example.com",
 		Password: "Admin1234!",
 	})
@@ -251,7 +252,7 @@ func TestAdminSignInBannedAndInactive(t *testing.T) {
 	ctx := t.Context()
 
 	// 封禁账号拦截
-	_, err = service.SignInEmail(ctx, adminauth.SignInEmailBody{
+	_, err = service.SignInEmail(ctx, admindto.SignInEmailBody{
 		Email:    "banned@example.com",
 		Password: "Admin1234!",
 	})
@@ -260,7 +261,7 @@ func TestAdminSignInBannedAndInactive(t *testing.T) {
 	assert.Equal(t, string(errs.CodeAuthAccountBanned), resp.Code)
 
 	// 未激活账号拦截
-	_, err = service.SignInEmail(ctx, adminauth.SignInEmailBody{
+	_, err = service.SignInEmail(ctx, admindto.SignInEmailBody{
 		Email:    "inactive@example.com",
 		Password: "Admin1234!",
 	})
@@ -323,7 +324,7 @@ func TestAdminRefreshDemotedUserDenied(t *testing.T) {
 	pair, err := tokens.Issue("demoted", string(enums.RoleAdmin))
 	require.NoError(t, err)
 
-	_, err = service.Refresh(ctx, adminauth.RefreshTokenBody{
+	_, err = service.Refresh(ctx, admindto.RefreshTokenBody{
 		RefreshToken: pair.RefreshToken,
 	})
 	require.Error(t, err)
@@ -354,7 +355,7 @@ func TestAdminChangePasswordFlow(t *testing.T) {
 	ctx := t.Context()
 
 	// 1. 新密码强度不足
-	err = service.ChangePassword(ctx, "admin_1", adminauth.ChangePasswordBody{
+	err = service.ChangePassword(ctx, "admin_1", admindto.ChangePasswordBody{
 		CurrentPassword: "OldAdminPass123!",
 		NewPassword:     "short",
 	})
@@ -363,7 +364,7 @@ func TestAdminChangePasswordFlow(t *testing.T) {
 	assert.Equal(t, string(errs.CodeAuthPasswordTooWeak), resp.Code)
 
 	// 2. 当前旧密码不匹配
-	err = service.ChangePassword(ctx, "admin_1", adminauth.ChangePasswordBody{
+	err = service.ChangePassword(ctx, "admin_1", admindto.ChangePasswordBody{
 		CurrentPassword: "WrongOldPass123!",
 		NewPassword:     "NewAdminPass456!",
 	})
@@ -372,7 +373,7 @@ func TestAdminChangePasswordFlow(t *testing.T) {
 	assert.Equal(t, string(errs.CodeAuthPasswordMismatch), resp.Code)
 
 	// 3. 修改成功
-	err = service.ChangePassword(ctx, "admin_1", adminauth.ChangePasswordBody{
+	err = service.ChangePassword(ctx, "admin_1", admindto.ChangePasswordBody{
 		CurrentPassword: "OldAdminPass123!",
 		NewPassword:     "NewAdminPass456!",
 	})
@@ -397,7 +398,7 @@ func TestAdminChangePasswordFlow(t *testing.T) {
 		ProviderID: string(enums.ProviderCredential),
 		Password:   &hash,
 	}
-	err = service.ChangePassword(ctx, "user_1", adminauth.ChangePasswordBody{
+	err = service.ChangePassword(ctx, "user_1", admindto.ChangePasswordBody{
 		CurrentPassword: "OldAdminPass123!",
 		NewPassword:     "NewAdminPass456!",
 	})
@@ -417,7 +418,7 @@ func TestAdminChangePasswordFlow(t *testing.T) {
 		ProviderID: string(enums.ProviderCredential),
 		Password:   &hash,
 	}
-	err = service.ChangePassword(ctx, "banned_admin", adminauth.ChangePasswordBody{
+	err = service.ChangePassword(ctx, "banned_admin", admindto.ChangePasswordBody{
 		CurrentPassword: "OldAdminPass123!",
 		NewPassword:     "NewAdminPass456!",
 	})
@@ -426,7 +427,7 @@ func TestAdminChangePasswordFlow(t *testing.T) {
 	assert.Equal(t, string(errs.CodeAuthAccountBanned), resp.Code)
 
 	// 6. 不存在用户拦截 401
-	err = service.ChangePassword(ctx, "nonexistent", adminauth.ChangePasswordBody{
+	err = service.ChangePassword(ctx, "nonexistent", admindto.ChangePasswordBody{
 		CurrentPassword: "OldAdminPass123!",
 		NewPassword:     "NewAdminPass456!",
 	})
@@ -438,13 +439,13 @@ func TestAdminChangePasswordFlow(t *testing.T) {
 // TestAdminAuthDTOSerialization 校验 DTO 的 JSON 序列化与反序列化字段契约。
 func TestAdminAuthDTOSerialization(t *testing.T) {
 	raw := []byte(`{"email":"admin@cgin.local","password":"secret"}`)
-	var req adminauth.SignInEmailBody
+	var req admindto.SignInEmailBody
 	require.NoError(t, json.Unmarshal(raw, &req))
 	assert.Equal(t, "admin@cgin.local", req.Email)
 	assert.Equal(t, "secret", req.Password)
 
 	signOutRaw := []byte(`{"refreshToken":"rt_test123"}`)
-	var signOutReq adminauth.SignOutBody
+	var signOutReq admindto.SignOutBody
 	require.NoError(t, json.Unmarshal(signOutRaw, &signOutReq))
 	require.NotNil(t, signOutReq.RefreshToken)
 	assert.Equal(t, "rt_test123", *signOutReq.RefreshToken)

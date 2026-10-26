@@ -7,8 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"cgin/internal/platform/authentication"
-	"cgin/internal/platform/errs"
+	"cgin/pkg/authentication"
+	"cgin/pkg/errs"
 )
 
 // Auth 【路由/路由组中间件】仿照 Laravel auth 中间件设计，校验 Bearer 访问令牌并注入认证身份载荷。

@@ -13,7 +13,7 @@ import (
 
 	"cgin/internal/config"
 	"cgin/internal/middleware/global/idempotency"
-	"cgin/internal/platform/cache"
+	"cgin/pkg/cache"
 )
 
 // openIdempotencyCache 打开真实缓存客户端，供幂等存储与锁的集成验证使用。

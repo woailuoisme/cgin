@@ -8,12 +8,18 @@ package apidocs_test
 
 import (
 	"encoding/json"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"cgin/internal/shared/apidocs"
+	"cgin/shared/apidocs"
 )
 
 // TestClientSpecCoversClientSurfaceOnly 校验客户端规范的收录范围与隔离性。
@@ -36,6 +42,69 @@ func TestClientSpecCoversClientSurfaceOnly(t *testing.T) {
 	for path := range spec.Paths {
 		assert.NotContains(t, path, "/admin/", "后台管理端点不应出现在前台客户端文档里")
 	}
+}
+
+// TestEveryAnnotatedRouteIsDocumented 保证 handler 上声明的每个端点都进入至少一套规范。
+//
+// 两套文档按 Swagger Tag 白名单收敛：新增端点若漏写 @Tags，会同时从前后台文档消失且不报错。
+// 这里从源码侧收集 @Router 注解，与两份规范的 paths 求差集，把这种静默漏收变成测试失败。
+func TestEveryAnnotatedRouteIsDocumented(t *testing.T) {
+	annotated := annotatedRoutes(t)
+	require.NotEmpty(t, annotated, "未从 handler 注解中解析到任何 @Router")
+
+	var client, admin struct {
+		Paths map[string]json.RawMessage `json:"paths"`
+	}
+	require.NoError(t, json.Unmarshal(apidocs.Spec, &client))
+	require.NoError(t, json.Unmarshal(apidocs.AdminSpec, &admin))
+
+	for _, path := range annotated {
+		if strings.HasPrefix(path, undescribedPathPrefix) {
+			continue // 支付回调按设计不进入任何对外文档
+		}
+
+		_, inClient := client.Paths[path]
+		_, inAdmin := admin.Paths[path]
+		assert.True(t, inClient || inAdmin, "端点 %s 未进入任何一套 OpenAPI 文档，检查是否漏写 @Tags", path)
+	}
+}
+
+// undescribedPathPrefix 是按设计不对外收录的端点前缀。
+const undescribedPathPrefix = "/payments"
+
+// annotatedRoutes 扫描 internal/handler 下的 @Router 注解并去重排序。
+func annotatedRoutes(t *testing.T) []string {
+	t.Helper()
+
+	handlerDir := filepath.Join("..", "..", "..", "internal", "handler")
+	routerPattern := regexp.MustCompile(`@Router\s+(\S+)`)
+
+	seen := make(map[string]struct{})
+	walkErr := filepath.WalkDir(handlerDir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+
+		content, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		for _, match := range routerPattern.FindAllStringSubmatch(string(content), -1) {
+			seen[match[1]] = struct{}{}
+		}
+		return nil
+	})
+	require.NoError(t, walkErr)
+
+	routes := make([]string, 0, len(seen))
+	for path := range seen {
+		routes = append(routes, path)
+	}
+	slices.Sort(routes)
+	return routes
 }
 
 // TestAdminSpecCoversAdminSurfaceOnly 校验管理端规范的收录范围与隔离性。

@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/xuri/excelize/v2"
 
-	"cgin/internal/platform/excel"
+	"cgin/pkg/excel"
 )
 
 // readSheet 解析写出的工作簿并按工作表名返回全部行。

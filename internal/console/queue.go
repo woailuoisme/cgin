@@ -14,10 +14,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"cgin/internal/console/core"
-	clientauth "cgin/internal/features/client/auth"
-	"cgin/internal/platform/cache"
-	"cgin/internal/platform/mailer"
-	"cgin/internal/platform/queue"
+	"cgin/internal/service"
+	"cgin/pkg/cache"
+	"cgin/pkg/mailer"
+	"cgin/pkg/queue"
 )
 
 // QueueWorkOptions 封装 queue:work 命令的参数与依赖容器 (SRP & DIP)。
@@ -65,7 +65,7 @@ func (o *QueueWorkOptions) Run(ctx context.Context) error {
 	defer func() { _ = mailerClient.Close() }()
 
 	reg := queue.DefaultRegistry()
-	clientauth.RegisterJobs(reg, mailerClient)
+	service.RegisterJobs(reg, mailerClient)
 
 	var locker queue.Locker
 	if cacheLocker, err := cache.NewRedisLocker(cfg.Cache); err == nil {

@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/middleware/global"
-	"cgin/internal/platform/errs"
+	"cgin/pkg/errs"
 )
 
 // TestBodyLimit 锁定请求体上限这条安全控制的两端：

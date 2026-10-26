@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"cgin/internal/platform/money"
+	"cgin/pkg/money"
 )
 
 func TestCurrency_Registry(t *testing.T) {

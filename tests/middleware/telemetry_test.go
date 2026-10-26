@@ -17,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"cgin/internal/middleware/global"
-	"cgin/internal/platform/logger"
+	"cgin/pkg/logger"
 )
 
 func TestTelemetryMiddleware_Disabled(t *testing.T) {
@@ -77,7 +77,7 @@ func TestTelemetryMiddleware_TraceLogCorrelation(t *testing.T) {
 	var recordedTraceID, recordedSpanID, recordedReqID string
 	engine.GET("/test-trace", func(c *gin.Context) {
 		log := logger.FromContext(c.Request.Context())
-		log.Info("executing test handler")
+		log.Info().Msg("executing test handler")
 		c.String(http.StatusOK, "ok")
 	})
 
@@ -96,7 +96,7 @@ func TestTelemetryMiddleware_TraceLogCorrelation(t *testing.T) {
 
 	assert.Equal(t, expectedTraceID, rec.Header().Get("x-request-id"), "未提供 X-Request-ID 时应自动对齐为 TraceID")
 
-	// 验证 Zap JSON 日志是否已自动注入 trace_id 与 span_id
+	// 验证 JSON 日志是否已自动注入 trace_id 与 span_id
 	line := strings.TrimSpace(buf.String())
 	require.NotEmpty(t, line)
 
@@ -108,7 +108,7 @@ func TestTelemetryMiddleware_TraceLogCorrelation(t *testing.T) {
 	recordedSpanID, _ = logData["span_id"].(string)
 	recordedReqID, _ = logData["request_id"].(string)
 
-	assert.Equal(t, expectedTraceID, recordedTraceID, "Zap 日志应包含匹配的 trace_id")
-	assert.Equal(t, expectedSpanID, recordedSpanID, "Zap 日志应包含匹配的 span_id")
-	assert.Equal(t, expectedTraceID, recordedReqID, "Zap 日志的 request_id 亦应统一对齐")
+	assert.Equal(t, expectedTraceID, recordedTraceID, "结构化日志应包含匹配的 trace_id")
+	assert.Equal(t, expectedSpanID, recordedSpanID, "结构化日志应包含匹配的 span_id")
+	assert.Equal(t, expectedTraceID, recordedReqID, "结构化日志的 request_id 亦应统一对齐")
 }

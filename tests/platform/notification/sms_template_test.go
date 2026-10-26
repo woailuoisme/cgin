@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"cgin/internal/platform/notification/channel/sms"
-	"cgin/internal/platform/notification/channel/sms/aliyun"
-	"cgin/internal/platform/notification/channel/sms/smsbao"
-	"cgin/internal/platform/notification/channel/sms/tencent"
+	"cgin/pkg/notification/channel/sms"
+	"cgin/pkg/notification/channel/sms/aliyun"
+	"cgin/pkg/notification/channel/sms/smsbao"
+	"cgin/pkg/notification/channel/sms/tencent"
 )
 
 // TestSMSMessage_FluentTemplateAPIs 验证 Message 提供的多厂商模板链式 API 与解析优先级。

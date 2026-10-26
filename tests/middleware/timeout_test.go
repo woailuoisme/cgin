@@ -94,6 +94,30 @@ func TestTimeoutMiddlewareWithExistingError(t *testing.T) {
 	assert.Equal(t, "GATEWAY_TIMEOUT", resp["code"])
 }
 
+// TestTimeoutMiddleware_PartialResponseWithoutLogger 验证未注入 Logger 时，
+// 响应已部分写出的超时分支不会因 nil logger 而 panic。
+func TestTimeoutMiddleware_PartialResponseWithoutLogger(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	m := global.New(global.Deps{
+		RequestTimeout: 20 * time.Millisecond,
+	})
+
+	router := gin.New()
+	router.Use(m.Timeout())
+
+	router.GET("/partial", func(c *gin.Context) {
+		c.String(http.StatusOK, "partial")
+		// 等上下文超时，让中间件走到“已写入响应”的日志分支。
+		<-c.Request.Context().Done()
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/partial", nil)
+	w := httptest.NewRecorder()
+
+	require.NotPanics(t, func() { router.ServeHTTP(w, req) })
+	require.Equal(t, http.StatusOK, w.Code)
+}
+
 // TestTimeoutMiddleware_StreamingBypass 验证 WebSocket 升级与 SSE 流式请求自动豁免固定超时。
 func TestTimeoutMiddleware_StreamingBypass(t *testing.T) {
 	gin.SetMode(gin.TestMode)

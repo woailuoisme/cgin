@@ -8,27 +8,24 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"cgin/internal/config"
-	adminauth "cgin/internal/features/admin/auth"
-	adminuser "cgin/internal/features/admin/user"
-	clientauth "cgin/internal/features/client/auth"
-	"cgin/internal/features/client/profile"
-	paymentFeature "cgin/internal/features/payment"
-	realtimeFeature "cgin/internal/features/realtime"
-	"cgin/internal/features/system"
+	"cgin/internal/handler"
+	adminhandler "cgin/internal/handler/admin"
 	"cgin/internal/middleware"
 	"cgin/internal/middleware/global"
-	"cgin/internal/platform/errs"
+	"cgin/internal/routes"
+	adminroutes "cgin/internal/routes/admin"
+	"cgin/pkg/errs"
 )
 
 // routeHandlers 汇总各垂直切片的 HTTP 处理器，由装配方填充。
 type routeHandlers struct {
-	system    *system.Handler
-	auth      *clientauth.Handler
-	profile   *profile.Handler
-	admin     *adminuser.Handler
-	adminAuth *adminauth.Handler
-	realtime  *realtimeFeature.Handler
-	payment   *paymentFeature.Handler
+	system    *handler.SystemHandler
+	auth      *handler.ClientAuthHandler
+	profile   *handler.ProfileHandler
+	admin     *adminhandler.UserHandler
+	adminAuth *adminhandler.AuthHandler
+	realtime  *handler.RealtimeHandler
+	payment   *handler.PaymentHandler
 }
 
 // routeMount 是垂直切片向 /v1 贡献路由的最小契约。
@@ -42,22 +39,22 @@ type routeMount func(v1 *gin.RouterGroup, mw *middleware.Middleware)
 func v1Routes(handlers routeHandlers) []routeMount {
 	return []routeMount{
 		func(v1 *gin.RouterGroup, mw *middleware.Middleware) {
-			clientauth.RegisterRoutes(v1, handlers.auth, mw)
+			routes.RegisterClientAuthRoutes(v1, handlers.auth, mw)
 		},
 		func(v1 *gin.RouterGroup, mw *middleware.Middleware) {
-			profile.RegisterRoutes(v1, handlers.profile, mw)
+			routes.RegisterProfileRoutes(v1, handlers.profile, mw)
 		},
 		func(v1 *gin.RouterGroup, mw *middleware.Middleware) {
-			adminauth.RegisterAdminAuthRoutes(v1, handlers.adminAuth, mw)
+			adminroutes.RegisterAdminAuthRoutes(v1, handlers.adminAuth, mw)
 		},
 		func(v1 *gin.RouterGroup, mw *middleware.Middleware) {
-			adminuser.RegisterAdminRoutes(v1, handlers.admin, mw)
+			adminroutes.RegisterAdminUserRoutes(v1, handlers.admin, mw)
 		},
 		func(v1 *gin.RouterGroup, mw *middleware.Middleware) {
-			realtimeFeature.RegisterRoutes(v1, handlers.realtime, mw)
+			routes.RegisterRealtimeRoutes(v1, handlers.realtime, mw)
 		},
 		func(v1 *gin.RouterGroup, mw *middleware.Middleware) {
-			paymentFeature.RegisterRoutes(v1, handlers.payment, mw)
+			routes.RegisterPaymentRoutes(v1, handlers.payment, mw)
 		},
 	}
 }
@@ -108,7 +105,7 @@ func buildEngine(
 	engine.NoMethod(abortWithError(errs.MethodNotAllowed("")))
 
 	// 注册根路径与系统探针路由（/、/livez、/readyz）
-	system.RegisterRoutes(engine, handlers.system)
+	routes.RegisterSystemRoutes(engine, handlers.system)
 
 	// 仅在开启 ENABLE_DOCS 时注册 API 文档路由
 	if cfg.App.EnableDocs {
@@ -144,13 +141,13 @@ func InspectEngine(cfg *config.Config) (*gin.Engine, error) {
 		globalMW,
 		routeMW,
 		routeHandlers{
-			system:    &system.Handler{},
-			auth:      &clientauth.Handler{},
-			profile:   &profile.Handler{},
-			admin:     &adminuser.Handler{},
-			adminAuth: &adminauth.Handler{},
-			realtime:  &realtimeFeature.Handler{},
-			payment:   &paymentFeature.Handler{},
+			system:    &handler.SystemHandler{},
+			auth:      &handler.ClientAuthHandler{},
+			profile:   &handler.ProfileHandler{},
+			admin:     &adminhandler.UserHandler{},
+			adminAuth: &adminhandler.AuthHandler{},
+			realtime:  &handler.RealtimeHandler{},
+			payment:   &handler.PaymentHandler{},
 		},
 	)
 }

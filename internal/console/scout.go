@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"cgin/internal/console/core"
-	"cgin/internal/platform/search"
-	"cgin/internal/shared/indexes"
+	"cgin/pkg/search"
+	"cgin/shared/indexes"
 )
 
 // ScoutImportOptions 封装 scout:import 命令的参数与依赖容器 (SRP & DIP)。

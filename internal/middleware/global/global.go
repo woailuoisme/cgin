@@ -14,21 +14,23 @@
 package global
 
 import (
+	"cmp"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/cache"
-	"cgin/internal/platform/i18n"
-	"cgin/internal/platform/validator"
+	"cgin/pkg/cache"
+	"cgin/pkg/i18n"
+	"cgin/pkg/logger"
+	"cgin/pkg/validator"
 )
 
 // Deps 描述全局中间件所需的全部外部依赖。
 type Deps struct {
 	Cache      cache.Store
-	Logger     *zap.Logger
+	Logger     *zerolog.Logger
 	CORS       config.CORSConfig
 	Production bool
 	Translator *i18n.Translator
@@ -44,7 +46,7 @@ type Deps struct {
 // Middleware 承载全局传输层中间件的实例依赖。
 type Middleware struct {
 	cache          cache.Store
-	logger         *zap.Logger
+	logger         *zerolog.Logger
 	cors           config.CORSConfig
 	production     bool
 	translator     *i18n.Translator
@@ -55,10 +57,12 @@ type Middleware struct {
 }
 
 // New 构造全局中间件实例。
+//
+// 未注入 Logger 时回退到 logger.Nop()，使得各中间件可以无条件链式打日志。
 func New(deps Deps) *Middleware {
 	return &Middleware{
 		cache:          deps.Cache,
-		logger:         deps.Logger,
+		logger:         cmp.Or(deps.Logger, logger.Nop()),
 		cors:           deps.CORS,
 		production:     deps.Production,
 		translator:     deps.Translator,

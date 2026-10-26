@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"cgin/internal/platform/errs"
+	"cgin/pkg/errs"
 )
 
 // mailpitBaseURL 是本地 Mailpit 的 HTTP 接口，用于取回真实投递的验证码。

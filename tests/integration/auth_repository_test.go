@@ -14,7 +14,7 @@ import (
 
 	"cgin/internal/database"
 	"cgin/internal/database/sqlc"
-	"cgin/internal/shared/enums"
+	"cgin/shared/enums"
 )
 
 // testHash 是占位口令哈希，仓储层不校验 argon2id 本身。

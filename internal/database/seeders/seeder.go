@@ -9,10 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/zap"
-
 	"cgin/internal/database"
-	"cgin/internal/platform/logger"
+	"cgin/pkg/logger"
 )
 
 // Seeder 是数据播种器必须实现的统一接口。
@@ -99,8 +97,7 @@ func (r *Runner) Call(ctx context.Context, seeders ...Seeder) error {
 		r.mu.Lock()
 		if r.called[name] {
 			r.mu.Unlock()
-			logger.FromContext(ctx).Debug("seeder already executed, skipping duplicate seeding",
-				zap.String("seeder", name))
+			logger.FromContext(ctx).Debug().Str("seeder", name).Msg("seeder already executed, skipping duplicate seeding")
 			continue
 		}
 		// 标记当前 seeder 已在执行中，防止循环或重入
@@ -112,8 +109,7 @@ func (r *Runner) Call(ctx context.Context, seeders ...Seeder) error {
 		}
 
 		start := time.Now()
-		logger.FromContext(ctx).Info("executing database seeder...",
-			zap.String("seeder", name))
+		logger.FromContext(ctx).Info().Str("seeder", name).Msg("executing database seeder...")
 		if err := s.Seed(ctx, r.db); err != nil {
 			r.mu.Lock()
 			delete(r.called, name)
@@ -122,9 +118,10 @@ func (r *Runner) Call(ctx context.Context, seeders ...Seeder) error {
 		}
 		duration := time.Since(start)
 
-		logger.FromContext(ctx).Info("database seeder completed",
-			zap.String("seeder", name),
-			zap.Duration("duration", duration))
+		logger.FromContext(ctx).Info().
+			Str("seeder", name).
+			Dur("duration", duration).
+			Msg("database seeder completed")
 
 		if hook != nil {
 			hook(name, i+1, total, duration, true)

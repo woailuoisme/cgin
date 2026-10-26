@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"cgin/internal/platform/cache"
+	"cgin/pkg/cache"
 )
 
 // TestKey 覆盖命名空间拼接的几种输入。

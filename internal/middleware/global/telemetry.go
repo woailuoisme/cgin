@@ -15,7 +15,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
-	"cgin/internal/platform/telemetry"
+	"cgin/pkg/telemetry"
 )
 
 const (

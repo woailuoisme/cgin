@@ -1,11 +1,11 @@
-package {{ .PackageName }}
+package {{ .DTOPackage }}
 
 import (
 	"strings"
 	"time"
 
 	"cgin/internal/database/sqlc"
-	"cgin/internal/platform/response"
+	"cgin/pkg/response"
 )
 
 // {{ .PascalName }}PathParams 路径中的{{ .ChineseName }}唯一标识。

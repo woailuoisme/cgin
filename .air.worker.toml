@@ -13,10 +13,10 @@ tmp_dir = "tmp"
   # 监听 Go 源码、TOML 配置与 Casbin 权限规则文件
   include_ext = ["go", "toml", "csv", "conf"]
 
-  # 排除非运行态与生成物目录
+  # 排除非运行态与生成物目录（database/ 只放 SQL 资产，不参与编译）
   exclude_dir = [
-    "bin", "tmp", "vendor", "node_modules",
-    "tests", "apidocs", "docs", "migrations",
+    "bin", "tmp", "vendor", "node_modules", "coverage",
+    "tests", "apidocs", "docs", "database",
     ".git", ".code-review-graph", ".codegraph",
   ]
   exclude_regex = ["_test\\.go$"]

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -45,7 +44,7 @@ func (a *Application) Serve(ctx context.Context) error {
 	group.Go(func() error {
 		<-groupCtx.Done()
 
-		a.logger.Info("shutdown signal received, initiating graceful shutdown")
+		a.logger.Info().Msg("shutdown signal received, initiating graceful shutdown")
 		shutdownTimeout := cmp.Or(srvCfg.ShutdownTimeout, 3*time.Second)
 		// 停机本身不能被已取消的父上下文带停。
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
@@ -76,18 +75,16 @@ func (a *Application) Serve(ctx context.Context) error {
 // logStartup 输出一次启动横幅，便于本地与容器日志定位监听地址。
 func (a *Application) logStartup(server *http.Server) {
 	base := serverURL(a.cfg.App.Port)
-	fields := make([]zap.Field, 0, 6)
-	fields = append(fields,
-		zap.String("addr", server.Addr),
-		zap.String("url", base),
-		zap.String("env", a.cfg.App.Env),
-		zap.String("gin", gin.Mode()),
-		zap.String("storage", a.cfg.Storage.Driver),
-	)
+	event := a.logger.Info().
+		Str("addr", server.Addr).
+		Str("url", base).
+		Str("env", a.cfg.App.Env).
+		Str("gin", gin.Mode()).
+		Str("storage", a.cfg.Storage.Driver)
 	if a.cfg.App.EnableDocs {
-		fields = append(fields, zap.String("docs", base+docsPagePath))
+		event = event.Str("docs", base+docsPagePath)
 	}
-	a.logger.Info("HTTP server started and listening", fields...)
+	event.Msg("HTTP server started and listening")
 }
 
 // serverURL 构造本地服务访问 URL。

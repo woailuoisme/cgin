@@ -16,13 +16,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"cgin/internal/features/client/profile"
-	"cgin/internal/platform/authentication"
-	"cgin/internal/platform/errs"
-	"cgin/internal/platform/validator"
-	"cgin/internal/shared/enums"
-	"cgin/internal/shared/media"
-	"cgin/internal/shared/user"
+	"cgin/internal/dto"
+	"cgin/internal/handler"
+	"cgin/internal/service"
+	"cgin/pkg/authentication"
+	"cgin/pkg/errs"
+	"cgin/pkg/validator"
+	"cgin/shared/enums"
+	"cgin/shared/media"
+	"cgin/shared/user"
 )
 
 // TestMain 安装校验器：本包通过 gin 绑定驱动多部分表单与 JSON。
@@ -38,7 +40,7 @@ func TestMain(m *testing.M) {
 
 // TestUpdateProfileRequestShape 校验自助更新只暴露 Q27 允许的字段。
 func TestUpdateProfileRequestShape(t *testing.T) {
-	var request profile.UpdateProfileBody
+	var request dto.UpdateProfileBody
 	require.NoError(t, json.Unmarshal([]byte(`{
 		"name":"Alice",
 		"image":null,
@@ -68,7 +70,7 @@ func TestUploadAvatarValidation(t *testing.T) {
 
 	avatars := &fakeAvatars{}
 	users := &fakeUsers{profile: user.Profile{}}
-	handler := profile.NewHandler(profile.MustNewService(profile.Deps{Users: users, Avatars: avatars}))
+	handler := handler.NewProfileHandler(service.MustNewProfileService(service.ProfileDeps{Users: users, Avatars: avatars}))
 
 	newTestEngine := func(withAuth bool) *gin.Engine {
 		engine := gin.New()
@@ -191,7 +193,7 @@ func TestUploadAvatarAbortsWhenHostWriteFails(t *testing.T) {
 func newAvatarEngine(t *testing.T, avatars *fakeAvatars, users *fakeUsers) *gin.Engine {
 	t.Helper()
 
-	handler := profile.NewHandler(profile.MustNewService(profile.Deps{Users: users, Avatars: avatars}))
+	handler := handler.NewProfileHandler(service.MustNewProfileService(service.ProfileDeps{Users: users, Avatars: avatars}))
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) {
 		c.Request = c.Request.WithContext(authentication.With(c.Request.Context(), authentication.Identity{

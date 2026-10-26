@@ -19,9 +19,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/errs"
-	"cgin/internal/platform/i18n"
-	"cgin/internal/platform/validator"
+	"cgin/pkg/errs"
+	"cgin/pkg/i18n"
+	"cgin/pkg/validator"
 )
 
 func init() { gin.SetMode(gin.TestMode) }

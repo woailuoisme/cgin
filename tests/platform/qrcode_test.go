@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"cgin/internal/platform/qrcode"
+	"cgin/pkg/qrcode"
 )
 
 // PNG 图像头部固定魔数。

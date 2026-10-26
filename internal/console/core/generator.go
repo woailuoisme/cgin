@@ -18,7 +18,7 @@ import (
 type GeneratorOptions struct {
 	// Name 是模块名或实体名（支持 CamelCase, snake_case, kebab-case 等格式）
 	Name string
-	// IsAdmin 标识是否生成管理端模块（默认为 true，路径为 internal/features/admin/<name>/）
+	// IsAdmin 标识是否生成管理端模块（默认为 true，落盘到各层的 admin/ 子目录）
 	IsAdmin bool
 	// TagName 自定义 Swagger 标签名（若留空则自动推导）
 	TagName string
@@ -34,7 +34,25 @@ type GeneratorOptions struct {
 
 // TemplateData 注入到模板渲染上下文的元数据对象。
 type TemplateData struct {
-	PackageName  string
+	// ModuleFile 是该模块在各层落盘的统一文件名。
+	ModuleFile string
+	// LayerDir 是管理端专属子目录名（admin）；客户端为空字符串。
+	LayerDir string
+	// DTOImportPath、HandlerImportPath、ServiceImportPath 是三层对应的导入路径。
+	DTOImportPath     string
+	HandlerImportPath string
+	ServiceImportPath string
+	// RoutesPath 是路由注册文件的相对路径。
+	RoutesPath string
+	// DTOPackage、HandlerPackage、ServicePackage、RoutesPackage 是四层各自的包名。
+	DTOPackage     string
+	HandlerPackage string
+	ServicePackage string
+	RoutesPackage  string
+	// ScopePascal 是作用域首字母大写形式（Admin/Client），用于拼接全局唯一的路由注册函数名。
+	ScopePascal string
+	// RoutesFunc 是注册到 internal/routes 单包后的唯一函数名。
+	RoutesFunc   string
 	PascalName   string
 	CamelName    string
 	SnakeName    string
@@ -82,9 +100,21 @@ func BuildTemplateData(opts GeneratorOptions) TemplateData {
 	pluralPascal := ToPascalCase(pluralSnake)
 	pluralKebab := ToKebabCase(pluralSnake)
 
-	pkgName := strings.ReplaceAll(singularSnake, "_", "")
+	basePkg := strings.ReplaceAll(singularSnake, "_", "")
+	moduleFile := basePkg + ".go"
+	scopePrefix := ""
+	dtoPackage := "dto"
+	handlerPackage := "handler"
+	servicePackage := "service"
+	routesPackage := "routes"
+	routesPath := filepath.Join("internal", "routes", moduleFile)
 	if opts.IsAdmin {
-		pkgName = "admin" + pkgName
+		scopePrefix = "admin"
+		dtoPackage = "admindto"
+		handlerPackage = "adminhandler"
+		servicePackage = "adminservice"
+		routesPackage = "adminroutes"
+		routesPath = filepath.Join("internal", "routes", "admin", moduleFile)
 	}
 
 	chinese := opts.ChineseName
@@ -111,21 +141,37 @@ func BuildTemplateData(opts GeneratorOptions) TemplateData {
 		tableAlias = singularSnake[:1]
 	}
 
+	scopePascal := "Client"
+	if opts.IsAdmin {
+		scopePascal = "Admin"
+	}
+
 	return TemplateData{
-		PackageName:  pkgName,
-		PascalName:   pascal,
-		CamelName:    camel,
-		SnakeName:    singularSnake,
-		KebabName:    kebab,
-		PluralSnake:  pluralSnake,
-		PluralPascal: pluralPascal,
-		PluralKebab:  pluralKebab,
-		TableName:    pluralSnake,
-		TableAlias:   tableAlias,
-		TagName:      tag,
-		ChineseName:  chinese,
-		RoutePath:    routePath,
-		IsAdmin:      opts.IsAdmin,
+		ModuleFile:        moduleFile,
+		LayerDir:          scopePrefix,
+		DTOImportPath:     filepath.Join("cgin", "internal", "dto", scopePrefix),
+		HandlerImportPath: filepath.Join("cgin", "internal", "handler", scopePrefix),
+		ServiceImportPath: filepath.Join("cgin", "internal", "service", scopePrefix),
+		RoutesPath:        routesPath,
+		DTOPackage:        dtoPackage,
+		HandlerPackage:    handlerPackage,
+		ServicePackage:    servicePackage,
+		RoutesPackage:     routesPackage,
+		ScopePascal:       scopePascal,
+		RoutesFunc:        "Register" + scopePascal + pluralPascal + "Routes",
+		PascalName:        pascal,
+		CamelName:         camel,
+		SnakeName:         singularSnake,
+		KebabName:         kebab,
+		PluralSnake:       pluralSnake,
+		PluralPascal:      pluralPascal,
+		PluralKebab:       pluralKebab,
+		TableName:         pluralSnake,
+		TableAlias:        tableAlias,
+		TagName:           tag,
+		ChineseName:       chinese,
+		RoutePath:         routePath,
+		IsAdmin:           opts.IsAdmin,
 	}
 }
 
@@ -143,7 +189,7 @@ type Plan interface {
 	CleanupDirs() []string
 }
 
-// CRUDPlan 实现针对 Domain-First CRUD 模块的生成规划契约。
+// CRUDPlan 实现针对分层优先（routes → handler → service → dto）CRUD 模块的生成规划契约。
 type CRUDPlan struct {
 	opts GeneratorOptions
 	data TemplateData
@@ -167,30 +213,30 @@ func (p *CRUDPlan) Data() TemplateData {
 	return p.data
 }
 
-func (p *CRUDPlan) featureDir() string {
-	scope := "client"
-	if p.opts.IsAdmin {
-		scope = "admin"
-	}
-	return filepath.Join("internal", "features", scope, p.data.KebabName)
+// moduleDirs 返回该模块在 dto / handler / service 三层的目录路径。
+func (p *CRUDPlan) moduleDirs() (dtoDir, handlerDir, serviceDir string) {
+	return filepath.Join("internal", "dto", p.data.LayerDir),
+		filepath.Join("internal", "handler", p.data.LayerDir),
+		filepath.Join("internal", "service", p.data.LayerDir)
 }
 
 // Files 返回 CRUD 规划中全部目标文件及渲染模板。
 func (p *CRUDPlan) Files() ([]PlannedFile, error) {
-	featureDir := p.featureDir()
+	dtoDir, handlerDir, serviceDir := p.moduleDirs()
 	return []PlannedFile{
-		{RelPath: filepath.Join("internal", "database", "queries", p.data.PluralSnake+".sql"), Template: "queries.tmpl", Data: p.data},
-		{RelPath: filepath.Join("internal", "database", "schemas", p.data.PluralSnake+".sql"), Template: "schema.tmpl", Data: p.data},
-		{RelPath: filepath.Join(featureDir, "dto.go"), Template: "dto.tmpl", Data: p.data},
-		{RelPath: filepath.Join(featureDir, "service.go"), Template: "service.tmpl", Data: p.data},
-		{RelPath: filepath.Join(featureDir, "handler.go"), Template: "handler.tmpl", Data: p.data},
-		{RelPath: filepath.Join(featureDir, "routes.go"), Template: "routes.tmpl", Data: p.data},
+		{RelPath: filepath.Join("database", "queries", p.data.PluralSnake+".sql"), Template: "queries.tmpl", Data: p.data},
+		{RelPath: filepath.Join("database", "schemas", p.data.PluralSnake+".sql"), Template: "schema.tmpl", Data: p.data},
+		{RelPath: filepath.Join(dtoDir, p.data.ModuleFile), Template: "dto.tmpl", Data: p.data},
+		{RelPath: filepath.Join(serviceDir, p.data.ModuleFile), Template: "service.tmpl", Data: p.data},
+		{RelPath: filepath.Join(handlerDir, p.data.ModuleFile), Template: "handler.tmpl", Data: p.data},
+		{RelPath: p.data.RoutesPath, Template: "routes.tmpl", Data: p.data},
 	}, nil
 }
 
 // CleanupDirs 返回该模块在销毁回退时需要尝试清理的目录列表。
 func (p *CRUDPlan) CleanupDirs() []string {
-	return []string{p.featureDir()}
+	dtoDir, handlerDir, serviceDir := p.moduleDirs()
+	return []string{dtoDir, handlerDir, serviceDir}
 }
 
 // Pipeline 提供可插拔的代码生成与回退执行管线引擎 (SRP & OCP)。

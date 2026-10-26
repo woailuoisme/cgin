@@ -156,10 +156,11 @@ func formatHandlerName(raw string) string {
 		return "-"
 	}
 	s = strings.TrimSuffix(s, "-fm")
-	s = strings.TrimPrefix(s, "cgin/internal/features/")
-	s = strings.TrimPrefix(s, "cgin/internal/")
 	s = strings.TrimPrefix(s, "cgin/")
-	s = strings.ReplaceAll(s, ".(*Handler).", ".Handler.")
+	s = strings.TrimPrefix(s, "internal/")
+	// 运行时符号形如 handler.(*SystemHandler).Liveness，统一收敛为 handler.SystemHandler.Liveness。
+	s = strings.ReplaceAll(s, ".(*", ".")
+	s = strings.ReplaceAll(s, ").", ".")
 	return s
 }
 

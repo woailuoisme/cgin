@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"cgin/internal/platform/hasher"
+	"cgin/pkg/hasher"
 )
 
 // TestMakeAndCheck 校验口令往返成立，且同一口令两次哈希结果不同（盐值随机）。

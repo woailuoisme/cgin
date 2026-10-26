@@ -12,17 +12,19 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 
 	"cgin/internal/config"
-	featurePayment "cgin/internal/features/payment"
+	"cgin/internal/handler"
 	"cgin/internal/middleware/global"
-	platformPayment "cgin/internal/platform/payment"
-	"cgin/internal/platform/payment/enums"
+	"cgin/internal/routes"
+	"cgin/internal/service"
+	"cgin/pkg/logger"
+	platformPayment "cgin/pkg/payment"
+	"cgin/pkg/payment/enums"
 )
 
 // setupPaymentTest 构造测试用的 Gin 引擎、服务实例与 Fake 支付管理器。
-func setupPaymentTest(t *testing.T) (*gin.Engine, *featurePayment.Service, *platformPayment.Manager) {
+func setupPaymentTest(t *testing.T) (*gin.Engine, *service.PaymentService, *platformPayment.Manager) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
@@ -37,16 +39,16 @@ func setupPaymentTest(t *testing.T) (*gin.Engine, *featurePayment.Service, *plat
 		},
 	}
 
-	mgr, err := platformPayment.NewManager(cfg, zap.NewNop())
+	mgr, err := platformPayment.NewManager(cfg, logger.Nop())
 	require.NoError(t, err)
 
-	svc := featurePayment.NewService(mgr, nil, cfg, nil)
-	handler := featurePayment.NewHandler(svc)
+	svc := service.NewPaymentService(mgr, nil, cfg, nil)
+	handler := handler.NewPaymentHandler(svc)
 
 	engine := gin.New()
 	engine.Use(global.New(global.Deps{}).ErrorHandler())
 	v1 := engine.Group("/v1")
-	featurePayment.RegisterRoutes(v1, handler, nil)
+	routes.RegisterPaymentRoutes(v1, handler, nil)
 
 	return engine, svc, mgr
 }
@@ -381,12 +383,12 @@ func TestHandleNotification_GatewayNotInitialized(t *testing.T) {
 		App: config.AppConfig{URL: "https://shop.example.com"},
 	}
 	// paymentManager 为 nil
-	svc := featurePayment.NewService(nil, nil, cfg, nil)
-	handler := featurePayment.NewHandler(svc)
+	svc := service.NewPaymentService(nil, nil, cfg, nil)
+	handler := handler.NewPaymentHandler(svc)
 
 	engine := gin.New()
 	v1 := engine.Group("/v1")
-	featurePayment.RegisterRoutes(v1, handler, nil)
+	routes.RegisterPaymentRoutes(v1, handler, nil)
 
 	req := httptest.NewRequest(
 		http.MethodPost,

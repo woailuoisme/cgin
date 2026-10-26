@@ -7,15 +7,14 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
-	"go.uber.org/zap"
 
 	"cgin/internal/config"
 	"cgin/internal/database"
 	"cgin/internal/database/sqlc"
-	"cgin/internal/platform/hasher"
-	"cgin/internal/platform/logger"
-	"cgin/internal/platform/validator"
-	"cgin/internal/shared/enums"
+	"cgin/pkg/hasher"
+	"cgin/pkg/logger"
+	"cgin/pkg/validator"
+	"cgin/shared/enums"
 )
 
 // AdminSeeder 负责初始超级管理员账号的幂等播种。
@@ -48,7 +47,7 @@ func (s *AdminSeeder) Seed(ctx context.Context, db *database.DB) error {
 
 	email := strings.ToLower(strings.TrimSpace(cfg.Seed.AdminEmail))
 	if _, err := db.Queries(ctx).GetUserByEmail(ctx, sqlc.GetUserByEmailParams{Email: email}); err == nil {
-		logger.FromContext(ctx).Warn("admin account already exists, skipping seeding", zap.String("email", email))
+		logger.FromContext(ctx).Warn().Str("email", email).Msg("admin account already exists, skipping seeding")
 		return nil
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("admin seeder query existing admin failed: %w", err)
@@ -86,8 +85,9 @@ func (s *AdminSeeder) Seed(ctx context.Context, db *database.DB) error {
 		return fmt.Errorf("admin seeder create account failed: %w", err)
 	}
 
-	logger.FromContext(ctx).Info("initial admin user seeded successfully",
-		zap.String("id", admin.ID),
-		zap.String("email", admin.Email))
+	logger.FromContext(ctx).Info().
+		Str("id", admin.ID).
+		Str("email", admin.Email).
+		Msg("initial admin user seeded successfully")
 	return nil
 }

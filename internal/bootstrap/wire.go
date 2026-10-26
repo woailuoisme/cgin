@@ -6,38 +6,36 @@ import (
 	"slices"
 
 	"github.com/dromara/carbon/v2"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 
 	"cgin/internal/config"
 	"cgin/internal/database"
-	adminauth "cgin/internal/features/admin/auth"
-	adminuser "cgin/internal/features/admin/user"
-	clientauth "cgin/internal/features/client/auth"
-	"cgin/internal/features/client/profile"
-	paymentFeature "cgin/internal/features/payment"
-	realtimeFeature "cgin/internal/features/realtime"
-	"cgin/internal/features/system"
+	admindto "cgin/internal/dto/admin"
+	"cgin/internal/handler"
+	adminhandler "cgin/internal/handler/admin"
 	"cgin/internal/middleware"
 	"cgin/internal/middleware/global"
-	platformauth "cgin/internal/platform/authentication"
-	"cgin/internal/platform/authorization"
-	"cgin/internal/platform/cache"
-	"cgin/internal/platform/eventbus"
-	"cgin/internal/platform/hasher"
-	"cgin/internal/platform/i18n"
-	"cgin/internal/platform/logger"
-	"cgin/internal/platform/mailer"
-	"cgin/internal/platform/notification"
-	"cgin/internal/platform/payment"
-	"cgin/internal/platform/queue"
-	"cgin/internal/platform/realtime"
-	"cgin/internal/platform/search"
-	"cgin/internal/platform/storage"
-	"cgin/internal/platform/telemetry"
-	"cgin/internal/platform/validator"
-	"cgin/internal/shared/media"
-	sharedDatabase "cgin/internal/shared/notification/database"
-	"cgin/internal/shared/user"
+	"cgin/internal/service"
+	adminservice "cgin/internal/service/admin"
+	platformauth "cgin/pkg/authentication"
+	"cgin/pkg/authorization"
+	"cgin/pkg/cache"
+	"cgin/pkg/eventbus"
+	"cgin/pkg/hasher"
+	"cgin/pkg/i18n"
+	"cgin/pkg/logger"
+	"cgin/pkg/mailer"
+	"cgin/pkg/notification"
+	"cgin/pkg/payment"
+	"cgin/pkg/queue"
+	"cgin/pkg/realtime"
+	"cgin/pkg/search"
+	"cgin/pkg/storage"
+	"cgin/pkg/telemetry"
+	"cgin/pkg/validator"
+	"cgin/shared/media"
+	sharedDatabase "cgin/shared/notification/database"
+	"cgin/shared/user"
 )
 
 // NewApplication 按依赖顺序完成装配：配置 → 日志 → 基础设施 → 领域 → HTTP。
@@ -97,7 +95,7 @@ func NewApplication(ctx context.Context, portOverride int) (_ *Application, err 
 // 字段只在这一层被赋值，功能层只读，避免组装过程变成一条几十个局部变量的长链。
 type infrastructure struct {
 	cfg        *config.Config
-	log        *zap.Logger
+	log        *zerolog.Logger
 	db         *database.DB
 	cache      *cache.Client
 	locker     cache.Locker
@@ -148,7 +146,7 @@ func initInfrastructure(ctx context.Context, cfg *config.Config, td *teardown) (
 	}
 
 	// 校验器在这里构造一次并挂载：规则由各领域模块显式贡献，不再靠 init() 自注册。
-	val, err := validator.New(slices.Concat(user.ValidationOptions(), adminuser.ValidationOptions())...)
+	val, err := validator.New(slices.Concat(user.ValidationOptions(), admindto.ValidationOptions())...)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +227,7 @@ func initFeatures(in *infrastructure, td *teardown) (*featureSet, error) {
 		SigningKey:  in.cfg.JWT.Secret,
 	})
 
-	authService := clientauth.MustNewService(clientauth.Deps{
+	authService := service.MustNewClientAuthService(service.ClientAuthDeps{
 		DB:          in.db,
 		Users:       userService,
 		Credentials: userProvider,
@@ -243,8 +241,8 @@ func initFeatures(in *infrastructure, td *teardown) (*featureSet, error) {
 		Publisher:   in.eventbus,
 	})
 
-	adminService := adminuser.MustNewService(adminuser.Deps{UserService: userService})
-	adminAuthService := adminauth.MustNewService(adminauth.Deps{
+	adminService := adminservice.MustNewUserService(adminservice.UserDeps{UserService: userService})
+	adminAuthService := adminservice.MustNewAuthService(adminservice.AuthDeps{
 		Guard:     adminGuard,
 		Passwords: userProvider,
 	})
@@ -256,8 +254,8 @@ func initFeatures(in *infrastructure, td *teardown) (*featureSet, error) {
 
 	mediaManager := media.New(in.cfg.Media, in.cfg.Storage, in.disk, in.db)
 
-	systemHandler := system.NewHandler(
-		system.NewService(system.Deps{
+	systemHandler := handler.NewSystemHandler(
+		service.NewSystemService(service.SystemDeps{
 			Database: &databasePinger{db: in.db},
 			Cache:    in.cache,
 			Storage:  in.disk,
@@ -270,7 +268,7 @@ func initFeatures(in *infrastructure, td *teardown) (*featureSet, error) {
 		in.log,
 	)
 
-	realtimeService := realtimeFeature.NewService(realtimeFeature.Deps{
+	realtimeService := service.NewRealtimeService(service.RealtimeDeps{
 		Gateway: realtimeGateway,
 		Cfg:     in.cfg,
 		Secret:  in.cfg.Realtime.Secret,
@@ -285,12 +283,12 @@ func initFeatures(in *infrastructure, td *teardown) (*featureSet, error) {
 	return &featureSet{
 		handlers: routeHandlers{
 			system:    systemHandler,
-			auth:      clientauth.NewHandler(authService),
-			profile:   profile.NewHandler(profile.MustNewService(profile.Deps{Users: userService, Avatars: mediaManager})),
-			admin:     adminuser.NewHandler(adminService),
-			adminAuth: adminauth.NewHandler(adminAuthService),
-			realtime:  realtimeFeature.NewHandler(realtimeService),
-			payment:   paymentFeature.NewHandler(paymentFeature.NewService(paymentManager, in.cache, in.cfg, in.eventbus)),
+			auth:      handler.NewClientAuthHandler(authService),
+			profile:   handler.NewProfileHandler(service.MustNewProfileService(service.ProfileDeps{Users: userService, Avatars: mediaManager})),
+			admin:     adminhandler.NewUserHandler(adminService),
+			adminAuth: adminhandler.NewAuthHandler(adminAuthService),
+			realtime:  handler.NewRealtimeHandler(realtimeService),
+			payment:   handler.NewPaymentHandler(service.NewPaymentService(paymentManager, in.cache, in.cfg, in.eventbus)),
 		},
 		global:   globalMW,
 		route:    routeMW,
@@ -300,45 +298,44 @@ func initFeatures(in *infrastructure, td *teardown) (*featureSet, error) {
 
 // 编译期断言满足探针接口。
 var (
-	_ system.Pinger = (*databasePinger)(nil)
-	_ system.Pinger = (*cache.Client)(nil)
-	_ system.Pinger = mailer.Mailer(nil)
+	_ service.Pinger = (*databasePinger)(nil)
+	_ service.Pinger = (*cache.Client)(nil)
+	_ service.Pinger = mailer.Mailer(nil)
 )
 
-// databasePinger 将 *database.DB 适配为 system.Pinger。
+// databasePinger 将 *database.DB 适配为 service.Pinger。
 type databasePinger struct{ db *database.DB }
 
-// Ping 实现 system.Pinger。
+// Ping 实现 service.Pinger。
 func (p *databasePinger) Ping(ctx context.Context) error { return p.db.Ping(ctx) }
 
 // Driver 返回底层驱动标识。
 func (*databasePinger) Driver() string { return "postgres" }
 
 // logDatabaseReady 打印数据库连接池就绪日志并进行连接池配额诊断。
-func logDatabaseReady(ctx context.Context, log *zap.Logger, db *database.DB, cfg config.DatabaseConfig) {
-	log.Info(
-		"database connection pool ready",
-		zap.Int("max_open_conns", cfg.MaxOpenConns),
-		zap.Int("max_idle_conns", cfg.MaxIdleConns),
-		zap.Duration("conn_max_lifetime", cfg.ConnMaxLifetime),
-		zap.Duration("conn_max_idle_time", cfg.ConnMaxIdleTime),
-		zap.Duration("connect_timeout", cfg.ConnectTimeout),
-		zap.Duration("statement_timeout", cfg.StatementTimeout),
-		zap.Duration("idle_in_tx_timeout", cfg.IdleInTxTimeout),
-		zap.Duration("slow_threshold", cfg.SlowThreshold),
-		zap.Bool("debug", cfg.Debug),
-	)
+func logDatabaseReady(ctx context.Context, log *zerolog.Logger, db *database.DB, cfg config.DatabaseConfig) {
+	log.Info().
+		Int("max_open_conns", cfg.MaxOpenConns).
+		Int("max_idle_conns", cfg.MaxIdleConns).
+		Dur("conn_max_lifetime", cfg.ConnMaxLifetime).
+		Dur("conn_max_idle_time", cfg.ConnMaxIdleTime).
+		Dur("connect_timeout", cfg.ConnectTimeout).
+		Dur("statement_timeout", cfg.StatementTimeout).
+		Dur("idle_in_tx_timeout", cfg.IdleInTxTimeout).
+		Dur("slow_threshold", cfg.SlowThreshold).
+		Bool("debug", cfg.Debug).
+		Msg("database connection pool ready")
 
 	if warning, err := database.BudgetWarning(ctx, db.Pool(), cfg.MaxOpenConns); err != nil {
-		log.Debug("database connection budget check skipped", zap.Error(err))
+		log.Debug().Err(err).Msg("database connection budget check skipped")
 	} else if warning != "" {
-		log.Warn("database max open connections exceed configured budget", zap.String("detail", warning))
+		log.Warn().Str("detail", warning).Msg("database max open connections exceed configured budget")
 	}
 }
 
 // teardown 管理装配中途失败时的逆序资源清理。
 type teardown struct {
-	log     *zap.Logger
+	log     *zerolog.Logger
 	closers []func() error
 }
 
@@ -349,13 +346,13 @@ func (t *teardown) add(closer func() error) { t.closers = append(t.closers, clos
 func (t *teardown) closeAll() {
 	for _, closer := range slices.Backward(t.closers) {
 		if err := closer(); err != nil && t.log != nil {
-			t.log.Warn("failed to close resource during teardown", zap.Error(err))
+			t.log.Warn().Err(err).Msg("failed to close resource during teardown")
 		}
 	}
 }
 
 // initLogging 初始化 OpenTelemetry 遥测与挂载遥测桥接的核心日志器。
-func initLogging(ctx context.Context, cfg *config.Config, td *teardown) (*zap.Logger, error) {
+func initLogging(ctx context.Context, cfg *config.Config, td *teardown) (*zerolog.Logger, error) {
 	telemetryShutdown, err := telemetry.Init(ctx, cfg.Telemetry, cfg.App.Name, cfg.App.Env, "")
 	if err != nil {
 		return nil, fmt.Errorf("init telemetry failed: %w", err)
@@ -365,8 +362,8 @@ func initLogging(ctx context.Context, cfg *config.Config, td *teardown) (*zap.Lo
 	})
 
 	var loggerOpts []logger.Option
-	if core := telemetry.NewZapCore(cfg.Telemetry.EffectiveServiceName(cfg.App.Name), logger.ParseLevel(cfg.Log.Level)); core != nil {
-		loggerOpts = append(loggerOpts, logger.WithExtraCore(core))
+	if hook := telemetry.NewZerologHook(cfg.Telemetry.EffectiveServiceName(cfg.App.Name), logger.ParseLevel(cfg.Log.Level)); hook != nil {
+		loggerOpts = append(loggerOpts, logger.WithHook(hook))
 	}
 
 	log := logger.New(cfg, loggerOpts...)
@@ -375,18 +372,12 @@ func initLogging(ctx context.Context, cfg *config.Config, td *teardown) (*zap.Lo
 }
 
 // initInfraServices 初始化缓存、分布式锁与邮件客户端基础设施。
-func initInfraServices(ctx context.Context, cfg *config.Config, log *zap.Logger, td *teardown) (*cache.Client, cache.Locker, mailer.Mailer, error) {
+func initInfraServices(ctx context.Context, cfg *config.Config, log *zerolog.Logger, td *teardown) (*cache.Client, cache.Locker, mailer.Mailer, error) {
 	cacheClient, err := cache.Open(ctx, cfg.Cache)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	td.add(cacheClient.Close)
-
-	locker, err := cache.NewRedisLocker(cfg.Cache)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	td.add(locker.Close)
 
 	mailerClient, err := mailer.New(cfg.Mail, log)
 	if err != nil {
@@ -394,11 +385,11 @@ func initInfraServices(ctx context.Context, cfg *config.Config, log *zap.Logger,
 	}
 	td.add(mailerClient.Close)
 
-	return cacheClient, locker, mailerClient, nil
+	return cacheClient, cacheClient.Locker(), mailerClient, nil
 }
 
 // initEventSubsystem 装配异步任务队列客户端与基于 Watermill 的事件总线，并挂载领域事件监听。
-func initEventSubsystem(cfg *config.Config, log *zap.Logger, locker cache.Locker, td *teardown) (*eventbus.Manager, *queue.Client, error) {
+func initEventSubsystem(cfg *config.Config, log *zerolog.Logger, locker cache.Locker, td *teardown) (*eventbus.Manager, *queue.Client, error) {
 	queueClient, queueCleanup, err := queue.NewClient(cfg.Queue, queue.AdaptLocker(locker))
 	if err != nil {
 		return nil, nil, err
@@ -414,7 +405,7 @@ func initEventSubsystem(cfg *config.Config, log *zap.Logger, locker cache.Locker
 	}
 	td.add(eventBusManager.Close)
 
-	if err := clientauth.RegisterListeners(eventBusManager, queueClient); err != nil {
+	if err := service.RegisterListeners(eventBusManager, queueClient); err != nil {
 		return nil, nil, err
 	}
 
@@ -430,7 +421,7 @@ func initNotificationSubsystem(
 	td *teardown,
 ) (realtime.Gateway, *notification.Notifier, error) {
 	realtimeReg := realtime.NewRegistry()
-	realtimeFeature.RegisterChannels(realtimeReg, db)
+	service.RegisterChannels(realtimeReg, db)
 
 	realtimeGateway, err := realtime.RegisterRealtimeGateway(cfg, realtimeReg)
 	if err != nil {

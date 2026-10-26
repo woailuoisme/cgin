@@ -12,12 +12,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/money"
-	"cgin/internal/platform/payment"
-	"cgin/internal/platform/payment/enums"
+	"cgin/pkg/logger"
+	"cgin/pkg/money"
+	"cgin/pkg/payment"
+	"cgin/pkg/payment/enums"
 )
 
 func TestPaymentManagerDisabledWhenEmpty(t *testing.T) {
@@ -28,7 +28,7 @@ func TestPaymentManagerDisabledWhenEmpty(t *testing.T) {
 		},
 	}
 
-	manager, err := payment.NewManager(cfg, zap.NewNop())
+	manager, err := payment.NewManager(cfg, logger.Nop())
 	require.NoError(t, err)
 	assert.False(t, manager.Enabled())
 	require.NoError(t, manager.HealthCheck())
@@ -43,7 +43,7 @@ func TestPaymentManagerFakeLifecycle(t *testing.T) {
 		},
 	}
 
-	manager, err := payment.NewManager(cfg, zap.NewNop())
+	manager, err := payment.NewManager(cfg, logger.Nop())
 	require.NoError(t, err)
 	assert.True(t, manager.Enabled())
 	require.NoError(t, manager.HealthCheck())
@@ -224,7 +224,7 @@ func TestCertsDirResolution(t *testing.T) {
 
 	// 因 mock 证书内容不是合法 RSA 私钥，NewManager 在解析私钥时会触发底层解析失败，
 	// 但这证实了文件已成功定位并被读取（而非报文件不存在）！
-	_, err := payment.NewManager(cfg, zap.NewNop())
+	_, err := payment.NewManager(cfg, logger.Nop())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "wechat pay client")
 }
@@ -288,7 +288,7 @@ func TestPaymentCapabilityISP(t *testing.T) {
 			FakeEnabled: false,
 		},
 	}
-	mgr, err := payment.NewManager(cfg, zap.NewNop())
+	mgr, err := payment.NewManager(cfg, logger.Nop())
 	require.NoError(t, err)
 
 	// 注册仅实现了 Payable 的提供者

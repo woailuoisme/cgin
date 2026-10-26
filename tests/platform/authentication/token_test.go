@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/authentication"
-	"cgin/internal/platform/errs"
+	"cgin/pkg/authentication"
+	"cgin/pkg/errs"
 )
 
 // newIssuer 构造不依赖 Redis 的签发器，仅用于签发与校验路径。

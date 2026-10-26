@@ -14,10 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/goleak"
-	"go.uber.org/zap"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/eventbus"
+	"cgin/pkg/eventbus"
+	"cgin/pkg/logger"
 )
 
 func TestMain(m *testing.M) {
@@ -39,7 +39,7 @@ type plainEvent struct {
 
 // TestEventBus_NewAndRegister 验证事件总线的构造、配置默认值与非法驱动校验。
 func TestEventBus_NewAndRegister(t *testing.T) {
-	log := zap.NewNop()
+	log := logger.Nop()
 
 	// 1. 默认注册
 	mgr, err := eventbus.RegisterEventBus(nil, log)
@@ -270,14 +270,14 @@ func TestEventBus_DriverDispatch(t *testing.T) {
 		mgr, err := eventbus.NewManager(config.EventBusConfig{
 			Driver:      eventbus.DriverGoChannel,
 			TopicPrefix: "custom",
-		}, zap.NewNop())
+		}, logger.Nop())
 		require.NoError(t, err)
 		require.NotNil(t, mgr)
 		_ = mgr.Close()
 	})
 
 	t.Run("未知驱动返回错误", func(t *testing.T) {
-		_, err := eventbus.NewManager(config.EventBusConfig{Driver: "custom_mock"}, zap.NewNop())
+		_, err := eventbus.NewManager(config.EventBusConfig{Driver: "custom_mock"}, logger.Nop())
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unsupported event bus driver")
 	})
@@ -329,9 +329,9 @@ func TestEventBus_FunctionalOptions(t *testing.T) {
 	}
 }
 
-// TestZapLoggerAdapter 验证 Zap 适配器的日志记录与字段拷贝能力。
-func TestZapLoggerAdapter(t *testing.T) {
-	adapter := eventbus.NewZapLoggerAdapter(zap.NewNop())
+// TestLoggerAdapter 验证 Watermill 日志适配器的日志记录与字段下沉能力。
+func TestLoggerAdapter(t *testing.T) {
+	adapter := eventbus.NewLoggerAdapter(logger.Nop())
 
 	adapter.Info("test info", watermill.LogFields{"key": "val"})
 	adapter.Debug("test debug", nil)

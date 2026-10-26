@@ -6,23 +6,23 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	featureRealtime "cgin/internal/features/realtime"
-	platformRealtime "cgin/internal/platform/realtime"
+	"cgin/internal/service"
+	platformRealtime "cgin/pkg/realtime"
 )
 
 func TestChannelHelpers(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "private:users.u123", featureRealtime.UserChannel("u123"))
-	assert.Equal(t, "personal#u123", featureRealtime.PersonalChannel("u123"))
-	assert.Equal(t, "admin:notifications", featureRealtime.AdminNotificationChannel())
+	assert.Equal(t, "private:users.u123", service.UserChannel("u123"))
+	assert.Equal(t, "personal#u123", service.PersonalChannel("u123"))
+	assert.Equal(t, "admin:notifications", service.AdminNotificationChannel())
 }
 
 func TestRegisterChannelsAuthorization(t *testing.T) {
 	t.Parallel()
 
 	reg := platformRealtime.NewRegistry()
-	featureRealtime.RegisterChannels(reg, nil)
+	service.RegisterChannels(reg, nil)
 
 	// 1. 验证个人用户私有频道 private:users.{id}
 	t.Run("用户订阅自身私有频道", func(t *testing.T) {
@@ -65,5 +65,5 @@ func TestRegisterChannelsAuthorization(t *testing.T) {
 	})
 
 	// 4. 验证幂等性
-	featureRealtime.RegisterChannels(reg, nil)
+	service.RegisterChannels(reg, nil)
 }

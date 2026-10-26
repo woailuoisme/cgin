@@ -64,7 +64,7 @@ OTEL_METRIC_INTERVAL=15s
 ## 4. 关键特性与链路排障优势
 
 1. **Trace-to-Log 双向无缝穿梭**：
-   - 所有的 Zap 结构化日志会自动提取当次请求的 `trace_id` 与 `span_id`；
+   - 所有的 Zerolog 结构化日志会自动提取当次请求的 `trace_id` 与 `span_id`；
    - 在 OpenObserve 的 **Logs** 页面中，带有 `trace_id` 的日志行可以直接点击一键跳转到具体的调用链甘特图；
    - 在 OpenObserve 的 **Traces** 页面中，点击任一 Span 可以直接查看该 Span 产生的所有关联日志。
 2. **SQL 级深度下钻**：

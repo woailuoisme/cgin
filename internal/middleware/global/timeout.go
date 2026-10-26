@@ -6,9 +6,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 
-	"cgin/internal/platform/errs"
+	"cgin/pkg/errs"
 )
 
 // Timeout 【全局中间件】向请求上下文注入超时截止期，超时由下层 I/O 响应并经 ErrorHandler 统一渲染为 504 错误。
@@ -37,12 +36,10 @@ func (m *Middleware) Timeout() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		if m.logger != nil {
-			m.logger.Warn("request timed out after partial response",
-				zap.String("path", c.Request.URL.Path),
-				zap.String("method", c.Request.Method),
-			)
-		}
+		m.logger.Warn().
+			Str("path", c.Request.URL.Path).
+			Str("method", c.Request.Method).
+			Msg("request timed out after partial response")
 	}
 }
 

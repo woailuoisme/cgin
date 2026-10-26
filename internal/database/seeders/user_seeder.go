@@ -11,14 +11,13 @@ import (
 	"github.com/brianvoe/gofakeit/v7"
 	"github.com/jackc/pgx/v5"
 	"github.com/samber/lo"
-	"go.uber.org/zap"
 
 	"cgin/internal/config"
 	"cgin/internal/database"
 	"cgin/internal/database/sqlc"
-	"cgin/internal/platform/hasher"
-	"cgin/internal/platform/logger"
-	"cgin/internal/shared/enums"
+	"cgin/pkg/hasher"
+	"cgin/pkg/logger"
+	"cgin/shared/enums"
 )
 
 // FixturePassword 是本地开发演示账号统一使用的明文口令。
@@ -46,12 +45,12 @@ func (s *UserSeeder) Seed(ctx context.Context, db *database.DB) error {
 	}
 	// 演示数据携带固定测试凭据，生产环境中直接跳过
 	if cfg.IsProduction() {
-		log.Warn("demo user seeding is disabled in production, skipped")
+		log.Warn().Msg("demo user seeding is disabled in production, skipped")
 		return nil
 	}
 
 	total := max(cmp.Or(s.Count, 20), 1)
-	log.Info("batch generating test users...", zap.Int("count", total))
+	log.Info().Int("count", total).Msg("batch generating test users...")
 
 	rows, err := s.buildRows(ctx, db, total)
 	if err != nil {
@@ -83,7 +82,7 @@ func (s *UserSeeder) Seed(ctx context.Context, db *database.DB) error {
 		subHook(int64(len(created)), int64(len(rows)))
 	}
 
-	log.Info("batch test user seeding completed", zap.Int("total", len(created)))
+	log.Info().Int("total", len(created)).Msg("batch test user seeding completed")
 	return nil
 }
 

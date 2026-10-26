@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/config"
-	"cgin/internal/shared/media"
+	"cgin/shared/media"
 )
 
 func TestImgproxyClient_Signature(t *testing.T) {

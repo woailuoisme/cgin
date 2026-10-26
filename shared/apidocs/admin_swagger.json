@@ -1,0 +1,1113 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "取值为 \"Bearer \u003caccess_token\u003e\"，含 Bearer 前缀与一个空格（要求具有管理员角色）。",
+        "title": "cgin Admin API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "basePath": "/v1",
+    "paths": {
+        "/admin/auth/change-password": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "校验当前管理员口令后写入新口令。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "管理员认证"
+                ],
+                "summary": "管理员修改口令",
+                "parameters": [
+                    {
+                        "description": "当前口令与新口令",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/admindto.ChangePasswordBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "修改成功，无响应体"
+                    }
+                },
+                "x-order": 5
+            }
+        },
+        "/admin/auth/get-session": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "根据当前有效的管理员访问令牌，返回当前管理员的档案资料与权限角色。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "管理员认证"
+                ],
+                "summary": "获取当前管理员会话",
+                "responses": {
+                    "200": {
+                        "description": "当前管理员会话档案",
+                        "schema": {
+                            "$ref": "#/definitions/admindto.GetSessionResource"
+                        }
+                    }
+                },
+                "x-order": 2
+            }
+        },
+        "/admin/auth/sign-in/email": {
+            "post": {
+                "description": "校验管理员邮箱与口令；邮箱不存在、口令错误或角色非系统管理员统一返回凭据错误，防止账号枚举。登录成功后颁发双令牌。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "管理员认证"
+                ],
+                "summary": "管理员邮箱密码登录",
+                "parameters": [
+                    {
+                        "description": "管理员登录凭据",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/admindto.SignInEmailBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "登录成功并颁发管理端双令牌",
+                        "schema": {
+                            "$ref": "#/definitions/admindto.SessionResource"
+                        }
+                    }
+                },
+                "x-order": 1
+            }
+        },
+        "/admin/auth/sign-out": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "作废当前管理员访问令牌。若同时传入刷新令牌则一并作废，否则续签通道仍然敞开。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "管理员认证"
+                ],
+                "summary": "管理员登出",
+                "parameters": [
+                    {
+                        "description": "可选的刷新令牌",
+                        "name": "payload",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/admindto.SignOutBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "已登出，无响应体"
+                    }
+                },
+                "x-order": 4
+            }
+        },
+        "/admin/auth/token/refresh": {
+            "post": {
+                "description": "使用未过期的管理员刷新令牌轮换一对新的双令牌，旧刷新令牌立即作废。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "管理员认证"
+                ],
+                "summary": "刷新管理员双令牌",
+                "parameters": [
+                    {
+                        "description": "刷新令牌凭据",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/admindto.RefreshTokenBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "刷新成功并颁发新双令牌",
+                        "schema": {
+                            "$ref": "#/definitions/admindto.SessionResource"
+                        }
+                    }
+                },
+                "x-order": 3
+            }
+        },
+        "/admin/users": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "根据分页、关键字、状态与角色条件查询系统用户列表。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "用户管理"
+                ],
+                "summary": "用户分页列表",
+                "parameters": [
+                    {
+                        "maximum": 1000000,
+                        "minimum": 1,
+                        "type": "integer",
+                        "example": 1,
+                        "description": "当前页码 (从 1 开始，默认 1，上限 1000000，与 maxPage 常量保持一致)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "example": 20,
+                        "description": "每页条数 (1-100，默认 20)",
+                        "name": "pageSize",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "user",
+                            "admin"
+                        ],
+                        "type": "string",
+                        "example": "user",
+                        "x-enum-varnames": [
+                            "RoleUser",
+                            "RoleAdmin"
+                        ],
+                        "description": "按权限角色过滤 (user: 普通用户, admin: 系统管理员)",
+                        "name": "role",
+                        "in": "query"
+                    },
+                    {
+                        "maxLength": 120,
+                        "type": "string",
+                        "example": "alex",
+                        "description": "关键字搜索 (按邮箱、昵称、用户名模糊检索)",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "maxLength": 120,
+                        "type": "string",
+                        "example": "-createdAt",
+                        "description": "排序字段 (字段名前加 - 表示倒序，如 -createdAt)",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "active",
+                            "inactive",
+                            "pending",
+                            "suspended",
+                            "banned",
+                            "active",
+                            "inactive",
+                            "pending",
+                            "suspended",
+                            "banned"
+                        ],
+                        "type": "string",
+                        "example": "active",
+                        "x-enum-varnames": [
+                            "StatusActive",
+                            "StatusInactive",
+                            "StatusPending",
+                            "StatusSuspended",
+                            "StatusBanned"
+                        ],
+                        "description": "按账号状态过滤 (active: 正常活跃, inactive: 未激活, banned: 已封禁)",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "用户分页列表",
+                        "schema": {
+                            "$ref": "#/definitions/admindto.UserPageResource"
+                        }
+                    }
+                },
+                "x-order": 1
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "管理员直接创建新用户账号，指定邮箱、口令、昵称与角色等信息。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "用户管理"
+                ],
+                "summary": "创建系统用户",
+                "parameters": [
+                    {
+                        "description": "创建用户载荷",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/admindto.CreateUserBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "新建成功的用户对象",
+                        "schema": {
+                            "$ref": "#/definitions/admindto.UserResource"
+                        }
+                    }
+                },
+                "x-order": 3
+            }
+        },
+        "/admin/users/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "根据关键字、状态与角色条件分块流式导出用户列表为 Excel 文件，免除内存溢出风险。\n导出固定按用户 ID 升序逐行输出（单页成本与已翻页深度无关），与列表页的 sort 参数无关。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ],
+                "tags": [
+                    "用户管理"
+                ],
+                "summary": "导出系统用户",
+                "parameters": [
+                    {
+                        "maximum": 1000000,
+                        "minimum": 1,
+                        "type": "integer",
+                        "example": 1,
+                        "description": "当前页码 (从 1 开始，默认 1，上限 1000000，与 maxPage 常量保持一致)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "example": 20,
+                        "description": "每页条数 (1-100，默认 20)",
+                        "name": "pageSize",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "user",
+                            "admin"
+                        ],
+                        "type": "string",
+                        "example": "user",
+                        "x-enum-varnames": [
+                            "RoleUser",
+                            "RoleAdmin"
+                        ],
+                        "description": "按权限角色过滤 (user: 普通用户, admin: 系统管理员)",
+                        "name": "role",
+                        "in": "query"
+                    },
+                    {
+                        "maxLength": 120,
+                        "type": "string",
+                        "example": "alex",
+                        "description": "关键字搜索 (按邮箱、昵称、用户名模糊检索)",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "maxLength": 120,
+                        "type": "string",
+                        "example": "-createdAt",
+                        "description": "排序字段 (字段名前加 - 表示倒序，如 -createdAt)",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "active",
+                            "inactive",
+                            "pending",
+                            "suspended",
+                            "banned",
+                            "active",
+                            "inactive",
+                            "pending",
+                            "suspended",
+                            "banned"
+                        ],
+                        "type": "string",
+                        "example": "active",
+                        "x-enum-varnames": [
+                            "StatusActive",
+                            "StatusInactive",
+                            "StatusPending",
+                            "StatusSuspended",
+                            "StatusBanned"
+                        ],
+                        "description": "按账号状态过滤 (active: 正常活跃, inactive: 未激活, banned: 已封禁)",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "用户数据 Excel 文件",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                },
+                "x-order": 6
+            }
+        },
+        "/admin/users/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "根据用户唯一标识查询用户完整档案与管理审计信息。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "用户管理"
+                ],
+                "summary": "获取用户详情",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "\"usr_01J9X4N8Y0ABCD\"",
+                        "description": "用户唯一标识",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "用户完整档案",
+                        "schema": {
+                            "$ref": "#/definitions/admindto.UserResource"
+                        }
+                    }
+                },
+                "x-order": 2
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "软删除指定用户，保留数据以支持审计与恢复；其关联凭据随账号状态一同失效。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "用户管理"
+                ],
+                "summary": "注销删除用户",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "\"usr_01J9X4N8Y0ABCD\"",
+                        "description": "用户唯一标识",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "删除成功，无响应体"
+                    }
+                },
+                "x-order": 5
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "支持局部字段三态更新，可修改昵称、头像、用户名、手机号、角色、状态及封禁属性。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "用户管理"
+                ],
+                "summary": "更新用户信息",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "\"usr_01J9X4N8Y0ABCD\"",
+                        "description": "用户唯一标识",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "局部更新载荷",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/admindto.UpdateUserBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的用户对象",
+                        "schema": {
+                            "$ref": "#/definitions/admindto.UserResource"
+                        }
+                    }
+                },
+                "x-order": 4
+            }
+        }
+    },
+    "definitions": {
+        "admindto.ChangePasswordBody": {
+            "type": "object",
+            "required": [
+                "currentPassword",
+                "newPassword"
+            ],
+            "properties": {
+                "currentPassword": {
+                    "description": "当前登录口令",
+                    "type": "string",
+                    "example": "Admin123!"
+                },
+                "newPassword": {
+                    "description": "新登录口令 (8-128位，须含字母与数字)",
+                    "type": "string",
+                    "maxLength": 128,
+                    "minLength": 8,
+                    "example": "NewAdmin456!"
+                }
+            }
+        },
+        "admindto.CreateUserBody": {
+            "type": "object",
+            "required": [
+                "email",
+                "name",
+                "password",
+                "role"
+            ],
+            "properties": {
+                "email": {
+                    "description": "用户电子邮箱",
+                    "type": "string",
+                    "maxLength": 254,
+                    "example": "alex@example.com"
+                },
+                "emailVerified": {
+                    "description": "邮箱是否已完成验证",
+                    "type": "boolean",
+                    "example": true
+                },
+                "image": {
+                    "description": "用户头像 URL",
+                    "type": "string",
+                    "maxLength": 2048,
+                    "example": "https://example.com/avatar.png"
+                },
+                "name": {
+                    "description": "用户展示昵称",
+                    "type": "string",
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "example": "Alex Mercer"
+                },
+                "password": {
+                    "description": "登录口令 (8-128位)",
+                    "type": "string",
+                    "maxLength": 128,
+                    "minLength": 8,
+                    "example": "Secret123!"
+                },
+                "role": {
+                    "description": "用户权限角色 (user: 普通用户, admin: 系统管理员)",
+                    "enum": [
+                        "user",
+                        "admin"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/admindto.Role"
+                        }
+                    ],
+                    "example": "user"
+                },
+                "username": {
+                    "description": "唯一登录用户名 (3-30位)",
+                    "type": "string",
+                    "maxLength": 30,
+                    "minLength": 3,
+                    "example": "alexmercer"
+                }
+            }
+        },
+        "admindto.GetSessionResource": {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "description": "当前登录管理员身份资料投影",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/admindto.Profile"
+                        }
+                    ]
+                }
+            }
+        },
+        "admindto.Profile": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "description": "账号创建时间 (ISO 8601 UTC)",
+                    "type": "string",
+                    "example": "2026-09-27T10:00:00Z"
+                },
+                "displayUsername": {
+                    "description": "用户显示名称",
+                    "type": "string",
+                    "example": "Alex Mercer"
+                },
+                "email": {
+                    "description": "用户电子邮箱",
+                    "type": "string",
+                    "example": "alex@example.com"
+                },
+                "emailVerified": {
+                    "description": "邮箱是否已验证",
+                    "type": "boolean",
+                    "example": true
+                },
+                "id": {
+                    "description": "用户唯一标识",
+                    "type": "string",
+                    "example": "usr_01J9X4N8Y0ABCD"
+                },
+                "image": {
+                    "description": "用户头像 URL",
+                    "type": "string",
+                    "example": "https://example.com/avatar.png"
+                },
+                "name": {
+                    "description": "用户展示昵称",
+                    "type": "string",
+                    "example": "Alex Mercer"
+                },
+                "phoneNumber": {
+                    "description": "E.164 格式手机号",
+                    "type": "string",
+                    "example": "+8613800138000"
+                },
+                "role": {
+                    "description": "用户权限角色 (user: 普通用户, admin: 系统管理员)",
+                    "enum": [
+                        "user",
+                        "admin"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/enums.Role"
+                        }
+                    ],
+                    "example": "user"
+                },
+                "status": {
+                    "description": "账号状态 (active: 正常活跃, inactive: 未激活, banned: 已封禁)",
+                    "enum": [
+                        "active",
+                        "inactive",
+                        "banned"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/enums.Status"
+                        }
+                    ],
+                    "example": "active"
+                },
+                "updatedAt": {
+                    "description": "账号更新时间 (ISO 8601 UTC)",
+                    "type": "string",
+                    "example": "2026-09-27T10:00:00Z"
+                },
+                "username": {
+                    "description": "唯一登录用户名",
+                    "type": "string",
+                    "example": "alexmercer"
+                }
+            }
+        },
+        "admindto.RefreshTokenBody": {
+            "type": "object",
+            "required": [
+                "refreshToken"
+            ],
+            "properties": {
+                "refreshToken": {
+                    "description": "刷新令牌凭据",
+                    "type": "string",
+                    "example": "rt_01J9X4N8Y0EFGH"
+                }
+            }
+        },
+        "admindto.Role": {
+            "type": "string",
+            "enum": [
+                "user",
+                "admin"
+            ],
+            "x-enum-varnames": [
+                "RoleUser",
+                "RoleAdmin"
+            ]
+        },
+        "admindto.SessionResource": {
+            "type": "object",
+            "properties": {
+                "expiresIn": {
+                    "description": "访问令牌有效期（秒）",
+                    "type": "integer",
+                    "example": 900
+                },
+                "refreshToken": {
+                    "description": "刷新令牌 (Refresh Token)",
+                    "type": "string",
+                    "example": "rt_01J9X4N8Y0EFGH"
+                },
+                "token": {
+                    "description": "访问令牌 (JWT Access Token)",
+                    "type": "string",
+                    "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                },
+                "user": {
+                    "description": "管理员身份资料投影",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/admindto.Profile"
+                        }
+                    ]
+                }
+            }
+        },
+        "admindto.SignInEmailBody": {
+            "type": "object",
+            "required": [
+                "email",
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "description": "管理员电子邮箱",
+                    "type": "string",
+                    "example": "admin@example.com"
+                },
+                "password": {
+                    "description": "管理员登录口令",
+                    "type": "string",
+                    "example": "Admin123!"
+                }
+            }
+        },
+        "admindto.SignOutBody": {
+            "type": "object",
+            "properties": {
+                "refreshToken": {
+                    "description": "待作废的刷新令牌 (可选，同时作废可真正阻断续签)",
+                    "type": "string",
+                    "example": "rt_01J9X4N8Y0EFGH"
+                }
+            }
+        },
+        "admindto.Status": {
+            "type": "string",
+            "enum": [
+                "active",
+                "inactive",
+                "pending",
+                "suspended",
+                "banned",
+                "active",
+                "inactive",
+                "pending",
+                "suspended",
+                "banned"
+            ],
+            "x-enum-varnames": [
+                "StatusActive",
+                "StatusInactive",
+                "StatusPending",
+                "StatusSuspended",
+                "StatusBanned"
+            ]
+        },
+        "admindto.UpdateUserBody": {
+            "type": "object",
+            "properties": {
+                "banExpires": {
+                    "description": "封禁到期时间 (ISO 8601 UTC)",
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "2026-10-01T00:00:00Z"
+                },
+                "banReason": {
+                    "description": "封禁原因",
+                    "type": "string",
+                    "maxLength": 500,
+                    "x-nullable": true,
+                    "example": "违规发布广告"
+                },
+                "banned": {
+                    "description": "是否封禁",
+                    "type": "boolean",
+                    "x-nullable": true,
+                    "example": false
+                },
+                "displayUsername": {
+                    "description": "用户显示名称",
+                    "type": "string",
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "x-nullable": true,
+                    "example": "Alex Mercer"
+                },
+                "emailVerified": {
+                    "description": "邮箱是否已验证",
+                    "type": "boolean",
+                    "x-nullable": true,
+                    "example": true
+                },
+                "image": {
+                    "description": "用户头像 URL",
+                    "type": "string",
+                    "maxLength": 2048,
+                    "x-nullable": true,
+                    "example": "https://example.com/avatar.png"
+                },
+                "name": {
+                    "description": "用户展示昵称",
+                    "type": "string",
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "x-nullable": true,
+                    "example": "Alex Mercer"
+                },
+                "phoneNumber": {
+                    "description": "E.164 格式手机号",
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "+8613800138000"
+                },
+                "role": {
+                    "description": "用户权限角色 (user: 普通用户, admin: 系统管理员)",
+                    "type": "string",
+                    "enum": [
+                        "user",
+                        "admin"
+                    ],
+                    "x-nullable": true,
+                    "example": "admin"
+                },
+                "status": {
+                    "description": "账号状态 (active: 正常活跃, inactive: 未激活, banned: 已封禁)",
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "inactive",
+                        "banned"
+                    ],
+                    "x-nullable": true,
+                    "example": "active"
+                },
+                "username": {
+                    "description": "唯一登录用户名 (3-30位)",
+                    "type": "string",
+                    "maxLength": 30,
+                    "minLength": 3,
+                    "x-nullable": true,
+                    "example": "alexmercer"
+                }
+            }
+        },
+        "admindto.UserPageResource": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "description": "用户列表数据",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admindto.UserResource"
+                    }
+                },
+                "meta": {
+                    "description": "分页元信息",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/response.Meta"
+                        }
+                    ]
+                }
+            }
+        },
+        "admindto.UserResource": {
+            "type": "object",
+            "properties": {
+                "banExpires": {
+                    "description": "封禁到期时间 (ISO 8601 UTC)",
+                    "type": "string",
+                    "example": "2026-10-01T00:00:00Z"
+                },
+                "banReason": {
+                    "description": "封禁原因说明",
+                    "type": "string",
+                    "example": "违规发布广告"
+                },
+                "banned": {
+                    "description": "账号是否已被封禁",
+                    "type": "boolean",
+                    "example": false
+                },
+                "createdAt": {
+                    "description": "账号创建时间 (ISO 8601 UTC)",
+                    "type": "string",
+                    "example": "2026-09-27T10:00:00Z"
+                },
+                "displayUsername": {
+                    "description": "用户显示名称",
+                    "type": "string",
+                    "example": "Alex Mercer"
+                },
+                "email": {
+                    "description": "用户电子邮箱",
+                    "type": "string",
+                    "example": "alex@example.com"
+                },
+                "emailVerified": {
+                    "description": "邮箱是否已验证",
+                    "type": "boolean",
+                    "example": true
+                },
+                "id": {
+                    "description": "用户唯一标识",
+                    "type": "string",
+                    "example": "usr_01J9X4N8Y0ABCD"
+                },
+                "image": {
+                    "description": "用户头像 URL",
+                    "type": "string",
+                    "example": "https://example.com/avatar.png"
+                },
+                "lastLoginAt": {
+                    "description": "最后登录时间 (ISO 8601 UTC)",
+                    "type": "string",
+                    "example": "2026-09-27T10:00:00Z"
+                },
+                "lastLoginMethod": {
+                    "description": "最后登录认证方式",
+                    "type": "string",
+                    "example": "email"
+                },
+                "name": {
+                    "description": "用户展示昵称",
+                    "type": "string",
+                    "example": "Alex Mercer"
+                },
+                "phoneNumber": {
+                    "description": "E.164 格式手机号",
+                    "type": "string",
+                    "example": "+8613800138000"
+                },
+                "role": {
+                    "description": "用户权限角色 (user: 普通用户, admin: 系统管理员)",
+                    "enum": [
+                        "user",
+                        "admin"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/admindto.Role"
+                        }
+                    ],
+                    "example": "user"
+                },
+                "status": {
+                    "description": "账号状态 (active: 正常活跃, inactive: 未激活, banned: 已封禁)",
+                    "enum": [
+                        "active",
+                        "inactive",
+                        "banned"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/admindto.Status"
+                        }
+                    ],
+                    "example": "active"
+                },
+                "updatedAt": {
+                    "description": "账号更新时间 (ISO 8601 UTC)",
+                    "type": "string",
+                    "example": "2026-09-27T10:00:00Z"
+                },
+                "username": {
+                    "description": "唯一登录用户名",
+                    "type": "string",
+                    "example": "alexmercer"
+                }
+            }
+        },
+        "enums.Role": {
+            "type": "string",
+            "enum": [
+                "user",
+                "admin"
+            ],
+            "x-enum-varnames": [
+                "RoleUser",
+                "RoleAdmin"
+            ]
+        },
+        "enums.Status": {
+            "type": "string",
+            "enum": [
+                "active",
+                "inactive",
+                "pending",
+                "suspended",
+                "banned",
+                "active",
+                "inactive",
+                "pending",
+                "suspended",
+                "banned"
+            ],
+            "x-enum-varnames": [
+                "StatusActive",
+                "StatusInactive",
+                "StatusPending",
+                "StatusSuspended",
+                "StatusBanned"
+            ]
+        },
+        "response.Meta": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "integer"
+                },
+                "pageSize": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "totalPages": {
+                    "type": "integer"
+                }
+            }
+        }
+    },
+    "tags": [
+        {
+            "description": "后台管理员凭据登录、当前会话获取、令牌续签与密码修改等管理接口",
+            "name": "管理员认证",
+            "x-order": "1"
+        },
+        {
+            "description": "系统用户查询、创建、编辑与注销等管理接口",
+            "name": "用户管理",
+            "x-order": "2"
+        }
+    ]
+}

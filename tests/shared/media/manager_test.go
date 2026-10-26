@@ -10,8 +10,8 @@ import (
 
 	"cgin/internal/config"
 	"cgin/internal/database"
-	"cgin/internal/platform/storage"
-	"cgin/internal/shared/media"
+	"cgin/pkg/storage"
+	"cgin/shared/media"
 )
 
 func TestManager_ContractsAndURLDerivation(t *testing.T) {

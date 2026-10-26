@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/storage"
+	"cgin/pkg/storage"
 )
 
 // TestOpenLocalDisk 覆盖 local 驱动的正常装配路径。

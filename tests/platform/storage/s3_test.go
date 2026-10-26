@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/storage"
+	"cgin/pkg/storage"
 )
 
 // s3Config 返回一份最小可用的 S3 配置，指向本机共享栈里的 garage（明文）。

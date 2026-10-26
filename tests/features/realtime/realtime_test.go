@@ -19,10 +19,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/config"
-	featureRealtime "cgin/internal/features/realtime"
-	"cgin/internal/platform/authentication"
-	platformRealtime "cgin/internal/platform/realtime"
-	"cgin/internal/shared/enums"
+	"cgin/internal/dto"
+	"cgin/internal/handler"
+	"cgin/internal/service"
+	"cgin/pkg/authentication"
+	platformRealtime "cgin/pkg/realtime"
+	"cgin/shared/enums"
 )
 
 func generateTestSig(secret string, body []byte) string {
@@ -42,7 +44,7 @@ func TestServiceIssueToken(t *testing.T) {
 			},
 		}
 		gw := platformRealtime.NewManager(&cfg.Realtime)
-		svc := featureRealtime.NewService(featureRealtime.Deps{Gateway: gw, Cfg: cfg, Secret: cfg.Realtime.Secret})
+		svc := service.NewRealtimeService(service.RealtimeDeps{Gateway: gw, Cfg: cfg, Secret: cfg.Realtime.Secret})
 
 		_, err := svc.IssueToken(t.Context(), "u101", "user")
 		require.Error(t, err)
@@ -58,7 +60,7 @@ func TestServiceIssueToken(t *testing.T) {
 			},
 		}
 		gw := platformRealtime.NewManager(&cfg.Realtime)
-		svc := featureRealtime.NewService(featureRealtime.Deps{Gateway: gw, Cfg: cfg, Secret: cfg.Realtime.Secret})
+		svc := service.NewRealtimeService(service.RealtimeDeps{Gateway: gw, Cfg: cfg, Secret: cfg.Realtime.Secret})
 
 		res, err := svc.IssueToken(t.Context(), "u101", "admin")
 		require.NoError(t, err)
@@ -86,7 +88,7 @@ func TestServiceAuthorizeSubscribe(t *testing.T) {
 	})
 
 	gw := platformRealtime.NewManager(&cfg.Realtime, platformRealtime.WithRegistry(reg))
-	svc := featureRealtime.NewService(featureRealtime.Deps{Gateway: gw, Cfg: cfg, Secret: cfg.Realtime.Secret})
+	svc := service.NewRealtimeService(service.RealtimeDeps{Gateway: gw, Cfg: cfg, Secret: cfg.Realtime.Secret})
 
 	t.Run("无权限时拒绝订阅", func(t *testing.T) {
 		req := &platformRealtime.SubscribeRequest{
@@ -138,8 +140,8 @@ func TestHandlerHTTP(t *testing.T) {
 	})
 
 	gw := platformRealtime.NewManager(&cfg.Realtime, platformRealtime.WithRegistry(reg))
-	svc := featureRealtime.NewService(featureRealtime.Deps{Gateway: gw, Cfg: cfg, Secret: cfg.Realtime.Secret})
-	handler := featureRealtime.NewHandler(svc)
+	svc := service.NewRealtimeService(service.RealtimeDeps{Gateway: gw, Cfg: cfg, Secret: cfg.Realtime.Secret})
+	handler := handler.NewRealtimeHandler(svc)
 
 	router := gin.New()
 
@@ -161,7 +163,7 @@ func TestHandlerHTTP(t *testing.T) {
 		router.ServeHTTP(w, req)
 
 		require.Equal(t, http.StatusOK, w.Code)
-		var res featureRealtime.TokenResponse
+		var res dto.TokenResponse
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &res))
 		assert.NotEmpty(t, res.Token)
 		assert.Equal(t, cfg.Realtime.URL, res.WSURL)

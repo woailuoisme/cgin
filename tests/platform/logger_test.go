@@ -5,12 +5,11 @@ import (
 	"context"
 	"testing"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/logger"
+	"cgin/pkg/logger"
 )
 
 // TestLogger_BuildAndContext 验证日志器构建与 Context 请求标识传递。
@@ -27,19 +26,15 @@ func TestLogger_BuildAndContext(t *testing.T) {
 	}
 
 	l := logger.New(cfg)
-	require.NotNil(t, l)
 
 	ctx := logger.WithContext(context.Background(), l, "req_test_123")
 	extracted, ok := logger.FromContextOK(ctx)
 	assert.True(t, ok)
-	assert.NotNil(t, extracted)
+	assert.NotZero(t, extracted)
 
 	// 缺失时返回默认兜底日志器
 	fallback := logger.FromContext(context.Background())
-	assert.NotNil(t, fallback)
-
-	sugar := logger.SugarFromContext(ctx)
-	assert.NotNil(t, sugar)
+	assert.NotZero(t, fallback)
 }
 
 // TestLogger_ChannelJSON 验证 JSON 通道构建。
@@ -56,7 +51,7 @@ func TestLogger_ChannelJSON(t *testing.T) {
 	}
 
 	l := logger.New(cfg)
-	require.NotNil(t, l)
+	assert.NotZero(t, l)
 }
 
 // TestLogger_ColorDecision 验证颜色启闭决策与环境变量优先级。
@@ -70,7 +65,7 @@ func TestLogger_ColorDecision(t *testing.T) {
 			Log: config.LogConfig{Channel: "console"},
 		}
 		l := logger.New(cfg)
-		assert.NotNil(t, l)
+		assert.NotZero(t, l)
 	})
 
 	t.Run("FORCE_COLOR 等于 0 或 false 时显式禁用着色", func(t *testing.T) {
@@ -82,11 +77,11 @@ func TestLogger_ColorDecision(t *testing.T) {
 			Log: config.LogConfig{Channel: "console"},
 		}
 		l := logger.New(cfg)
-		assert.NotNil(t, l)
+		assert.NotZero(t, l)
 
 		t.Setenv("FORCE_COLOR", "false")
 		l2 := logger.New(cfg)
-		assert.NotNil(t, l2)
+		assert.NotZero(t, l2)
 	})
 
 	t.Run("FORCE_COLOR 或 CLICOLOR_FORCE 强制着色", func(t *testing.T) {
@@ -98,12 +93,12 @@ func TestLogger_ColorDecision(t *testing.T) {
 			Log: config.LogConfig{Channel: "console"},
 		}
 		l := logger.New(cfg)
-		assert.NotNil(t, l)
+		assert.NotZero(t, l)
 
 		t.Setenv("FORCE_COLOR", "")
 		t.Setenv("CLICOLOR_FORCE", "1")
 		l2 := logger.New(cfg)
-		assert.NotNil(t, l2)
+		assert.NotZero(t, l2)
 	})
 }
 
@@ -118,9 +113,8 @@ func TestLogger_OptionsAndRedaction(t *testing.T) {
 			logger.WithWriter(&buf),
 			logger.WithRedaction(false),
 		)
-		require.NotNil(t, l)
 
-		l.Info("operational check", zap.String("action", "test_run"))
+		l.Info().Str("action", "test_run").Msg("operational check")
 		output := buf.String()
 		assert.Contains(t, output, `"service":"auth-service"`)
 		assert.Contains(t, output, `"action":"test_run"`)
@@ -135,14 +129,13 @@ func TestLogger_OptionsAndRedaction(t *testing.T) {
 			logger.WithWriter(&buf),
 			logger.WithRedaction(true),
 		)
-		require.NotNil(t, l)
 
-		l.Info("user sign-in attempted",
-			zap.String("username", "admin"),
-			zap.String("password", "super_secret_123"),
-			zap.String("token", "jwt_ey123456"),
-			zap.String("authorization", "Bearer xyz"),
-		)
+		l.Info().
+			Str("username", "admin").
+			Str("password", "super_secret_123").
+			Str("token", "jwt_ey123456").
+			Str("authorization", "Bearer xyz").
+			Msg("user sign-in attempted")
 
 		output := buf.String()
 		assert.Contains(t, output, `"username":"admin"`)
@@ -161,18 +154,117 @@ func TestLogger_OptionsAndRedaction(t *testing.T) {
 			logger.WithColor(false),
 			logger.WithRedaction(false),
 		)
-		require.NotNil(t, l)
 
-		l.Info("database pool ready",
-			zap.Int("max_open_conns", 10),
-			zap.String("query", "select 1"),
-		)
+		l.Info().
+			Int("max_open_conns", 10).
+			Str("query", "select 1").
+			Msg("database pool ready")
 
 		output := buf.String()
-		assert.Contains(t, output, "INFO")
+		assert.Contains(t, output, "INF")
 		assert.Contains(t, output, "database pool ready")
 		assert.Contains(t, output, "max_open_conns=10")
-		assert.Contains(t, output, "query=\"select 1\"")
-		assert.NotContains(t, output, `{"max_open_conns": 10`)
+		assert.Contains(t, output, `query="select 1"`)
 	})
+}
+
+// TestLogger_RedactionCoversAllJSONValueKinds 锁定脱敏器对标量、对象、数组与控制台格式的全覆盖。
+//
+// 结构化取值（token 载荷、鉴权对象）是凭据最常见的落盘形态，脱敏器若只处理标量，
+// 这些字段会原样写进日志，因此这里逐种取值形态固化为回归防线。
+func TestLogger_RedactionCoversAllJSONValueKinds(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		channel string
+		log     func(l *zerolog.Logger)
+		secret  string
+		expect  string
+	}{
+		{
+			name:    "字符串取值",
+			channel: "json",
+			log:     func(l *zerolog.Logger) { l.Info().Str("token", "secret-string").Msg("m") },
+			secret:  "secret-string",
+			expect:  `"token":"[REDACTED]"`,
+		},
+		{
+			name:    "数字取值",
+			channel: "json",
+			log:     func(l *zerolog.Logger) { l.Info().Int("token", 987654).Msg("m") },
+			secret:  "987654",
+			expect:  `"token":"[REDACTED]"`,
+		},
+		{
+			name:    "布尔取值",
+			channel: "json",
+			log:     func(l *zerolog.Logger) { l.Info().Bool("password", true).Msg("m") },
+			secret:  "true",
+			expect:  `"password":"[REDACTED]"`,
+		},
+		{
+			name:    "对象取值",
+			channel: "json",
+			log: func(l *zerolog.Logger) {
+				l.Info().Any("token", map[string]any{"inner": "secret-object"}).Msg("m")
+			},
+			secret: "secret-object",
+			expect: `"token":"[REDACTED]"`,
+		},
+		{
+			name:    "数组取值",
+			channel: "json",
+			log:     func(l *zerolog.Logger) { l.Info().Strs("password", []string{"secret-array"}).Msg("m") },
+			secret:  "secret-array",
+			expect:  `"password":"[REDACTED]"`,
+		},
+		{
+			name:    "嵌套对象与内嵌引号花括号",
+			channel: "json",
+			log: func(l *zerolog.Logger) {
+				l.Info().Any("authorization", map[string]any{
+					"nested": map[string]any{"raw": `{"a":"}not-a-close"}`},
+				}).Msg("m")
+			},
+			secret: "not-a-close",
+			expect: `"authorization":"[REDACTED]"`,
+		},
+		{
+			name:    "控制台键值形式",
+			channel: "console",
+			log:     func(l *zerolog.Logger) { l.Info().Str("password", "secret-console").Msg("m") },
+			secret:  "secret-console",
+			expect:  "password=[REDACTED]",
+		},
+		{
+			name:    "非敏感字段保持原样",
+			channel: "json",
+			log:     func(l *zerolog.Logger) { l.Info().Str("username", "admin").Msg("m") },
+			expect:  `"username":"admin"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+			l := logger.NewWithOptions(
+				logger.WithLevel("info"),
+				logger.WithChannel(tt.channel),
+				logger.WithWriter(&buf),
+				logger.WithColor(false),
+				logger.WithRedaction(true),
+			)
+
+			tt.log(l)
+			output := buf.String()
+
+			assert.Contains(t, output, tt.expect)
+			if tt.secret != "" {
+				assert.NotContains(t, output, tt.secret, "敏感取值不得以任何形态落盘")
+			}
+		})
+	}
 }

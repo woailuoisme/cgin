@@ -8,12 +8,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/rs/zerolog"
 	"github.com/samber/lo"
 	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
 
-	"cgin/internal/platform/errs"
-	"cgin/internal/platform/logger"
+	"cgin/pkg/errs"
+	"cgin/pkg/logger"
 )
 
 // headerRequestID 是全链路追踪请求头。
@@ -76,30 +76,30 @@ func (m *Middleware) AccessLog() gin.HandlerFunc {
 
 		log := logger.FromContext(c.Request.Context())
 
-		fields := make([]zap.Field, 0, 8)
-		if errMsg := formatErrors(c.Errors); errMsg != "" {
-			fields = append(fields, zap.String("error", errMsg))
-		}
-		if code := errs.ErrorCodeFromContext(c); code != "" {
-			fields = append(fields, zap.String("code", code))
-		}
-
-		fields = append(fields,
-			zap.String("method", c.Request.Method),
-			zap.String("path", c.Request.URL.Path),
-			zap.Int("status", status),
-			zap.String("latency", time.Since(start).String()),
-			zap.String("ip", c.ClientIP()),
-		)
-
+		var event *zerolog.Event
 		switch {
 		case status >= 500:
-			log.Error("access", fields...)
+			event = log.Error()
 		case status >= 400:
-			log.Warn("access", fields...)
+			event = log.Warn()
 		default:
-			log.Info("access", fields...)
+			event = log.Info()
 		}
+
+		if errMsg := formatErrors(c.Errors); errMsg != "" {
+			event = event.Str("error", errMsg)
+		}
+		if code := errs.ErrorCodeFromContext(c); code != "" {
+			event = event.Str("code", code)
+		}
+
+		event.
+			Str("method", c.Request.Method).
+			Str("path", c.Request.URL.Path).
+			Int("status", status).
+			Str("latency", time.Since(start).String()).
+			Str("ip", c.ClientIP()).
+			Msg("access")
 	}
 }
 
@@ -136,9 +136,10 @@ func (m *Middleware) Recovery() gin.HandlerFunc {
 				return
 			}
 
-			logger.FromContext(c.Request.Context()).Error("request panic recovered",
-				zap.Any("panic", recovered),
-				zap.String("stack", string(debug.Stack())))
+			logger.FromContext(c.Request.Context()).Error().
+				Any("panic", recovered).
+				Str("stack", string(debug.Stack())).
+				Msg("request panic recovered")
 
 			if c.Writer.Written() {
 				c.Abort()

@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/search"
+	"cgin/pkg/search"
 )
 
 func TestNoopClientContract(t *testing.T) {

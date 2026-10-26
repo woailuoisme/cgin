@@ -14,10 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/notification"
-	"cgin/internal/platform/notification/channel/gotify"
-	gotifyHTTP "cgin/internal/platform/notification/channel/gotify/http"
-	gotifyMock "cgin/internal/platform/notification/channel/gotify/mock"
+	"cgin/pkg/notification"
+	"cgin/pkg/notification/channel/gotify"
+	gotifyHTTP "cgin/pkg/notification/channel/gotify/http"
+	gotifyMock "cgin/pkg/notification/channel/gotify/mock"
 )
 
 // TestGotifyMessage_FluentAPIs 验证 Gotify 消息模型的链式构建与高级特性。

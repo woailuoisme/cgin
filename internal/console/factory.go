@@ -4,12 +4,12 @@ import (
 	"context"
 	"sync"
 
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 
 	"cgin/internal/config"
 	"cgin/internal/console/core"
 	"cgin/internal/database"
-	"cgin/internal/platform/logger"
+	"cgin/pkg/logger"
 )
 
 // ValidationError 表示控制台命令参数校验失败的强类型错误。
@@ -32,7 +32,7 @@ type Factory interface {
 	Prompter() core.Prompter
 	Config() (*config.Config, error)
 	DB(ctx context.Context) (*database.DB, error)
-	Logger() *zap.Logger
+	Logger() *zerolog.Logger
 }
 
 // defaultFactory 提供生产环境默认的懒加载工厂实现。
@@ -49,7 +49,7 @@ type defaultFactory struct {
 	dbErr  error
 
 	loggerOnce sync.Once
-	logger     *zap.Logger
+	logger     *zerolog.Logger
 }
 
 // NewDefaultFactory 构造生产环境默认的依赖工厂实例。
@@ -97,14 +97,14 @@ func (f *defaultFactory) DB(ctx context.Context) (*database.DB, error) {
 	return f.db, f.dbErr
 }
 
-// Logger 懒加载并返回结构化 Zap 日志记录器。
-func (f *defaultFactory) Logger() *zap.Logger {
+// Logger 懒加载并返回结构化 Zerolog 日志记录器。
+func (f *defaultFactory) Logger() *zerolog.Logger {
 	f.loggerOnce.Do(func() {
 		cfg, err := f.Config()
 		if err == nil {
 			f.logger = logger.New(cfg)
 		} else {
-			f.logger = zap.NewNop()
+			f.logger = logger.Nop()
 		}
 	})
 	return f.logger
@@ -118,7 +118,7 @@ type TestFactory struct {
 	ConfigErr     error
 	DBValue       *database.DB
 	DBErr         error
-	LoggerValue   *zap.Logger
+	LoggerValue   *zerolog.Logger
 }
 
 func (f *TestFactory) IOStreams() *core.IOStreams {
@@ -144,9 +144,9 @@ func (f *TestFactory) DB(_ context.Context) (*database.DB, error) {
 	return f.DBValue, f.DBErr
 }
 
-func (f *TestFactory) Logger() *zap.Logger {
+func (f *TestFactory) Logger() *zerolog.Logger {
 	if f.LoggerValue == nil {
-		return zap.NewNop()
+		return logger.Nop()
 	}
 	return f.LoggerValue
 }

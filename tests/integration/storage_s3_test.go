@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/storage"
+	"cgin/pkg/storage"
 )
 
 // newS3Disk 读取当前环境的 S3 配置并构造驱动；没配 endpoint 就跳过。

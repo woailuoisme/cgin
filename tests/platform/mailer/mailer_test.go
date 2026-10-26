@@ -12,10 +12,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/mailer"
+	"cgin/pkg/logger"
+	"cgin/pkg/mailer"
 )
 
 // testMailable 模拟带模板的结构化邮件。
@@ -44,7 +44,7 @@ func TestMailpitDriverLifecycle(t *testing.T) {
 		},
 	}
 
-	client, err := mailer.New(cfg, zap.NewNop())
+	client, err := mailer.New(cfg, logger.Nop())
 	require.NoError(t, err)
 	require.NotNil(t, client)
 
@@ -69,7 +69,7 @@ func TestResendDriverMissingAPIKey(t *testing.T) {
 		},
 	}
 
-	client, err := mailer.New(cfg, zap.NewNop())
+	client, err := mailer.New(cfg, logger.Nop())
 	require.Error(t, err)
 	assert.Nil(t, client)
 	assert.Contains(t, err.Error(), "api key cannot be empty")
@@ -103,7 +103,7 @@ func TestResendDriverSendSuccess(t *testing.T) {
 		},
 	}
 
-	client, err := mailer.New(cfg, zap.NewNop())
+	client, err := mailer.New(cfg, logger.Nop())
 	require.NoError(t, err)
 	require.NotNil(t, client)
 	defer func() {
@@ -152,7 +152,7 @@ func TestResendDriverSendWithAttachments(t *testing.T) {
 		},
 	}
 
-	client, err := mailer.New(cfg, zap.NewNop())
+	client, err := mailer.New(cfg, logger.Nop())
 	require.NoError(t, err)
 
 	err = client.Send(context.Background(), mailer.Message{
@@ -189,7 +189,7 @@ func TestResendDriverServerError(t *testing.T) {
 		},
 	}
 
-	client, err := mailer.New(cfg, zap.NewNop())
+	client, err := mailer.New(cfg, logger.Nop())
 	require.NoError(t, err)
 
 	err = client.Send(context.Background(), mailer.Message{
@@ -218,7 +218,7 @@ func TestResendDriverRateLimited(t *testing.T) {
 		},
 	}
 
-	client, err := mailer.New(cfg, zap.NewNop())
+	client, err := mailer.New(cfg, logger.Nop())
 	require.NoError(t, err)
 
 	err = client.Send(context.Background(), mailer.Message{
@@ -251,7 +251,7 @@ func TestSendMailableTemplateRendering(t *testing.T) {
 		},
 	}
 
-	client, err := mailer.New(cfg, zap.NewNop())
+	client, err := mailer.New(cfg, logger.Nop())
 	require.NoError(t, err)
 
 	mailable := &testMailable{
@@ -278,7 +278,7 @@ func TestUnsupportedDriver(t *testing.T) {
 		Driver: "sendgrid",
 	}
 
-	client, err := mailer.New(cfg, zap.NewNop())
+	client, err := mailer.New(cfg, logger.Nop())
 	require.Error(t, err)
 	assert.Nil(t, client)
 	assert.Contains(t, err.Error(), "unsupported mail driver")
@@ -368,7 +368,7 @@ func TestMemoryMailer(t *testing.T) {
 	})
 
 	t.Run("通过 New 构造 memory 驱动", func(t *testing.T) {
-		client, err := mailer.New(config.MailConfig{Driver: "memory"}, zap.NewNop())
+		client, err := mailer.New(config.MailConfig{Driver: "memory"}, logger.Nop())
 		require.NoError(t, err)
 		require.NotNil(t, client)
 
@@ -422,7 +422,7 @@ func TestAttachmentAndAllAttachments(t *testing.T) {
 }
 
 func TestUnsupportedMailDriver(t *testing.T) {
-	_, err := mailer.New(config.MailConfig{Driver: "custom-mock"}, zap.NewNop())
+	_, err := mailer.New(config.MailConfig{Driver: "custom-mock"}, logger.Nop())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported mail driver: custom-mock")
 }
@@ -437,7 +437,7 @@ func TestMail_DisabledFallbackToLog(t *testing.T) {
 	require.False(t, cfg.IsEnabled())
 	require.NoError(t, cfg.Validate())
 
-	client, err := mailer.New(cfg, zap.NewNop())
+	client, err := mailer.New(cfg, logger.Nop())
 	require.NoError(t, err)
 	require.NotNil(t, client)
 
@@ -459,7 +459,7 @@ func TestMail_LogAndNullDrivers(t *testing.T) {
 			}
 			require.NoError(t, cfg.Validate())
 
-			client, err := mailer.New(cfg, zap.NewNop())
+			client, err := mailer.New(cfg, logger.Nop())
 			require.NoError(t, err)
 			require.NotNil(t, client)
 
@@ -484,7 +484,7 @@ func TestMail_LogAndNullDrivers(t *testing.T) {
 // TestMailerPingerContract 验证各 Mailer 驱动均实现 Ping、Driver 与 Enabled 探针契约。
 func TestMailerPingerContract(t *testing.T) {
 	t.Run("log_and_null", func(t *testing.T) {
-		logMailer := mailer.NewLogMailer(zap.NewNop())
+		logMailer := mailer.NewLogMailer(logger.Nop())
 		require.NoError(t, logMailer.Ping(t.Context()))
 		assert.Equal(t, "log", logMailer.Driver())
 		assert.True(t, logMailer.Enabled())
@@ -509,7 +509,7 @@ func TestMailerPingerContract(t *testing.T) {
 				APIKey: "re_test_123",
 			},
 		}
-		client, err := mailer.New(cfg, zap.NewNop())
+		client, err := mailer.New(cfg, logger.Nop())
 		require.NoError(t, err)
 		require.NoError(t, client.Ping(t.Context()))
 		if da, ok := client.(interface{ Driver() string }); ok {

@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/search"
+	"cgin/pkg/search"
 )
 
 // SampleHit 定义测试用强类型搜索结果文档结构。

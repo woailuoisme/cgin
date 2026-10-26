@@ -8,14 +8,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 
 	"cgin/internal/config"
-	clientauth "cgin/internal/features/client/auth"
-	"cgin/internal/platform/eventbus"
-	"cgin/internal/platform/mailer"
-	"cgin/internal/platform/queue"
-	"cgin/internal/shared/events"
+	"cgin/internal/service"
+	"cgin/pkg/eventbus"
+	"cgin/pkg/logger"
+	"cgin/pkg/mailer"
+	"cgin/pkg/queue"
+	"cgin/shared/events"
 )
 
 type mockMailer struct {
@@ -46,23 +46,23 @@ func TestWelcomeEmailJobExecution(t *testing.T) {
 	t.Parallel()
 
 	mailMock := &mockMailer{}
-	job := clientauth.NewWelcomeEmailJob("alex@example.com", "Alex")
+	job := service.NewWelcomeEmailJob("alex@example.com", "Alex")
 
-	assert.Equal(t, clientauth.TaskSendWelcomeEmail, job.TaskName())
+	assert.Equal(t, service.TaskSendWelcomeEmail, job.TaskName())
 	assert.Equal(t, queue.DefaultQueueName, job.QueueName())
 	assert.Equal(t, 3, job.MaxRetries())
 
 	reg := queue.DefaultRegistry()
-	clientauth.RegisterJobs(reg, mailMock)
+	service.RegisterJobs(reg, mailMock)
 
 	err := job.Handle(t.Context())
 	require.NoError(t, err) // 未注入 mailer 时优雅跳过
 
 	// 验证从注册表工厂还原的任务具有注入的 mailer 并能成功渲染发送
-	factory, ok := reg.Get(clientauth.TaskSendWelcomeEmail)
+	factory, ok := reg.Get(service.TaskSendWelcomeEmail)
 	require.True(t, ok)
 	injectedJob := factory()
-	welcomeJob, ok := injectedJob.(*clientauth.WelcomeEmailJob)
+	welcomeJob, ok := injectedJob.(*service.WelcomeEmailJob)
 	require.True(t, ok)
 	welcomeJob.Email = "alex@example.com"
 	welcomeJob.Name = "Alex"
@@ -84,11 +84,11 @@ func TestAuthEventListener(t *testing.T) {
 		Driver:   eventbus.DriverGoChannel,
 		LogLevel: "error",
 	}
-	bus, err := eventbus.NewManager(cfg, zap.NewNop())
+	bus, err := eventbus.NewManager(cfg, logger.Nop())
 	require.NoError(t, err)
 	defer func() { _ = bus.Close() }()
 
-	err = clientauth.RegisterListeners(bus, dispatcher)
+	err = service.RegisterListeners(bus, dispatcher)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -121,9 +121,9 @@ func TestAuthEventListener(t *testing.T) {
 		return dispatcher.Count() > 0
 	}, 3*time.Second, 50*time.Millisecond)
 
-	dispatcher.AssertDispatched(t, clientauth.TaskSendWelcomeEmail, 1)
+	dispatcher.AssertDispatched(t, service.TaskSendWelcomeEmail, 1)
 	dispatcher.AssertDispatchedJob(t, func(j queue.Job) bool {
-		if welcomeJob, ok := j.(*clientauth.WelcomeEmailJob); ok {
+		if welcomeJob, ok := j.(*service.WelcomeEmailJob); ok {
 			return welcomeJob.Email == "user@example.com" && welcomeJob.Name == "John Doe"
 		}
 		return false

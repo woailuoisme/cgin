@@ -10,13 +10,13 @@ import (
 	"time"
 
 	"github.com/hibiken/asynq"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/logger"
-	"cgin/internal/platform/queue"
+	"cgin/pkg/logger"
+	"cgin/pkg/queue"
 )
 
 type solidTestJob struct {
@@ -186,7 +186,7 @@ func TestQueue_RecoveryMiddleware(t *testing.T) {
 
 // TestQueue_TracingMiddleware 验证元数据信封中的 RequestID 注入至执行 Context。
 func TestQueue_TracingMiddleware(t *testing.T) {
-	var capturedLogger *zap.Logger
+	var capturedLogger *zerolog.Logger
 
 	handler := func(ctx context.Context, _ queue.Job) error {
 		capturedLogger = logger.FromContext(ctx)
@@ -197,7 +197,7 @@ func TestQueue_TracingMiddleware(t *testing.T) {
 		"request_id": "req_trace_98765",
 	}
 
-	chain := queue.Chain(handler, queue.TracingMiddleware(nil, headers))
+	chain := queue.Chain(handler, queue.TracingMiddleware(logger.Nop(), headers))
 	job := &solidTestJob{JobMeta: queue.NewJobMeta("trace:task")}
 
 	require.NoError(t, chain(context.Background(), job))
@@ -231,8 +231,7 @@ func TestQueue_AtomicLoggerConcurrentSafety(t *testing.T) {
 	// 并发写 logger
 	wg.Go(func() {
 		for range 500 {
-			nop := zap.NewNop()
-			c.SetLogger(nop)
+			c.SetLogger(logger.Nop())
 		}
 	})
 

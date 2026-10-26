@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin/binding"
 	govalidator "github.com/go-playground/validator/v10"
 
-	"cgin/internal/platform/errs"
+	"cgin/pkg/errs"
 )
 
 // ErrorHandler 【全局中间件】拦截请求链路中的全部错误，集中解析业务码、执行多语言翻译并写回统一 JSON 响应。

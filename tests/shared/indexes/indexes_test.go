@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"cgin/internal/shared/indexes"
+	"cgin/shared/indexes"
 )
 
 func TestUserIndexerMetadata(t *testing.T) {

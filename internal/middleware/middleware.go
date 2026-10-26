@@ -10,12 +10,12 @@ package middleware
 
 import (
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/authentication"
-	"cgin/internal/platform/authorization"
-	"cgin/internal/platform/cache"
+	"cgin/pkg/authentication"
+	"cgin/pkg/authorization"
+	"cgin/pkg/cache"
 )
 
 // Deps 是路由/组中间件所需的依赖，由 bootstrap 装配后注入。
@@ -23,7 +23,7 @@ type Deps struct {
 	AuthManager *authentication.Manager
 	Cache       cache.Store
 	Authz       *authorization.Enforcer
-	Logger      *zap.Logger
+	Logger      *zerolog.Logger
 	Limiter     config.LimiterConfig
 	SigningKey  string
 }
@@ -34,7 +34,7 @@ type Middleware struct {
 	cache        cache.Store
 	limiterStore RateLimiterStore
 	authz        *authorization.Enforcer
-	logger       *zap.Logger
+	logger       *zerolog.Logger
 	limiter      config.LimiterConfig
 	signingKey   string
 }

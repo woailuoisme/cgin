@@ -26,8 +26,9 @@ import (
 	"golang.org/x/net/websocket"
 
 	"cgin/internal/config"
-	featureRealtime "cgin/internal/features/realtime"
-	platformRealtime "cgin/internal/platform/realtime"
+	"cgin/internal/handler"
+	"cgin/internal/service"
+	platformRealtime "cgin/pkg/realtime"
 )
 
 // getRealtimeConfig 加载当前环境的 Centrifugo 配置。
@@ -287,12 +288,12 @@ func TestRealtime_ProxySubscribeCallbackContract(t *testing.T) {
 
 	appCfg := &config.Config{Realtime: cfg}
 	gw := platformRealtime.NewManager(&cfg, platformRealtime.WithRegistry(reg))
-	svc := featureRealtime.NewService(featureRealtime.Deps{
+	svc := service.NewRealtimeService(service.RealtimeDeps{
 		Gateway: gw,
 		Cfg:     appCfg,
 		Secret:  appCfg.Realtime.Secret,
 	})
-	handler := featureRealtime.NewHandler(svc)
+	handler := handler.NewRealtimeHandler(svc)
 
 	router := gin.New()
 	router.POST("/v1/realtime/proxy/subscribe", handler.ProxySubscribe)

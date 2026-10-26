@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"cgin/internal/platform/cache"
+	"cgin/pkg/cache"
 )
 
 const (

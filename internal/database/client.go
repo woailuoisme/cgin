@@ -50,10 +50,10 @@ func Open(ctx context.Context, cfg config.DatabaseConfig, applicationName string
 	}
 	poolCfg.MaxConnIdleTime = cfg.ConnMaxIdleTime
 
-	// 链路追踪与结构化日志：otelpgx 负责 span，ZapTracer 负责慢查询与语句指纹审计。
+	// 链路追踪与结构化日志：otelpgx 负责 span，QueryTracer 负责慢查询与语句指纹审计。
 	poolCfg.ConnConfig.Tracer = multitracer.New(
 		otelpgx.NewTracer(),
-		NewZapTracer(cfg),
+		NewQueryTracer(cfg),
 	)
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)

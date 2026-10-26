@@ -18,9 +18,9 @@ import (
 	"cgin/internal/config"
 	"cgin/internal/middleware"
 	"cgin/internal/middleware/global"
-	"cgin/internal/platform/authentication"
-	"cgin/internal/platform/cache"
-	"cgin/internal/platform/errs"
+	"cgin/pkg/authentication"
+	"cgin/pkg/cache"
+	"cgin/pkg/errs"
 )
 
 // mockRateLimitStore 模拟内存限流存储。

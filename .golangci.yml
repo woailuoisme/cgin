@@ -63,13 +63,13 @@ linters:
         path: ^tests/
       - linters:
           - bodyclose
-        path: ^internal/platform/resilience/
+        path: ^pkg/resilience/
 
   settings:
     forbidigo:
       forbid:
         - pattern: '^(fmt\.Print(|f|ln)|print|println)$'
-          msg: "核心业务与运行时严禁使用 fmt.Print*，请使用 internal/platform/logger 结构化日志"
+          msg: "核心业务与运行时严禁使用 fmt.Print*，请使用 pkg/logger 结构化日志"
       exclude-godoc-examples: true
     gosec:
       excludes:

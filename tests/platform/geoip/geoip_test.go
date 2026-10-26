@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/geoip"
+	"cgin/pkg/geoip"
 )
 
 func TestNoopService(t *testing.T) {

@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 
 	"cgin/internal/config"
-	"cgin/internal/platform/telemetry"
+	"cgin/pkg/telemetry"
 )
 
 func TestTelemetry_Disabled(t *testing.T) {
@@ -33,8 +33,8 @@ func TestTelemetry_Disabled(t *testing.T) {
 	meter := telemetry.Meter("test")
 	assert.NotNil(t, meter)
 
-	core := telemetry.NewZapCore("cgin", zapcore.InfoLevel)
-	assert.Nil(t, core)
+	hook := telemetry.NewZerologHook("cgin", zerolog.InfoLevel)
+	assert.Nil(t, hook)
 }
 
 func TestTelemetryConfig_Helpers(t *testing.T) {

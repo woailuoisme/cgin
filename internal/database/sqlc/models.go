@@ -7,7 +7,7 @@ package sqlc
 import (
 	"time"
 
-	"cgin/internal/shared/enums"
+	"cgin/shared/enums"
 )
 
 type Account struct {
