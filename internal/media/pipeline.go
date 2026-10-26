@@ -107,19 +107,19 @@ type ImageProcessor = Client
 // Pipeline 定义媒体与文件处理管道核心门面契约。
 type Pipeline interface {
 	// Upload 校验并存储单个 multipart 表单上传文件。
-	Upload(ctx context.Context, file *multipart.FileHeader, category string, diskName ...string) (*FileInfo, error)
+	Upload(ctx context.Context, file *multipart.FileHeader, category string) (*FileInfo, error)
 	// UploadMultiple 批量校验并存储多个 multipart 表单上传文件。
-	UploadMultiple(ctx context.Context, files []*multipart.FileHeader, category string, diskName ...string) ([]*FileInfo, error)
+	UploadMultiple(ctx context.Context, files []*multipart.FileHeader, category string) ([]*FileInfo, error)
 	// UploadBytes 存储原生字节切片。
-	UploadBytes(ctx context.Context, content []byte, originalName, category string, diskName ...string) (*FileInfo, error)
-	// UploadReader 流式存储指定数据。
-	UploadReader(ctx context.Context, reader io.Reader, originalName string, size int64, mimeType, category string, diskName ...string) (*FileInfo, error)
+	UploadBytes(ctx context.Context, content []byte, originalName, category string) (*FileInfo, error)
+	// UploadReader 存储指定数据流（必须由调用方声明长度）。
+	UploadReader(ctx context.Context, reader io.Reader, originalName string, size int64, mimeType, category string) (*FileInfo, error)
 	// UploadImage 处理图片上传，校验图像合法性并持久化。
-	UploadImage(ctx context.Context, file *multipart.FileHeader, category string, diskName ...string) (*FileInfo, error)
+	UploadImage(ctx context.Context, file *multipart.FileHeader, category string) (*FileInfo, error)
 	// Delete 删除指定路径的文件。
-	Delete(ctx context.Context, path string, diskName ...string) error
+	Delete(ctx context.Context, path string) error
 	// URL 获取指定文件的公开访问 URL。
-	URL(path string, diskName ...string) string
+	URL(path string) string
 	// Image 返回图像处理与防篡改签名器。
 	Image() ImageProcessor
 }
@@ -216,7 +216,7 @@ func (p *PipelineImpl) Image() ImageProcessor {
 }
 
 // Upload 校验并存储单个 multipart 表单上传文件，利用缓冲区池降低内存分配。
-func (p *PipelineImpl) Upload(ctx context.Context, file *multipart.FileHeader, category string, diskName ...string) (*FileInfo, error) {
+func (p *PipelineImpl) Upload(ctx context.Context, file *multipart.FileHeader, category string) (*FileInfo, error) {
 	if file == nil {
 		return nil, errs.BadRequest("uploaded file is nil")
 	}
@@ -242,21 +242,21 @@ func (p *PipelineImpl) Upload(ctx context.Context, file *multipart.FileHeader, c
 		mimeType = headerMime
 	}
 
-	return p.uploadBytes(ctx, content, file.Filename, mimeType, category, diskName...)
+	return p.uploadBytes(ctx, content, file.Filename, mimeType, category)
 }
 
 // UploadMultiple 批量校验并存储多个 multipart 表单上传文件（任一失败自动回滚已成功上传的文件）。
-func (p *PipelineImpl) UploadMultiple(ctx context.Context, files []*multipart.FileHeader, category string, diskName ...string) ([]*FileInfo, error) {
+func (p *PipelineImpl) UploadMultiple(ctx context.Context, files []*multipart.FileHeader, category string) ([]*FileInfo, error) {
 	if len(files) == 0 {
 		return nil, errs.BadRequest("no files provided for upload")
 	}
 
 	results := make([]*FileInfo, 0, len(files))
 	for _, file := range files {
-		info, err := p.Upload(ctx, file, category, diskName...)
+		info, err := p.Upload(ctx, file, category)
 		if err != nil {
 			for _, uploaded := range results {
-				_ = p.Delete(ctx, uploaded.Path, diskName...)
+				_ = p.Delete(ctx, uploaded.Path)
 			}
 			return nil, err
 		}
@@ -267,16 +267,16 @@ func (p *PipelineImpl) UploadMultiple(ctx context.Context, files []*multipart.Fi
 }
 
 // UploadBytes 将原生字节切片进行安全校验与哈希命名后上传至存储驱动。
-func (p *PipelineImpl) UploadBytes(ctx context.Context, content []byte, originalName, category string, diskName ...string) (*FileInfo, error) {
+func (p *PipelineImpl) UploadBytes(ctx context.Context, content []byte, originalName, category string) (*FileInfo, error) {
 	if len(content) == 0 {
 		return nil, errs.BadRequest("uploaded file content cannot be empty")
 	}
 
 	mimeType := detectMimeType(originalName, content)
-	return p.uploadBytes(ctx, content, originalName, mimeType, category, diskName...)
+	return p.uploadBytes(ctx, content, originalName, mimeType, category)
 }
 
-// UploadReader 流式校验并写入任意 io.Reader 数据流至底层存储磁盘。
+// UploadReader 存储指定数据流；长度必须由调用方提前给出，否则无法在读取阶段限制体积。
 func (p *PipelineImpl) UploadReader(
 	ctx context.Context,
 	reader io.Reader,
@@ -284,45 +284,42 @@ func (p *PipelineImpl) UploadReader(
 	size int64,
 	mimeType string,
 	category string,
-	diskName ...string,
 ) (*FileInfo, error) {
 	if reader == nil {
 		return nil, errs.BadRequest("reader cannot be nil")
 	}
-
-	maxSize := size
-	if fv, ok := p.validator.(*FileValidator); ok && fv != nil && fv.MaxFileSize > 0 {
-		if maxSize <= 0 || maxSize > fv.MaxFileSize {
-			maxSize = fv.MaxFileSize
-		}
+	if size <= 0 {
+		return nil, errs.BadRequest("size hint is required for streaming upload")
 	}
-
-	limitedReader := reader
-	if maxSize > 0 {
-		limitedReader = io.LimitReader(reader, maxSize+1)
+	// 与 Upload 一致：先按接口做声明期尺寸校验，再按 size 截断读取，
+	// 不信任调用方声明就把超大内容整读进内存。
+	if sizeValidator, ok := p.validator.(SizeValidator); ok {
+		if err := sizeValidator.ValidateSize(size); err != nil {
+			return nil, oops.Code(errs.CodeBadRequest).In("media.UploadReader.PrecheckSize").Wrap(err)
+		}
 	}
 
 	buf := getBuffer()
 	defer putBuffer(buf)
 
-	if _, err := io.Copy(buf, limitedReader); err != nil {
+	if _, err := io.Copy(buf, io.LimitReader(reader, size+1)); err != nil {
 		return nil, oops.Code(errs.CodeInternal).In("media.UploadReader").Wrap(err)
 	}
 
 	content := buf.Bytes()
-	if maxSize > 0 && int64(len(content)) > maxSize {
-		return nil, errs.BadRequest(fmt.Sprintf("uploaded content exceeds maximum allowed size of %d bytes", maxSize))
+	if int64(len(content)) > size {
+		return nil, errs.BadRequest(fmt.Sprintf("uploaded content exceeds declared size of %d bytes", size))
 	}
 
 	if strings.TrimSpace(mimeType) == "" {
 		mimeType = detectMimeType(originalName, content)
 	}
 
-	return p.uploadBytes(ctx, content, originalName, mimeType, category, diskName...)
+	return p.uploadBytes(ctx, content, originalName, mimeType, category)
 }
 
 // UploadImage 处理图片上传，校验原始图像合法性并持久化保存原图。
-func (p *PipelineImpl) UploadImage(ctx context.Context, file *multipart.FileHeader, category string, diskName ...string) (*FileInfo, error) {
+func (p *PipelineImpl) UploadImage(ctx context.Context, file *multipart.FileHeader, category string) (*FileInfo, error) {
 	if file == nil {
 		return nil, oops.Code(errs.CodeBadRequest).In("media.UploadImage").Errorf("file header cannot be nil")
 	}
@@ -340,27 +337,25 @@ func (p *PipelineImpl) UploadImage(ctx context.Context, file *multipart.FileHead
 		}
 	}
 
-	return p.UploadBytes(ctx, rawBytes, file.Filename, category, diskName...)
+	return p.UploadBytes(ctx, rawBytes, file.Filename, category)
 }
 
 // Delete 根据相对存储路径删除指定磁盘上的文件。
-func (p *PipelineImpl) Delete(ctx context.Context, filePath string, diskName ...string) error {
-	disk := p.getDisk(diskName...)
-	if disk == nil {
+func (p *PipelineImpl) Delete(ctx context.Context, filePath string) error {
+	if p.disk == nil {
 		return errs.Internal(errors.New("storage disk unavailable"))
 	}
 
-	return disk.Delete(ctx, filePath)
+	return p.disk.Delete(ctx, filePath)
 }
 
 // URL 获取指定文件的公开访问 URL。
-func (p *PipelineImpl) URL(filePath string, diskName ...string) string {
-	disk := p.getDisk(diskName...)
-	if disk == nil {
+func (p *PipelineImpl) URL(filePath string) string {
+	if p.disk == nil {
 		return ""
 	}
 
-	url, _ := disk.URL(filePath)
+	url, _ := p.disk.URL(filePath)
 	return url
 }
 
@@ -371,7 +366,6 @@ func (p *PipelineImpl) uploadBytes(
 	originalName string,
 	mimeType string,
 	category string,
-	diskName ...string,
 ) (*FileInfo, error) {
 	size := int64(len(content))
 
@@ -390,16 +384,15 @@ func (p *PipelineImpl) uploadBytes(
 	fileName, hash := p.naming.GenerateName(ctx, originalName, content)
 	storagePath := p.path.GeneratePath(ctx, category, fileName)
 
-	disk := p.getDisk(diskName...)
-	if disk == nil {
+	if p.disk == nil {
 		return nil, errs.Internal(errors.New("storage disk unavailable"))
 	}
 
-	if err := disk.Put(ctx, storagePath, content); err != nil {
+	if err := p.disk.Put(ctx, storagePath, content); err != nil {
 		return nil, oops.Code(errs.CodeInternal).In("media.Put").Wrap(err)
 	}
 
-	url, _ := disk.URL(storagePath)
+	url, _ := p.disk.URL(storagePath)
 
 	return &FileInfo{
 		Path:         storagePath,
@@ -411,11 +404,6 @@ func (p *PipelineImpl) uploadBytes(
 		Hash:         hash,
 		UploadedAt:   time.Now().UTC(),
 	}, nil
-}
-
-// getDisk 返回当前 Pipeline 装配的存储磁盘。
-func (p *PipelineImpl) getDisk(_ ...string) storage.Disk {
-	return p.disk
 }
 
 // detectMimeType 结合魔数头嗅探与扩展名推导文件的真实 MIME 类型。

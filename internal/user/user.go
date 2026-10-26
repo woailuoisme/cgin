@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"cgin/internal/database"
 	"cgin/internal/database/sqlc"
@@ -21,9 +20,6 @@ const (
 	indexUserEmail       = "idx_user_email"
 	indexUserUsername    = "idx_user_username"
 	indexUserPhoneNumber = "idx_user_phone_number"
-
-	// uniqueViolation 是 PostgreSQL 的唯一约束冲突错误码。
-	uniqueViolation = "23505"
 )
 
 // NormaliseEmail 统一邮箱大小写与首尾空白，与库中 idx_user_email 的口径一致。
@@ -82,12 +78,12 @@ func FieldCannotBeNull(field string) error {
 
 // MapUniqueConflict 把唯一索引冲突翻译成具体的业务错误码。
 func MapUniqueConflict(err error) error {
-	pgErr, ok := errors.AsType[*pgconn.PgError](err)
-	if !ok || pgErr.Code != uniqueViolation {
+	constraint, ok := errs.UniqueConstraint(err)
+	if !ok {
 		return errs.Internal(err)
 	}
 
-	switch pgErr.ConstraintName {
+	switch constraint {
 	case indexUserEmail:
 		return errs.New(errs.CodeAuthEmailAlreadyExists, "An account with this email address already exists")
 	case indexUserUsername:

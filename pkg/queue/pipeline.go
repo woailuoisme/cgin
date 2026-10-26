@@ -70,24 +70,14 @@ func TracingMiddleware(l *zerolog.Logger, headers map[string]string) Middleware 
 }
 
 // LockingMiddleware 提供基于分布式锁的防并发重叠防护。
-func LockingMiddleware(locker Locker, reg Registry, l *zerolog.Logger) Middleware {
+func LockingMiddleware(locker Locker, reg *Registry, l *zerolog.Logger) Middleware {
 	return func(next Handler) Handler {
 		return func(ctx context.Context, job Job) error {
 			if locker == nil {
 				return next(ctx, job)
 			}
 
-			// 查询是否启用了防重叠锁
-			var (
-				ttl     time.Duration
-				enabled bool
-			)
-			if r, ok := reg.(*jobRegistry); ok {
-				ttl, enabled = r.LookupLockTTL(job.TaskName(), job)
-			} else if olp, ok := job.(OverlappingLockProvider); ok {
-				ttl, enabled = olp.WithoutOverlapping()
-			}
-
+			ttl, enabled := reg.LookupLockTTL(job.TaskName(), job)
 			if !enabled {
 				return next(ctx, job)
 			}
@@ -96,7 +86,6 @@ func LockingMiddleware(locker Locker, reg Registry, l *zerolog.Logger) Middlewar
 			acquired, err := TryLock(ctx, locker, lockKey, ttl, func(lockCtx context.Context) error {
 				return next(lockCtx, job)
 			})
-
 			if err != nil {
 				return err
 			}

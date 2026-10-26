@@ -41,9 +41,11 @@ func Open(ctx context.Context, cfg config.DatabaseConfig, applicationName string
 		poolCfg.ConnConfig.RuntimeParams["idle_in_transaction_session_timeout"] = millis(cfg.IdleInTxTimeout)
 	}
 
-	// 池容量与连接寿命：MinConns 为常驻热连接数，上限由配置校验保证不溢出。
+	// 池容量与连接寿命：MinConns 是常驻热连接的下限，不是 database/sql 的「空闲上限」。
+	// 两者相等会让 MaxConnIdleTime 永不生效（pgx 只在总数超过 MinConns 时才回收空闲连接），
+	// 且每个进程（含一次性 CLI）启动就占满整池。
 	poolCfg.MaxConns = int32(cfg.MaxOpenConns) //nolint:gosec // 上限由 DatabaseConfig.Validate 保证
-	poolCfg.MinConns = int32(cfg.MaxIdleConns) //nolint:gosec // 上限由 DatabaseConfig.Validate 保证
+	poolCfg.MinConns = int32(cfg.MinConns)     //nolint:gosec // 同上
 	poolCfg.MaxConnLifetime = cfg.ConnMaxLifetime
 	if cfg.ConnMaxLifetime > 0 {
 		poolCfg.MaxConnLifetimeJitter = cfg.ConnMaxLifetime / 10

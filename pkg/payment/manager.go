@@ -21,39 +21,6 @@ import (
 	"cgin/pkg/payment/enum"
 )
 
-// DriverFactory 定义支付渠道驱动的构造工厂函数契约。
-type DriverFactory func(application string, appCfg any, isProd bool, certsDir string, log *zerolog.Logger) (Provider, error)
-
-// wechatFactory 内置微信支付驱动构造函数。
-func wechatFactory(application string, rawCfg any, isProd bool, certsDir string, log *zerolog.Logger) (Provider, error) {
-	cfg, ok := rawCfg.(config.WechatPaymentAppConfig)
-	if !ok {
-		return nil, oops.Code(errs.CodeInvalidPaymentConfig).Errorf("expected WechatPaymentAppConfig, got %T", rawCfg)
-	}
-	return newWechatProvider(application, cfg, isProd, certsDir, log)
-}
-
-// alipayFactory 内置支付宝支付驱动构造函数。
-func alipayFactory(application string, rawCfg any, isProd bool, certsDir string, log *zerolog.Logger) (Provider, error) {
-	cfg, ok := rawCfg.(config.AlipayPaymentAppConfig)
-	if !ok {
-		return nil, oops.Code(errs.CodeInvalidPaymentConfig).Errorf("expected AlipayPaymentAppConfig, got %T", rawCfg)
-	}
-	return newAlipayProvider(application, cfg, isProd, certsDir, log)
-}
-
-// GetDriverFactory 获取渠道驱动工厂（内置渠道静态分发，不支持运行期注册）。
-func GetDriverFactory(channel enum.PaymentChannel) (DriverFactory, bool) {
-	switch channel {
-	case enum.PaymentChannelWechat:
-		return wechatFactory, true
-	case enum.PaymentChannelAlipay:
-		return alipayFactory, true
-	default:
-		return nil, false
-	}
-}
-
 // FakeApplicationKey 是本地开发与端到端演练下 Fake 渠道使用的应用标识。
 const FakeApplicationKey = "fake"
 
@@ -110,13 +77,8 @@ func (m *Manager) loadWechat(cfg *config.Config, log *zerolog.Logger) error {
 		return err
 	}
 
-	factory, ok := GetDriverFactory(enum.PaymentChannelWechat)
-	if !ok {
-		return oops.Code(errs.CodePaymentDriverNotFound).Errorf("payment driver factory not found for wechat")
-	}
-
 	for _, application := range sortedKeys(applications) {
-		provider, err := factory(application, applications[application], false, cfg.Payment.CertsDir, log)
+		provider, err := newWechatProvider(application, applications[application], false, cfg.Payment.CertsDir, log)
 		if err != nil {
 			return err
 		}
@@ -136,13 +98,8 @@ func (m *Manager) loadAlipay(cfg *config.Config, isProd bool, log *zerolog.Logge
 		return err
 	}
 
-	factory, ok := GetDriverFactory(enum.PaymentChannelAlipay)
-	if !ok {
-		return oops.Code(errs.CodePaymentDriverNotFound).Errorf("payment driver factory not found for alipay")
-	}
-
 	for _, application := range sortedKeys(applications) {
-		provider, err := factory(application, applications[application], isProd, cfg.Payment.CertsDir, log)
+		provider, err := newAlipayProvider(application, applications[application], isProd, cfg.Payment.CertsDir, log)
 		if err != nil {
 			return err
 		}
@@ -226,10 +183,17 @@ func (m *Manager) Register(provider Provider) error {
 
 // Enabled 返回支付模块是否启用了任一渠道。
 func (m *Manager) Enabled() bool {
+	return m.isEnabled()
+}
+
+// isEnabled 在锁内读取启用状态，与 Register 的写入共用同一把锁。
+func (m *Manager) isEnabled() bool {
 	if m == nil {
 		return false
 	}
 
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.enabled
 }
 
@@ -249,7 +213,7 @@ func capability[T any](provider Provider, channel enum.PaymentChannel) (T, error
 
 // Create 发起一次收款，内部自动根据 req.Scene 路由到声明了该场景的渠道应用。
 func (m *Manager) Create(ctx context.Context, req CreateRequest) (*Instruction, error) {
-	if m == nil || !m.enabled {
+	if !m.isEnabled() {
 		return nil, errs.ServiceUnavailable("payment gateway is not enabled")
 	}
 	if !req.Scene.IsValid() {
@@ -371,7 +335,7 @@ func (m *Manager) ParseNotification(
 
 // resolveAppProvider 按渠道和可选应用标识解析 Provider。
 func (m *Manager) resolveAppProvider(channel enum.PaymentChannel, application ...string) (Provider, error) {
-	if m == nil || !m.enabled {
+	if !m.isEnabled() {
 		return nil, errs.ServiceUnavailable("payment gateway is not enabled")
 	}
 	if !channel.IsValid() {

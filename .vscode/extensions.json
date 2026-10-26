@@ -2,7 +2,6 @@
   "recommendations": [
     "golang.go",
     "editorconfig.editorconfig",
-    "redhat.vscode-yaml",
-    "visualstudioexptteam.vscodeintellicode"
+    "redhat.vscode-yaml"
   ]
 }

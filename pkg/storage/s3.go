@@ -82,11 +82,6 @@ func NewS3Disk(cfg config.S3StorageConfig) (Disk, error) {
 	}, nil
 }
 
-// SupportsPresign 显式声明 S3 兼容驱动原生具备预签名能力。
-func (d *s3Disk) SupportsPresign() bool {
-	return true
-}
-
 // isNotFound 判断底层错误是否为对象不存在（404 / NoSuchKey）。
 func isNotFound(err error) bool {
 	if err == nil {
@@ -329,8 +324,8 @@ func (d *s3Disk) PresignPut(ctx context.Context, key string, ttl time.Duration) 
 	return u.String(), nil
 }
 
-// HealthCheck 探测桶是否可达与存在。超时由调用方的 ctx 决定。
-func (d *s3Disk) HealthCheck(ctx context.Context) error {
+// Ping 探测桶是否可达与存在，启动期校验与就绪探针共用。超时由调用方的 ctx 决定。
+func (d *s3Disk) Ping(ctx context.Context) error {
 	exists, err := d.client.BucketExists(ctx, d.bucket)
 	if err != nil {
 		return fmt.Errorf("storage: failed to probe S3 bucket %s: %w", d.bucket, err)
@@ -344,9 +339,4 @@ func (d *s3Disk) HealthCheck(ctx context.Context) error {
 // Driver 返回当前存储驱动名称。若服务地址包含 garage 则自动识别为 garage，缺省为 s3。
 func (d *s3Disk) Driver() string {
 	return lo.Ternary(strings.Contains(strings.ToLower(d.endpoint), "garage"), "garage", "s3")
-}
-
-// Ping 实现 ready.Pinger 接口。
-func (d *s3Disk) Ping(ctx context.Context) error {
-	return d.HealthCheck(ctx)
 }

@@ -88,17 +88,17 @@ func TestMoney_Comparisons(t *testing.T) {
 	assert.False(t, m1.Equal(m3))
 	assert.False(t, m1.Equal(mUSD))
 
-	gt, err := m3.GreaterThan(m1)
+	gt, err := m3.Compare(m1)
 	require.NoError(t, err)
-	assert.True(t, gt)
+	assert.Positive(t, gt)
 
-	lt, err := m1.LessThan(m3)
+	lt, err := m1.Compare(m3)
 	require.NoError(t, err)
-	assert.True(t, lt)
+	assert.Negative(t, lt)
 
-	gte, err := m1.GreaterThanOrEqual(m2)
+	eq, err := m1.Compare(m2)
 	require.NoError(t, err)
-	assert.True(t, gte)
+	assert.Zero(t, eq)
 
 	// 币种不一致比较报错
 	_, err = m1.Compare(mUSD)
@@ -114,17 +114,14 @@ func TestMoney_Arithmetic(t *testing.T) {
 	sum, err := m1.Add(m2)
 	require.NoError(t, err)
 	assert.Equal(t, "151", sum.Amount().String())
-	assert.Equal(t, "151", m1.MustAdd(m2).Amount().String())
 
 	_, err = m1.Add(mUSD)
 	require.ErrorIs(t, err, money.ErrCurrencyMismatch)
-	assert.Panics(t, func() { m1.MustAdd(mUSD) })
 
 	// Sub
 	diff, err := m1.Sub(m2)
 	require.NoError(t, err)
 	assert.Equal(t, "49.5", diff.Amount().String())
-	assert.Equal(t, "49.5", m1.MustSub(m2).Amount().String())
 
 	_, err = m1.Sub(mUSD)
 	require.ErrorIs(t, err, money.ErrCurrencyMismatch)
@@ -133,17 +130,14 @@ func TestMoney_Arithmetic(t *testing.T) {
 	prod := m1.Mul(decimal.NewFromInt(2))
 	assert.Equal(t, "200.5", prod.Amount().String())
 	assert.Equal(t, "300.75", m1.MulInt(3).Amount().String())
-	assert.Equal(t, "50.125", m1.MulFloat64(0.5).Amount().String())
 
 	// Div
 	quot, err := m1.Div(decimal.NewFromInt(2))
 	require.NoError(t, err)
 	assert.Equal(t, "50.125", quot.Amount().String())
-	assert.Equal(t, "50.125", m1.MustDiv(decimal.NewFromInt(2)).Amount().String())
 
 	_, err = m1.Div(decimal.Zero)
 	require.ErrorIs(t, err, money.ErrDivisionByZero)
-	assert.Panics(t, func() { m1.MustDiv(decimal.Zero) })
 
 	// Abs & Neg
 	assert.Equal(t, "-100.25", m1.Neg().Amount().String())
@@ -177,6 +171,18 @@ func TestMoney_RoundingModes(t *testing.T) {
 	assert.Equal(t, "1235", jpy.RoundToSubunit(money.RoundHalfUp).Amount().String())
 }
 
+// sumAll 逐项累加并断言币种一致，用于校验分摊后的残差守恒。
+func sumAll(t *testing.T, parts ...money.Money) money.Money {
+	t.Helper()
+	total := parts[0]
+	for _, p := range parts[1:] {
+		next, err := total.Add(p)
+		require.NoError(t, err)
+		total = next
+	}
+	return total
+}
+
 func TestMoney_FowlerAllocation(t *testing.T) {
 	// 10.00 元按 1:1:1 三等分（除不尽，应保证总和严格为 10.00）
 	m := money.MustNew(decimal.NewFromFloat(10.00), money.CNY)
@@ -189,8 +195,7 @@ func TestMoney_FowlerAllocation(t *testing.T) {
 	assert.Equal(t, "3.33", parts[2].Amount().String())
 
 	// 守恒校验
-	sum := parts[0].MustAdd(parts[1]).MustAdd(parts[2])
-	assert.True(t, sum.Equal(m))
+	assert.True(t, sumAll(t, parts...).Equal(m))
 
 	// Split 辅助语法糖
 	splitParts, err := m.Split(3)
@@ -203,7 +208,7 @@ func TestMoney_FowlerAllocation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "7.04", revParts[0].Amount().String())
 	assert.Equal(t, "3.01", revParts[1].Amount().String())
-	assert.True(t, revParts[0].MustAdd(revParts[1]).Equal(mRev))
+	assert.True(t, sumAll(t, revParts...).Equal(mRev))
 
 	// 负数均摊守恒
 	mNeg := money.MustNew(decimal.NewFromFloat(-10.00), money.CNY)
@@ -212,7 +217,7 @@ func TestMoney_FowlerAllocation(t *testing.T) {
 	assert.Equal(t, "-3.34", negParts[0].Amount().String())
 	assert.Equal(t, "-3.33", negParts[1].Amount().String())
 	assert.Equal(t, "-3.33", negParts[2].Amount().String())
-	assert.True(t, negParts[0].MustAdd(negParts[1]).MustAdd(negParts[2]).Equal(mNeg))
+	assert.True(t, sumAll(t, negParts...).Equal(mNeg))
 
 	// 非法比例
 	_, err = m.Allocate()
@@ -226,16 +231,16 @@ func TestMoney_FowlerAllocation(t *testing.T) {
 func TestMoney_TaxDiscountAndExchange(t *testing.T) {
 	price := money.MustNew(decimal.NewFromFloat(100.00), money.CNY)
 
-	// 13% 增值税
-	tax := price.Tax(decimal.NewFromFloat(0.13))
+	// 13% 增值税额
+	tax := price.Percentage(decimal.NewFromFloat(0.13))
 	assert.Equal(t, "13", tax.Amount().String())
 
 	// 含税价
 	withTax := price.AddPercentage(decimal.NewFromFloat(0.13))
 	assert.Equal(t, "113", withTax.Amount().String())
 
-	// 八折优惠 (20% 折扣)
-	discount := price.Discount(decimal.NewFromFloat(0.20))
+	// 八折优惠：折扣额 20，折后价 80
+	discount := price.Percentage(decimal.NewFromFloat(0.20))
 	assert.Equal(t, "20", discount.Amount().String())
 	afterDiscount := price.SubPercentage(decimal.NewFromFloat(0.20))
 	assert.Equal(t, "80", afterDiscount.Amount().String())
@@ -264,8 +269,6 @@ func TestMoney_GatewayAdaptersAndFormatting(t *testing.T) {
 	// 格式化展示
 	assert.Equal(t, "¥12.35", m.Format(true))
 	assert.Equal(t, "12.35 CNY", m.Format(false))
-	assert.Equal(t, "¥12.35", m.FormatWithSymbol())
-	assert.Equal(t, "12.35 CNY", m.FormatWithCode())
 	assert.Equal(t, "12.35 CNY", m.String())
 }
 
@@ -284,104 +287,8 @@ func TestMoney_JSONSerialization(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, parsed.Equal(m))
 
-	// 反序列化复合字串 "USD 1234.5678"
-	var parsedFromStr money.Money
-	err = json.Unmarshal([]byte(`"USD 1234.5678"`), &parsedFromStr)
-	require.NoError(t, err)
-	assert.True(t, parsedFromStr.Equal(m))
-
-	// 反序列化纯数字字串（默认 CNY）
-	var defaultCNY money.Money
-	err = json.Unmarshal([]byte(`"99.50"`), &defaultCNY)
-	require.NoError(t, err)
-	assert.Equal(t, money.CNY, defaultCNY.CurrencyCode())
-	assert.Equal(t, "99.5", defaultCNY.Amount().String())
-}
-
-func TestMoney_DatabaseValueAndScan(t *testing.T) {
-	m := money.MustNew(decimal.NewFromFloat(88.88), money.CNY)
-
-	// Value()
-	val, err := m.Value()
-	require.NoError(t, err)
-
-	// Scan() bytes
-	var scanned money.Money
-	err = scanned.Scan(val)
-	require.NoError(t, err)
-	assert.True(t, scanned.Equal(m))
-
-	// Scan() cents (int64)
-	var scannedFromCents money.Money
-	err = scannedFromCents.Scan(int64(8888))
-	require.NoError(t, err)
-	assert.Equal(t, "88.88", scannedFromCents.Amount().String())
-	assert.Equal(t, money.CNY, scannedFromCents.CurrencyCode())
-
-	// Scan() nil
-	var nilScanned money.Money
-	err = nilScanned.Scan(nil)
-	require.NoError(t, err)
-	assert.True(t, nilScanned.IsZero())
-}
-
-func TestMoney_Calculator(t *testing.T) {
-	initial := money.MustNew(decimal.NewFromInt(100), money.CNY)
-	calc := money.NewCalculator(initial).
-		Add(money.MustNew(decimal.NewFromInt(50), money.CNY)).
-		Sub(money.MustNew(decimal.NewFromInt(20), money.CNY)).
-		MulInt(2).
-		DivInt(2)
-
-	res, err := calc.Result()
-	require.NoError(t, err)
-	assert.Equal(t, "130", res.Amount().String())
-	assert.Equal(t, money.CNY, res.CurrencyCode())
-	assert.Equal(t, res, calc.MustResult())
-
-	// 币种不匹配错误聚集
-	calcErr := money.NewCalculator(initial).
-		Add(money.MustNew(decimal.NewFromInt(10), money.USD)).
-		Sub(money.MustNew(decimal.NewFromInt(5), money.CNY))
-	_, err = calcErr.Result()
-	require.ErrorIs(t, err, money.ErrCurrencyMismatch)
-	assert.Panics(t, func() {
-		calcErr.MustResult()
-	})
-
-	// 除以零错误聚集
-	calcDivZero := money.NewCalculator(initial).DivInt(0)
-	_, err = calcDivZero.Result()
-	require.ErrorIs(t, err, money.ErrDivisionByZero)
-
-	// 舍入方法
-	rounded := money.NewCalculator(money.MustNew(decimal.NewFromFloat(123.456), money.CNY)).
-		RoundToSubunit(money.RoundHalfUp).
-		MustResult()
-	assert.Equal(t, "123.46", rounded.Amount().String())
-}
-
-func TestMoney_MemoryConverter(t *testing.T) {
-	ctx := t.Context()
-	converter := money.NewMemoryConverter()
-
-	converter.SetRate(money.USD, money.CNY, decimal.NewFromFloat(7.25))
-
-	usd := money.MustNew(decimal.NewFromInt(100), money.USD)
-
-	// 同币种转换
-	same, err := converter.Convert(ctx, usd, money.USD)
-	require.NoError(t, err)
-	assert.True(t, same.Equal(usd))
-
-	// USD 转换为 CNY
-	cny, err := converter.Convert(ctx, usd, money.CNY)
-	require.NoError(t, err)
-	assert.Equal(t, money.CNY, cny.CurrencyCode())
-	assert.Equal(t, "725", cny.Amount().String())
-
-	// 缺失汇率报错
-	_, err = converter.Convert(ctx, usd, money.EUR)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "exchange rate not found")
+	// 裸字符串或缺失币种一律拒绝：币种必须随金额一起出现。
+	var rejected money.Money
+	require.Error(t, json.Unmarshal([]byte(`"USD 1234.5678"`), &rejected))
+	require.Error(t, json.Unmarshal([]byte(`{"amount":"1.00"}`), &rejected))
 }

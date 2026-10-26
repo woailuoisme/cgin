@@ -1,16 +1,22 @@
-package platform_test
+package logger_test
 
 import (
 	"bytes"
 	"context"
+	"io"
 	"testing"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/goleak"
 
 	"cgin/internal/config"
 	"cgin/pkg/logger"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 // TestLogger_BuildAndContext 验证日志器构建与 Context 请求标识传递。
 func TestLogger_BuildAndContext(t *testing.T) {
@@ -169,9 +175,6 @@ func TestLogger_OptionsAndRedaction(t *testing.T) {
 }
 
 // TestLogger_RedactionCoversAllJSONValueKinds 锁定脱敏器对标量、对象、数组与控制台格式的全覆盖。
-//
-// 结构化取值（token 载荷、鉴权对象）是凭据最常见的落盘形态，脱敏器若只处理标量，
-// 这些字段会原样写进日志，因此这里逐种取值形态固化为回归防线。
 func TestLogger_RedactionCoversAllJSONValueKinds(t *testing.T) {
 	t.Parallel()
 
@@ -266,5 +269,44 @@ func TestLogger_RedactionCoversAllJSONValueKinds(t *testing.T) {
 				assert.NotContains(t, output, tt.secret, "敏感取值不得以任何形态落盘")
 			}
 		})
+	}
+}
+
+func BenchmarkLogger_JSONRedact(b *testing.B) {
+	l := logger.NewWithOptions(
+		logger.WithLevel("info"),
+		logger.WithChannel("json"),
+		logger.WithWriter(io.Discard),
+		logger.WithRedaction(true),
+	)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for range b.N {
+		l.Info().
+			Str("username", "admin").
+			Str("password", "super_secret_123").
+			Str("token", "jwt_ey123456").
+			Msg("user sign-in attempted")
+	}
+}
+
+func BenchmarkLogger_ConsoleRedact(b *testing.B) {
+	l := logger.NewWithOptions(
+		logger.WithLevel("info"),
+		logger.WithChannel("console"),
+		logger.WithWriter(io.Discard),
+		logger.WithColor(false),
+		logger.WithRedaction(true),
+	)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for range b.N {
+		l.Info().
+			Str("username", "admin").
+			Str("password", "super_secret_123").
+			Str("token", "jwt_ey123456").
+			Msg("user sign-in attempted")
 	}
 }

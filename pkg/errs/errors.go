@@ -58,6 +58,42 @@ func (e *Error) WithField(field, message string) *Error {
 	return e
 }
 
+// With 附加单条非敏感结构化排障上下文属性至底层 oops 链（仅进入服务端日志/APM，不对外响应暴露）。
+func (e *Error) With(key string, value any) *Error {
+	if e == nil || key == "" {
+		return e
+	}
+	e.cause = oops.With(key, value).Wrap(e.cause)
+	return e
+}
+
+// WithMap 批量附加结构化排障上下文属性至底层 oops 链。
+func (e *Error) WithMap(attrs map[string]any) *Error {
+	if e == nil || len(attrs) == 0 {
+		return e
+	}
+	kv := make([]any, 0, len(attrs)*2)
+	for k, v := range attrs {
+		if k == "" {
+			continue
+		}
+		kv = append(kv, k, v)
+	}
+	if len(kv) > 0 {
+		e.cause = oops.With(kv...).Wrap(e.cause)
+	}
+	return e
+}
+
+// Hint 附加排障修复建议（Runbook Hint）至底层 oops 链。
+func (e *Error) Hint(hint string) *Error {
+	if e == nil || hint == "" {
+		return e
+	}
+	e.cause = oops.Hint(hint).Wrap(e.cause)
+	return e
+}
+
 // New 按错误码构造业务错误，并用 oops 捕获堆栈与来源域。
 func New(code Code, message string) *Error {
 	return &Error{

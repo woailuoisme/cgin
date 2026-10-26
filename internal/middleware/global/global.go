@@ -27,7 +27,7 @@ type Deps struct {
 	Logger     *zerolog.Logger
 	CORS       config.CORSConfig
 	Production bool
-	Translator *i18n.Translator
+	Translator i18n.Translator
 	// Validator 用于把字段级校验失败翻译成当前语言；未注入时只返回原始文案。
 	Validator      *validator.Validator
 	RequestTimeout time.Duration
@@ -50,7 +50,7 @@ type Middleware struct {
 	logger         *zerolog.Logger
 	cors           config.CORSConfig
 	production     bool
-	translator     *i18n.Translator
+	translator     i18n.Translator
 	validator      *validator.Validator
 	requestTimeout time.Duration
 	maxBody        int64

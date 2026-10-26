@@ -42,7 +42,7 @@ type InvoiceDocument struct {
 	// 这里收的是原始取值，协商（Accept-Language 的 q 值、子标签退化）交给 i18n。
 	Language string
 	// Translator 承载全部展示文案；缺省视为装配错误，Build 会直接返回错误。
-	Translator *i18n.Translator
+	Translator i18n.Translator
 }
 
 // Title 实现 pdf.WithMetadata。

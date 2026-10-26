@@ -19,17 +19,17 @@ import (
 	"cgin/pkg/resilience"
 )
 
-// resendMailer 基于 Resend 官方 SDK 实现的现代化邮件发送器。
-type resendMailer struct {
+// resendDriver 基于 Resend 官方 SDK 实现的现代化邮件发送驱动。
+type resendDriver struct {
 	cfg    config.MailConfig
 	logger *zerolog.Logger
 	client *resend.Client
 }
 
-var _ Mailer = (*resendMailer)(nil)
+var _ Driver = (*resendDriver)(nil)
 
-// newResendMailer 创建基于 Resend 官方 Go SDK 的邮件发送器实例。
-func newResendMailer(cfg config.MailConfig, log *zerolog.Logger) (*resendMailer, error) {
+// newResendDriver 创建基于 Resend 官方 Go SDK 的邮件发送驱动实例。
+func newResendDriver(cfg config.MailConfig, log *zerolog.Logger) (*resendDriver, error) {
 	log = cmp.Or(log, logger.Nop())
 	apiKey := strings.TrimSpace(cfg.Resend.APIKey)
 	if apiKey == "" {
@@ -50,16 +50,21 @@ func newResendMailer(cfg config.MailConfig, log *zerolog.Logger) (*resendMailer,
 	}
 	client.BaseURL = parsedURL
 
-	return &resendMailer{
+	return &resendDriver{
 		cfg:    cfg,
 		logger: log,
 		client: client,
 	}, nil
 }
 
-// Send 发送单封邮件。
-func (m *resendMailer) Send(ctx context.Context, msg Message) error {
-	if strings.TrimSpace(msg.To) == "" {
+// NewResendDriver 是 newResendDriver 的对外导出版本。
+func NewResendDriver(cfg config.MailConfig, log *zerolog.Logger) (Driver, error) {
+	return newResendDriver(cfg, log)
+}
+
+// Send 发送单封或批量邮件。
+func (m *resendDriver) Send(ctx context.Context, msg Message) error {
+	if len(msg.To) == 0 {
 		return errs.BadRequest("email recipient 'To' cannot be empty")
 	}
 
@@ -68,43 +73,32 @@ func (m *resendMailer) Send(ctx context.Context, msg Message) error {
 		return err
 	}
 
-	resp, err := m.client.Emails.SendWithContext(ctx, reqPayload)
+	_, err = m.client.Emails.SendWithContext(ctx, reqPayload)
 	if err != nil {
 		if rateLimitErr, ok := errors.AsType[*resend.RateLimitError](err); ok {
 			return oops.Code(errs.CodeRateLimited).
-				With("to", maskRecipient(msg.To)).
+				With("to", maskRecipients(msg.To)).
 				With("subject", msg.Subject).
 				Wrapf(rateLimitErr, "resend: rate limit exceeded")
 		}
 
 		return oops.Code(errs.CodeServiceUnavailable).
-			With("to", maskRecipient(msg.To)).
+			With("to", maskRecipients(msg.To)).
 			With("subject", msg.Subject).
 			Wrapf(err, "resend: send email failed")
 	}
 
-	m.logger.Debug().
-		Str("email_id", resp.Id).
-		Str("to", maskRecipient(msg.To)).
-		Str("subject", msg.Subject).
-		Msg("resend email sent successfully")
-
 	return nil
 }
 
-// SendMailable 渲染模板并发送结构化邮件。
-func (m *resendMailer) SendMailable(ctx context.Context, to string, mailable Mailable) error {
-	return sendMailable(ctx, m, to, mailable)
-}
-
 // Close 释放资源（HTTP 客户端无持久连接池，直接返回 nil）。
-func (m *resendMailer) Close() error {
+func (m *resendDriver) Close() error {
 	return nil
 }
 
 // Ping 验证 Resend 客户端配置与上下文有效性。
 // 此处做本地凭据非空校验与上下文超时检查，避免高频就绪探测产生外部计费 API 调用或触发三方频控限制。
-func (m *resendMailer) Ping(ctx context.Context) error {
+func (m *resendDriver) Ping(ctx context.Context) error {
 	if m.client == nil {
 		return errors.New("resend: client is not initialized")
 	}
@@ -115,17 +109,17 @@ func (m *resendMailer) Ping(ctx context.Context) error {
 }
 
 // Driver 返回底层驱动标识。
-func (m *resendMailer) Driver() string {
+func (m *resendDriver) Driver() string {
 	return "resend"
 }
 
 // Enabled 报告 Resend 驱动是否启用。
-func (m *resendMailer) Enabled() bool {
+func (m *resendDriver) Enabled() bool {
 	return m.cfg.IsEnabled()
 }
 
 // buildRequest 组装 Resend 官方 SDK 发送邮件请求体。
-func (m *resendMailer) buildRequest(msg Message) (*resend.SendEmailRequest, error) {
+func (m *resendDriver) buildRequest(msg Message) (*resend.SendEmailRequest, error) {
 	from := cmp.Or(strings.TrimSpace(m.cfg.FromAddress), "onboarding@resend.dev")
 	if m.cfg.FromName != "" {
 		from = fmt.Sprintf("%s <%s>", m.cfg.FromName, from)
@@ -133,7 +127,7 @@ func (m *resendMailer) buildRequest(msg Message) (*resend.SendEmailRequest, erro
 
 	req := &resend.SendEmailRequest{
 		From:    from,
-		To:      []string{msg.To},
+		To:      msg.To,
 		Subject: msg.Subject,
 		Cc:      msg.Cc,
 		Bcc:     msg.Bcc,
@@ -145,10 +139,9 @@ func (m *resendMailer) buildRequest(msg Message) (*resend.SendEmailRequest, erro
 		req.Text = msg.Body
 	}
 
-	allAtts := msg.AllAttachments()
-	if len(allAtts) > 0 {
-		attachments := make([]*resend.Attachment, 0, len(allAtts))
-		for _, att := range allAtts {
+	if len(msg.Attachments) > 0 {
+		attachments := make([]*resend.Attachment, 0, len(msg.Attachments))
+		for _, att := range msg.Attachments {
 			data, err := att.Bytes()
 			if err != nil {
 				return nil, oops.Code(errs.CodeBadRequest).

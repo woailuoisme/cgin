@@ -107,5 +107,5 @@ func TestS3HealthCheck(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
-	assert.NoError(t, disk.HealthCheck(ctx))
+	assert.NoError(t, disk.Ping(ctx))
 }

@@ -26,7 +26,6 @@ require (
 	github.com/gin-contrib/cors v1.7.9
 	github.com/gin-contrib/graceful v1.2.3
 	github.com/gin-contrib/i18n v1.3.2
-	github.com/gin-contrib/logger v1.2.9
 	github.com/gin-contrib/requestid v1.0.8
 	github.com/gin-contrib/sessions v1.1.2
 	github.com/gin-contrib/timeout v1.2.3
@@ -47,6 +46,7 @@ require (
 	github.com/redis/rueidis v1.0.79
 	github.com/resend/resend-go/v4 v4.9.0
 	github.com/rs/zerolog v1.35.1
+	github.com/samber/do/v2 v2.1.0
 	github.com/samber/hot v0.13.1
 	github.com/samber/lo v1.53.0
 	github.com/samber/oops v1.23.2
@@ -55,8 +55,6 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/wneessen/go-mail v0.8.1
 	github.com/xuri/excelize/v2 v2.11.0
-	github.com/yeqown/go-qrcode/v2 v2.3.0
-	github.com/yeqown/go-qrcode/writer/standard v1.4.0
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.72.0
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.23.0
@@ -103,7 +101,6 @@ require (
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudwego/base64x v0.1.7 // indirect
-	github.com/fogleman/gg v1.3.0 // indirect
 	github.com/gin-contrib/sse v1.1.1 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -118,7 +115,6 @@ require (
 	github.com/goccy/go-json v0.11.1 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/gomodule/redigo v1.9.3 // indirect
 	github.com/gorilla/context v1.1.2 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
@@ -169,6 +165,7 @@ require (
 	github.com/robfig/go-cache v0.0.0-20130306151617-9fc39e0dbf62 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/samber/go-singleflightx v0.3.2 // indirect
+	github.com/samber/go-type-to-string v1.8.0 // indirect
 	github.com/sony/gobreaker v1.0.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
@@ -180,7 +177,6 @@ require (
 	github.com/xo/terminfo v1.0.0 // indirect
 	github.com/xuri/efp v0.0.1 // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
-	github.com/yeqown/reedsolomon v1.0.0 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.8.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect

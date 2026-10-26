@@ -3,14 +3,14 @@ package global
 import (
 	"cmp"
 	"encoding/hex"
+	"net/http"
 	"runtime/debug"
 	"strings"
+	"time"
 
-	ginlogger "github.com/gin-contrib/logger"
 	"github.com/gin-contrib/requestid"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/rs/zerolog"
 	"github.com/samber/lo"
 	"go.opentelemetry.io/otel/trace"
 
@@ -64,47 +64,58 @@ func newRequestID() string {
 	return string(hex.AppendEncode(buf, id[:]))
 }
 
-// AccessLog 基于 gin-contrib/logger 记录请求方法、路径、状态码与耗时。
+// AccessLog 记录单行访问日志：方法、路径、状态码、耗时、来源 IP 与请求标识。
+//
+// 不再使用 gin-contrib/logger：它会硬带 body_size（恒为 -1）、user_agent 与一个指向
+// 模块缓存的 caller，控制台噪音远大于信息量。request_id 已是 OTel TraceID，
+// 不再重复输出 trace_id / span_id。
 func (m *Middleware) AccessLog() gin.HandlerFunc {
 	baseLog := cmp.Or(m.logger, logger.Default())
 
-	return ginlogger.SetLogger(
-		ginlogger.WithUTC(true),
-		ginlogger.WithMessage("access"),
-		ginlogger.WithDefaultLevel(zerolog.InfoLevel),
-		ginlogger.WithClientErrorLevel(zerolog.WarnLevel),
-		ginlogger.WithServerErrorLevel(zerolog.ErrorLevel),
-		ginlogger.WithSkipper(func(c *gin.Context) bool {
-			// 探针 2xx/3xx 静默避免心跳刷屏，异常仍记录。
-			return isProbeRequest(c) && c.Writer.Status() < 400
-		}),
-		ginlogger.WithLogger(func(c *gin.Context, _ zerolog.Logger) zerolog.Logger {
-			reqLogger := *baseLog
-			rid := strings.TrimSpace(c.Writer.Header().Get(headerRequestID))
-			if rid == "" {
-				rid = requestid.Get(c)
-			}
-			if rid != "" {
-				reqLogger = reqLogger.With().Str("request_id", rid).Logger()
-			}
-			if span := trace.SpanFromContext(c.Request.Context()); span.SpanContext().IsValid() {
-				reqLogger = reqLogger.With().
-					Str("trace_id", span.SpanContext().TraceID().String()).
-					Str("span_id", span.SpanContext().SpanID().String()).
-					Logger()
-			}
-			return reqLogger
-		}),
-		ginlogger.WithContext(func(c *gin.Context, e *zerolog.Event) *zerolog.Event {
-			if errMsg := formatErrors(c.Errors); errMsg != "" {
-				e = e.Str("error", errMsg)
-			}
-			if code := errs.ErrorCodeFromContext(c); code != "" {
-				e = e.Str("code", code)
-			}
-			return e
-		}),
-	)
+	return func(c *gin.Context) {
+		start := time.Now()
+		c.Next()
+
+		status := c.Writer.Status()
+		// 探针 2xx/3xx 静默避免心跳刷屏，异常仍记录。
+		if isProbeRequest(c) && status < http.StatusBadRequest {
+			return
+		}
+
+		event := baseLog.Info()
+		switch {
+		case status >= http.StatusInternalServerError:
+			event = baseLog.Error()
+		case status >= http.StatusBadRequest:
+			event = baseLog.Warn()
+		}
+
+		if rid := requestIDOf(c); rid != "" {
+			event = event.Str("request_id", rid)
+		}
+		if errMsg := formatErrors(c.Errors); errMsg != "" {
+			event = event.Str("error", errMsg)
+		}
+		if code := errs.ErrorCodeFromContext(c); code != "" {
+			event = event.Str("code", code)
+		}
+
+		event.
+			Str("method", c.Request.Method).
+			Str("path", c.Request.URL.Path).
+			Int("status", status).
+			Str("latency", time.Since(start).String()). // 带单位的自描述时长（如 160.625µs）
+			Str("ip", c.ClientIP()).
+			Msg("access")
+	}
+}
+
+// requestIDOf 优先取响应头回写的追踪标识，回退到 requestid 中间件的上下文值。
+func requestIDOf(c *gin.Context) string {
+	if rid := strings.TrimSpace(c.Writer.Header().Get(headerRequestID)); rid != "" {
+		return rid
+	}
+	return requestid.Get(c)
 }
 
 // formatErrors 拼接上下文错误文本。

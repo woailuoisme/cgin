@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/redis/rueidis"
 	"github.com/redis/rueidis/rueidislock"
 
 	"cgin/internal/config"
@@ -63,7 +64,10 @@ func NewRedisLocker(cfg config.CacheConfig, opts ...func(*rueidislock.LockerOpti
 	if err != nil {
 		return nil, err
 	}
+	return newRedisLockerFromOption(clientOpt, opts...)
+}
 
+func newRedisLockerFromOption(clientOpt rueidis.ClientOption, opts ...func(*rueidislock.LockerOption)) (*RedisLocker, error) {
 	lockOpt := rueidislock.LockerOption{
 		ClientOption: clientOpt,
 		KeyPrefix:    namespace + ":lock:",

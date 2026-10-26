@@ -184,17 +184,11 @@ func WithSharpen(sigma float64) ProcessOption {
 // Client 定义现代化 imgproxy 客户端与图像元数据处理契约。
 type Client interface {
 	URL(sourceURI string, opts ...ProcessOption) (string, error)
-	Thumbnail(sourceURI string, width, height int) (string, error)
-	Avatar(sourceURI string, size int) (string, error)
 	Inspect(input []byte) (*ImageMeta, error)
 	ResolveSourceURI(path string) string
-	CheckHealth(ctx context.Context) error
-	HealthCheck() error
 	Ping(ctx context.Context) error
 	Driver() string
 	Enabled() bool
-	Close() error
-	Shutdown() error
 }
 
 // client 结构体实现 Client 接口。
@@ -277,23 +271,6 @@ func (s *client) URL(sourceURI string, opts ...ProcessOption) (string, error) {
 	return s.generateURL(resolvedURI, cfg)
 }
 
-// Thumbnail 快捷构建等比自适应缩略图 URL。
-func (s *client) Thumbnail(sourceURI string, width, height int) (string, error) {
-	return s.URL(sourceURI,
-		WithResizingType(ResizeFill),
-		WithResize(width, height),
-	)
-}
-
-// Avatar 快捷构建头像裁切（自动识别人脸重心）URL。
-func (s *client) Avatar(sourceURI string, size int) (string, error) {
-	return s.URL(sourceURI,
-		WithResizingType(ResizeFill),
-		WithResize(size, size),
-		WithGravity(GravityFocusPoint),
-	)
-}
-
 // Inspect 纯 Go 标准库轻量解析图像宽高与格式（零 CGO）。
 func (s *client) Inspect(input []byte) (*ImageMeta, error) {
 	if len(input) == 0 {
@@ -334,9 +311,9 @@ func (s *client) ResolveSourceURI(sourcePath string) string {
 	return "local://" + trimmed
 }
 
-// CheckHealth 检查 imgproxy 服务的连通性与健康状态。
+// checkHealth 检查 imgproxy 服务的连通性与健康状态。
 // 使用内部探测地址：容器内可用服务名，而对外签名 URL 仍使用 BaseURL。
-func (s *client) CheckHealth(ctx context.Context) error {
+func (s *client) checkHealth(ctx context.Context) error {
 	if s.internalURL == "" {
 		return errors.New("imgproxy internal url is not configured")
 	}
@@ -358,14 +335,9 @@ func (s *client) CheckHealth(ctx context.Context) error {
 	return nil
 }
 
-// HealthCheck 提供无 context 入参的健康检查适配入口。
-func (s *client) HealthCheck() error {
-	return s.CheckHealth(context.Background())
-}
-
 // Ping 执行 imgproxy 连通性探测（满足 ready.Pinger 契约）。
 func (s *client) Ping(ctx context.Context) error {
-	return s.CheckHealth(ctx)
+	return s.checkHealth(ctx)
 }
 
 // Driver 返回当前图像服务驱动名称。
@@ -376,16 +348,6 @@ func (s *client) Driver() string {
 // Enabled 报告当前图像服务是否启用。
 func (s *client) Enabled() bool {
 	return s.config.IsEnabled()
-}
-
-// Close 优雅释放资源。
-func (s *client) Close() error {
-	return nil
-}
-
-// Shutdown 优雅停机实现。
-func (s *client) Shutdown() error {
-	return s.Close()
 }
 
 // generateURL 内部组装处理参数并生成最终签名或非签名 URL。

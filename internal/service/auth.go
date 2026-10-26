@@ -2,6 +2,7 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"strconv"
 	"strings"
@@ -65,11 +66,11 @@ type AuthDeps struct {
 	Users       userStore
 	Credentials credentialManager
 	Guard       *platformauth.Guard[*sqlc.User]
-	Hasher      *hasher.Hasher
+	Hasher      hasher.PasswordHasher
 	Cache       cache.Store
 	Mailer      mailer.Mailer
 	Notifier    NotificationSender
-	Translator  *i18n.Translator
+	Translator  i18n.Translator
 	Config      *config.Config
 	Publisher   eventbus.Publisher
 }
@@ -79,10 +80,10 @@ type AuthService struct {
 	users       userStore
 	credentials credentialManager
 	guard       *platformauth.Guard[*sqlc.User]
-	hasher      *hasher.Hasher
+	hasher      hasher.PasswordHasher
 	mailer      mailer.Mailer
 	notifier    NotificationSender
-	translator  *i18n.Translator
+	translator  i18n.Translator
 	cfg         *config.Config
 	verifier    *verifier
 	publisher   eventbus.Publisher
@@ -112,7 +113,7 @@ func MustNewAuthService(deps AuthDeps) *AuthService {
 		translator:  deps.Translator,
 		cfg:         deps.Config,
 		verifier:    newVerifier(deps.DB, deps.Cache, deps.Config),
-		publisher:   deps.Publisher,
+		publisher:   cmp.Or(deps.Publisher, eventbus.NopPublisher()),
 	}
 }
 
@@ -129,14 +130,12 @@ func (s *AuthService) SignUpEmail(ctx context.Context, req dto.SignUpEmailBody) 
 		return dto.SessionResource{}, err
 	}
 
-	if s.publisher != nil {
-		_ = s.publisher.Publish(ctx, &event.UserRegistered{
-			UserID:       created.ID,
-			Email:        created.Email,
-			Name:         created.Name,
-			RegisteredAt: time.Now(),
-		})
-	}
+	_ = s.publisher.Publish(ctx, &event.UserRegistered{
+		UserID:       created.ID,
+		Email:        created.Email,
+		Name:         created.Name,
+		RegisteredAt: time.Now(),
+	})
 
 	session, err := s.issueSession(ctx, created)
 	if err != nil {
@@ -353,7 +352,7 @@ func (s *AuthService) sendMail(ctx context.Context, language string, user *sqlc.
 	}
 
 	subject, body := s.translator.Mail(lang, mailKey, vars)
-	return s.mailer.Send(ctx, mailer.Message{To: user.Email, Subject: subject, Body: body})
+	return s.mailer.Send(ctx, mailer.Message{To: []string{user.Email}, Subject: subject, Body: body})
 }
 
 func (s *AuthService) notifyUser(ctx context.Context, language string, user *sqlc.User, notif contract.Notification, mailKey, code string, ttl time.Duration) error {

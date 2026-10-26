@@ -283,3 +283,31 @@ func mapPgError(err *pgconn.PgError) (int, Response) {
 		return http.StatusInternalServerError, Response{Code: string(CodeInternal), Message: msgInternal}
 	}
 }
+
+// UniqueConstraint 若 err 是 PostgreSQL 唯一约束冲突（23505），返回冲突约束名与 true。
+// 供业务层将底层驱动异常与 pgconn 解耦并转化为领域错误码。
+func UniqueConstraint(err error) (string, bool) {
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	if !ok || pgErr.Code != pgErrUniqueViolation {
+		return "", false
+	}
+	return pgErr.ConstraintName, true
+}
+
+// IsUniqueViolation 判定 err 是否为唯一约束冲突；若传入 constraints 则仅当命中任一指定约束名时返回 true。
+func IsUniqueViolation(err error, constraints ...string) bool {
+	name, ok := UniqueConstraint(err)
+	if !ok {
+		return false
+	}
+	if len(constraints) == 0 {
+		return true
+	}
+	return slices.Contains(constraints, name)
+}
+
+// IsForeignKeyViolation 判定 err 是否为外键约束冲突（23503）。
+func IsForeignKeyViolation(err error) bool {
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	return ok && pgErr.Code == pgErrForeignKeyViolation
+}

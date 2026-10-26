@@ -287,7 +287,7 @@ func (g *Guard[T]) issueSession(user T, opts ...Option) (Session, error) {
 		maps.Copy(cfg.claims, identity.CustomClaims)
 	}
 
-	pair, err := g.tokens.IssueWithCustom(identity.UserID, identity.Role, cfg.ttl, 0, cfg.claims)
+	pair, err := g.tokens.IssueWithCustom(identity.UserID, identity.Role, cfg.ttl, 0, cfg.claims, cfg.withRefreshToken)
 	if err != nil {
 		return Session{}, errs.Internal(err)
 	}

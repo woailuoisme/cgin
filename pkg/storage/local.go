@@ -46,11 +46,6 @@ func NewLocalDisk(rootPath, baseURL string) (Disk, error) {
 	return &localDisk{rootPath: rootPath, baseURL: strings.TrimSuffix(baseURL, "/")}, nil
 }
 
-// SupportsPresign 显式声明本地文件系统驱动不支持预签名。
-func (d *localDisk) SupportsPresign() bool {
-	return false
-}
-
 // resolvePath 把对象键解析为根目录内的绝对路径，越界或含有非法空字符时返回 400。
 func (d *localDisk) resolvePath(key string) (string, error) {
 	if strings.ContainsRune(key, 0) {
@@ -287,9 +282,9 @@ func (d *localDisk) PresignPut(context.Context, string, time.Duration) (string, 
 	return "", ErrPresignUnsupported
 }
 
-// HealthCheck 确认根目录存在且可写：只读挂载这类问题若留到第一次上传才暴露，
-// 排查成本远高于启动即失败。
-func (d *localDisk) HealthCheck(ctx context.Context) error {
+// Ping 确认根目录存在且可写：只读挂载这类问题若留到第一次上传才暴露，
+// 排查成本远高于启动即失败。启动期校验与就绪探针共用这一个入口。
+func (d *localDisk) Ping(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -318,9 +313,4 @@ func (d *localDisk) HealthCheck(ctx context.Context) error {
 // Driver 返回当前存储驱动名称。
 func (d *localDisk) Driver() string {
 	return "local"
-}
-
-// Ping 实现 ready.Pinger 接口。
-func (d *localDisk) Ping(ctx context.Context) error {
-	return d.HealthCheck(ctx)
 }

@@ -217,15 +217,15 @@ func TestNewLocalDiskCreatesRoot(t *testing.T) {
 	})
 }
 
-// TestLocalHealthCheck 确认健康检查能发现根目录消失这类"启动后环境被改坏"的情况。
+// TestLocalHealthCheck 确认健康探针能发现根目录消失这类"启动后环境被改坏"的情况。
 func TestLocalHealthCheck(t *testing.T) {
 	disk, root := newLocalDisk(t, "")
 	ctx := t.Context()
 
-	require.NoError(t, disk.HealthCheck(ctx))
+	require.NoError(t, disk.Ping(ctx))
 
 	require.NoError(t, os.RemoveAll(root))
-	assert.Error(t, disk.HealthCheck(ctx), "根目录消失后健康检查必须失败")
+	assert.Error(t, disk.Ping(ctx), "根目录消失后健康检查必须失败")
 }
 
 // TestLocalPutMultipart 覆盖从 multipart.FileHeader 保存文件及 nil 防御。

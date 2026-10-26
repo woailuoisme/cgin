@@ -70,19 +70,16 @@ func (o *QueueWorkOptions) Run(ctx context.Context) error {
 		locker = queue.AdaptLocker(cacheLocker)
 	}
 
-	client, cleanup, err := queue.NewClient(cfg.Queue, locker)
+	// 并发数在构造前注入，保持单一事实源。
+	if o.Concurrency > 0 {
+		cfg.Queue.Concurrency = o.Concurrency
+	}
+
+	client, err := queue.NewClient(cfg.Queue, queue.Options{Locker: locker, Logger: log})
 	if err != nil {
 		return fmt.Errorf("failed to initialize queue client: %w", err)
 	}
-	defer cleanup()
-	client.SetLogger(log)
-
-	concurrency := o.Concurrency
-	if concurrency > 0 {
-		client.SetConcurrency(concurrency)
-	} else {
-		concurrency = cfg.Queue.Concurrency
-	}
+	defer func() { _ = client.Close() }()
 
 	queues := ParseQueueWeights(o.QueueArg)
 
@@ -91,11 +88,16 @@ func (o *QueueWorkOptions) Run(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
+		_ = client.StopScheduler()
 		_ = client.StopWorker()
 	}()
 
+	if err := client.StartScheduler(cfg.App.Location()); err != nil {
+		return fmt.Errorf("failed to start scheduler: %w", err)
+	}
+
 	streams := o.Factory.IOStreams()
-	core.TitleTo(streams.Out, fmt.Sprintf("Queue worker started [queues=%s concurrency=%d]...", o.QueueArg, concurrency))
+	core.TitleTo(streams.Out, fmt.Sprintf("Queue worker started [queues=%s concurrency=%d]...", o.QueueArg, cfg.Queue.Concurrency))
 	return client.RunWorker(queues)
 }
 
@@ -116,18 +118,18 @@ func newQueueWorkCmd(f Factory) *cobra.Command {
 	return cmd
 }
 
-// openQueueClient 从 Factory 读取配置并创建队列客户端；调用方需 defer 返回的 cleanup。
-func openQueueClient(f Factory) (*queue.Client, func(), error) {
+// openQueueClient 从 Factory 读取配置并创建队列客户端；调用方需 defer 关闭客户端。
+func openQueueClient(f Factory) (*queue.Client, error) {
 	cfg, err := f.Config()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	client, cleanup, err := queue.NewClient(cfg.Queue)
+	client, err := queue.NewClient(cfg.Queue, queue.Options{})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to initialize queue client: %w", err)
+		return nil, fmt.Errorf("failed to initialize queue client: %w", err)
 	}
-	return client, cleanup, nil
+	return client, nil
 }
 
 // QueueFailedOptions 封装 queue:failed 命令的参数与依赖容器。
@@ -166,11 +168,11 @@ func (o *QueueFailedOptions) Validate() error {
 
 // Run 列出失败任务清单。
 func (o *QueueFailedOptions) Run(_ context.Context) error {
-	client, cleanup, err := openQueueClient(o.Factory)
+	client, err := openQueueClient(o.Factory)
 	if err != nil {
 		return err
 	}
-	defer cleanup()
+	defer func() { _ = client.Close() }()
 
 	var tasks []*asynq.TaskInfo
 	if o.Queue != "" {
@@ -254,11 +256,11 @@ func (o *QueueRetryOptions) Validate() error {
 
 // Run 重新投递指定的失败任务或全部失败任务。
 func (o *QueueRetryOptions) Run(_ context.Context) error {
-	client, cleanup, err := openQueueClient(o.Factory)
+	client, err := openQueueClient(o.Factory)
 	if err != nil {
 		return err
 	}
-	defer cleanup()
+	defer func() { _ = client.Close() }()
 
 	streams := o.Factory.IOStreams()
 	if strings.EqualFold(o.Target, "all") {
@@ -332,11 +334,11 @@ func (o *QueueFlushOptions) Run(_ context.Context) error {
 		}
 	}
 
-	client, cleanup, err := openQueueClient(o.Factory)
+	client, err := openQueueClient(o.Factory)
 	if err != nil {
 		return err
 	}
-	defer cleanup()
+	defer func() { _ = client.Close() }()
 
 	if o.Queue != "" {
 		if err := client.PurgeArchived(o.Queue); err != nil {

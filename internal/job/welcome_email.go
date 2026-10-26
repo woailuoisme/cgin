@@ -37,7 +37,7 @@ func NewWelcomeEmailJob(email, name string) *WelcomeEmailJob {
 }
 
 // RegisterJobs 向队列注册表登记该任务的还原工厂与执行依赖。
-func RegisterJobs(reg queue.Registry, m mailer.Mailer) {
+func RegisterJobs(reg *queue.Registry, m mailer.Mailer) {
 	if reg == nil {
 		return
 	}
@@ -76,7 +76,7 @@ func (j *WelcomeEmailJob) Handle(ctx context.Context) error {
 	}
 
 	msg := mailer.Message{
-		To:      j.Email,
+		To:      []string{j.Email},
 		Subject: "Welcome to cgin",
 		Body:    htmlBody,
 		IsHTML:  true,

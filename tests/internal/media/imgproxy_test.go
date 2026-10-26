@@ -36,8 +36,11 @@ func TestImgproxyClient_Signature(t *testing.T) {
 		assert.Contains(t, err.Error(), "source uri cannot be empty")
 	})
 
-	t.Run("Thumbnail 生成合法的签名 URL", func(t *testing.T) {
-		thumbURL, err := client.Thumbnail("https://storage.example.com/avatars/user.png", 200, 200)
+	t.Run("缩略图选项生成合法的签名 URL", func(t *testing.T) {
+		thumbURL, err := client.URL("https://storage.example.com/avatars/user.png",
+			media.WithResizingType(media.ResizeFill),
+			media.WithResize(200, 200),
+		)
 		require.NoError(t, err)
 		assert.True(t, strings.HasPrefix(thumbURL, "https://img.example.com/"))
 		assert.Contains(t, thumbURL, "/rs:fill:200:200:")
@@ -47,8 +50,12 @@ func TestImgproxyClient_Signature(t *testing.T) {
 		assert.NotContains(t, thumbURL, "/insecure/")
 	})
 
-	t.Run("Avatar 生成带人脸居中的签名 URL", func(t *testing.T) {
-		avatarURL, err := client.Avatar("https://storage.example.com/avatars/user.png", 120)
+	t.Run("头像选项生成带人脸居中的签名 URL", func(t *testing.T) {
+		avatarURL, err := client.URL("https://storage.example.com/avatars/user.png",
+			media.WithResizingType(media.ResizeFill),
+			media.WithResize(120, 120),
+			media.WithGravity(media.GravityFocusPoint),
+		)
 		require.NoError(t, err)
 		assert.Contains(t, avatarURL, "/rs:fill:120:120:")
 		assert.Contains(t, avatarURL, "/g:fp:")
@@ -61,7 +68,10 @@ func TestImgproxyClient_Signature(t *testing.T) {
 			Insecure: true,
 		}
 		insecureClient := media.NewImageClient(insecureCfg)
-		urlStr, err := insecureClient.Thumbnail("https://example.com/test.jpg", 100, 100)
+		urlStr, err := insecureClient.URL("https://example.com/test.jpg",
+			media.WithResizingType(media.ResizeFill),
+			media.WithResize(100, 100),
+		)
 		require.NoError(t, err)
 		assert.Contains(t, urlStr, "https://img.example.com/insecure/")
 	})

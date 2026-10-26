@@ -195,7 +195,7 @@ func (m *Manager) attach(
 	link := conf.link
 
 	// 1. 上传文件到底层存储并获取元数据
-	fileInfo, err := m.uploadSource(ctx, source, collection, conf.DiskName)
+	fileInfo, err := m.uploadSource(ctx, source, collection)
 	if err != nil {
 		return nil, err
 	}
@@ -265,12 +265,12 @@ func (m *Manager) attach(
 }
 
 // uploadSource 内部按源类型调度底层管道上传。
-func (m *Manager) uploadSource(ctx context.Context, source any, category, diskName string) (*FileInfo, error) {
+func (m *Manager) uploadSource(ctx context.Context, source any, category string) (*FileInfo, error) {
 	switch s := source.(type) {
 	case *multipart.FileHeader:
-		return m.pipeline.Upload(ctx, s, category, diskName)
+		return m.pipeline.Upload(ctx, s, category)
 	case []byte:
-		return m.pipeline.UploadBytes(ctx, s, "upload.bin", category, diskName)
+		return m.pipeline.UploadBytes(ctx, s, "upload.bin", category)
 	case *FileInfo:
 		return s, nil
 	case FileInfo:

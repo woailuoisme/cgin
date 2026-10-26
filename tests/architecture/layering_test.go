@@ -66,6 +66,26 @@ func TestLayerDependenciesFlowDownward(t *testing.T) {
 			reason:  "media 是媒体处理内核，仅由装配层注入，严禁反向依赖传输层、用例层或装配层",
 		},
 		{
+			dir:     "internal/export",
+			forbids: []string{"cgin/internal/dto", "cgin/internal/handler", "cgin/internal/service", "cgin/internal/route", "cgin/internal/middleware", "cgin/internal/bootstrap", "cgin/internal/console"},
+			reason:  "export 是领域导出内核，被 service 引用，严禁反向依赖传输层、用例层或装配层",
+		},
+		{
+			dir:     "internal/import",
+			forbids: []string{"cgin/internal/dto", "cgin/internal/handler", "cgin/internal/service", "cgin/internal/route", "cgin/internal/middleware", "cgin/internal/bootstrap", "cgin/internal/console"},
+			reason:  "import 是领域导入内核，被 service 引用，严禁反向依赖传输层、用例层或装配层",
+		},
+		{
+			dir:     "internal/event",
+			forbids: []string{"cgin/internal/database", "cgin/internal/dto", "cgin/internal/handler", "cgin/internal/service", "cgin/internal/route", "cgin/internal/middleware", "cgin/internal/bootstrap", "cgin/internal/console"},
+			reason:  "event 是纯领域事件载荷层，严禁依赖数据库、传输层、用例层或装配层",
+		},
+		{
+			dir:     "internal/listener",
+			forbids: []string{"cgin/internal/dto", "cgin/internal/handler", "cgin/internal/service", "cgin/internal/route", "cgin/internal/middleware", "cgin/internal/bootstrap", "cgin/internal/console"},
+			reason:  "listener 是领域事件监听层，仅由装配层挂载，严禁反向依赖传输层、用例层或装配层",
+		},
+		{
 			dir:     "shared",
 			forbids: []string{"cgin/internal"},
 			reason:  "shared 已收敛为纯静态资产层（仅 apidocs），严禁依赖 internal 任何包；业务内核一律沉入 internal",

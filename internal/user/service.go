@@ -28,14 +28,14 @@ const (
 // Service 提供高内聚、高杠杆的用户档案领域服务。
 type Service struct {
 	db     *database.DB
-	hasher *hasher.Hasher
+	hasher hasher.PasswordHasher
 }
 
 // MustNewService 构造用户档案领域服务；db 与 hasher 为装配方必须提供的硬依赖。
 //
 // 依赖缺失属于启动期编程错误，因此按 Must 约定直接 panic：名字即契约，
 // 装配根是唯一允许传入这些依赖的地方。
-func MustNewService(db *database.DB, h *hasher.Hasher) *Service {
+func MustNewService(db *database.DB, h hasher.PasswordHasher) *Service {
 	if db == nil {
 		panic("user: service requires a non-nil database")
 	}

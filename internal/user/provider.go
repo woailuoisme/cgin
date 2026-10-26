@@ -33,11 +33,11 @@ var (
 // 只做查询编排，不引入任何领域包装类型。
 type Provider struct {
 	db     *database.DB
-	hasher *hasher.Hasher
+	hasher hasher.PasswordHasher
 }
 
 // MustNewProvider 构造 Provider 实例；db 与 hasher 为装配方必须提供的硬依赖。
-func MustNewProvider(db *database.DB, h *hasher.Hasher) *Provider {
+func MustNewProvider(db *database.DB, h hasher.PasswordHasher) *Provider {
 	if db == nil {
 		panic("user: provider requires a non-nil database")
 	}

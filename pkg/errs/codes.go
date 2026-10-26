@@ -235,10 +235,25 @@ func MessageForStatus(status int) string {
 	return msgInternal
 }
 
-// domain 用于给 oops 标注错误来源，便于日志按子系统筛选。
+// domain 用于给 oops 标注错误来源，便于日志与 APM 按子系统维度聚合。
 func domain(c Code) string {
-	if strings.HasPrefix(string(c), "AUTH_") {
+	s := string(c)
+	switch {
+	case strings.HasPrefix(s, "AUTH_"):
 		return "auth"
+	case strings.HasPrefix(s, "EXCEL_"), strings.HasPrefix(s, "CSV_"), c == CodeEmptySheets:
+		return "excel"
+	case strings.HasPrefix(s, "NOTIFICATION_"):
+		return "notification"
+	case strings.HasPrefix(s, "MAIL_"):
+		return "mail"
+	case strings.HasPrefix(s, "SMS_"), strings.HasPrefix(s, "SMSBAO_"), strings.HasPrefix(s, "ALIYUN_"), strings.HasPrefix(s, "TENCENT_"):
+		return "sms"
+	case strings.HasPrefix(s, "PAYMENT_"), c == CodeInvalidPaymentConfig:
+		return "payment"
+	case strings.HasPrefix(s, "DATABASE_"):
+		return "database"
+	default:
+		return "app"
 	}
-	return "app"
 }

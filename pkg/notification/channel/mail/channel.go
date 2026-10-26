@@ -125,10 +125,10 @@ func (c *Channel) sendMailable(ctx context.Context, recipientEmail string, maila
 
 // sendDirectMessage 发送直接构建的邮件消息。
 func (c *Channel) sendDirectMessage(ctx context.Context, recipientEmail string, msg *mailer.Message) error {
-	if msg.To == "" && recipientEmail != "" {
-		msg.To = recipientEmail
+	if len(msg.To) == 0 && recipientEmail != "" {
+		msg.To = []string{recipientEmail}
 	}
-	if msg.To == "" {
+	if len(msg.To) == 0 {
 		return oops.Code(errs.CodeMailMissingRecipient).Errorf("mail: could not determine email address for notifiable")
 	}
 	if c.mailer != nil {
@@ -160,19 +160,12 @@ func toPlatformMailMessage(raw any) (*mailer.Message, bool) {
 	case mailer.Message:
 		return &v, true
 	case *Message:
-		to := ""
-		if len(v.To) > 0 {
-			to = v.To[0]
-		}
 		msg := &mailer.Message{
-			To:      to,
+			To:      slices.Clone(v.To),
 			Cc:      slices.Clone(v.Cc),
 			Bcc:     slices.Clone(v.Bcc),
 			Subject: v.Subject,
 			Body:    v.Text,
-		}
-		if len(v.To) > 1 {
-			msg.Cc = append(msg.Cc, v.To[1:]...)
 		}
 		if v.HTML != "" {
 			msg.Body = v.HTML
@@ -197,8 +190,8 @@ func toChannelMailMessage(msg *mailer.Message) *Message {
 		WithSubject(msg.Subject).
 		AddCc(msg.Cc...).
 		AddBcc(msg.Bcc...)
-	if msg.To != "" {
-		m.WithTo(msg.To)
+	if len(msg.To) > 0 {
+		m.WithTo(msg.To...)
 	}
 	if msg.IsHTML {
 		m.WithHTML(msg.Body)

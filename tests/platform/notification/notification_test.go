@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -499,10 +500,10 @@ func TestNotificationRecoveryMiddleware(t *testing.T) {
 
 type mockQueueDispatcher struct {
 	dispatchedJob  queue.Job
-	dispatchedOpts []queue.DispatchOption
+	dispatchedOpts []asynq.Option
 }
 
-func (m *mockQueueDispatcher) Dispatch(ctx context.Context, job queue.Job, opts ...queue.DispatchOption) error {
+func (m *mockQueueDispatcher) Dispatch(_ context.Context, job queue.Job, opts ...asynq.Option) error {
 	m.dispatchedJob = job
 	m.dispatchedOpts = opts
 	return nil
@@ -540,13 +541,13 @@ func TestNotificationWithQueue(t *testing.T) {
 	assert.Equal(t, "notif:user_welcome", dispatcher.dispatchedJob.TaskName())
 	assert.Len(t, dispatcher.dispatchedOpts, 3)
 
-	var cfg queue.DispatchConfig
+	byType := make(map[asynq.OptionType]any, len(dispatcher.dispatchedOpts))
 	for _, opt := range dispatcher.dispatchedOpts {
-		opt(&cfg)
+		byType[opt.Type()] = opt.Value()
 	}
-	assert.Equal(t, "priority_high", cfg.QueueName)
-	assert.Equal(t, 5, cfg.MaxRetries)
-	assert.Equal(t, 15*time.Second, cfg.Delay)
+	assert.Equal(t, "priority_high", byType[asynq.QueueOpt])
+	assert.Equal(t, 5, byType[asynq.MaxRetryOpt])
+	assert.Equal(t, 15*time.Second, byType[asynq.ProcessInOpt])
 }
 
 type mockBatchChannel struct {

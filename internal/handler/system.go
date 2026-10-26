@@ -3,12 +3,12 @@ package handler
 import (
 	"cmp"
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 
-	"cgin/internal/dto"
 	"cgin/internal/service"
 	"cgin/pkg/logger"
 	"cgin/pkg/ready"
@@ -35,8 +35,10 @@ func (h *SystemHandler) Index(c *gin.Context) {
 }
 
 // Liveness 处理 GET /livez 存活探针请求。
+//
+// 存活探针只看状态码（k8s 约定 200–399 即健康），因此返回纯文本 ok：
 func (h *SystemHandler) Liveness(c *gin.Context) {
-	response.OK(c, dto.HealthResource{Status: dto.StatusOK})
+	c.String(http.StatusOK, "ok")
 }
 
 // Readiness 处理 GET /readyz 就绪探针请求：并发探测各依赖，关键项失败返回 503，非关键项失败返回 200 degraded。

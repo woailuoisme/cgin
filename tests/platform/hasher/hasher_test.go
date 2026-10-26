@@ -78,22 +78,16 @@ func TestUnicodePassword(t *testing.T) {
 	assert.True(t, ok)
 }
 
-// TestQuickParamsAndNeedsRehash 验证轻量单测成本与参数落后升级检测。
-func TestQuickParamsAndNeedsRehash(t *testing.T) {
+// TestQuickParams 验证轻量单测成本参数同样可正常往返。
+func TestQuickParams(t *testing.T) {
 	quick := hasher.NewWithParams(hasher.QuickParams())
-	prod := hasher.New()
 
-	encodedQuick, err := quick.Make("password123")
+	encoded, err := quick.Make("password123")
 	require.NoError(t, err)
 
-	// quick 实例对自身生成的参数认为不需要 rehash
-	assert.False(t, quick.NeedsRehash(encodedQuick))
-
-	// prod 实例对 quick 生成的低成本参数应当要求升级
-	assert.True(t, prod.NeedsRehash(encodedQuick))
-
-	// 损坏哈希或空哈希返回 true
-	assert.True(t, prod.NeedsRehash("invalid-hash"))
+	matched, err := quick.Check(encoded, "password123")
+	require.NoError(t, err)
+	assert.True(t, matched)
 }
 
 // TestPasswordTooLong 验证超长密码拒绝，防御恶意 DoS 攻击。
@@ -103,32 +97,4 @@ func TestPasswordTooLong(t *testing.T) {
 
 	_, err := h.Make(tooLong)
 	assert.ErrorIs(t, err, hasher.ErrPasswordTooLong)
-}
-
-// TestBcryptAndManagerMigration 验证多驱动兼容与旧 Bcrypt 自动升级标记。
-func TestBcryptAndManagerMigration(t *testing.T) {
-	bcryptHasher := hasher.NewBcrypt(4) // 最小成本供单测快速执行
-	argonHasher := hasher.NewWithParams(hasher.QuickParams())
-	mgr := hasher.NewManager(argonHasher)
-
-	// 1. 模拟存量系统的 Bcrypt 哈希
-	bcryptEncoded, err := bcryptHasher.Make("mypassword")
-	require.NoError(t, err)
-	assert.True(t, strings.HasPrefix(bcryptEncoded, "$2a$"))
-
-	// 2. Manager 能够成功验证旧 Bcrypt 哈希
-	matched, err := mgr.Check(bcryptEncoded, "mypassword")
-	require.NoError(t, err)
-	assert.True(t, matched)
-
-	// 3. Manager 明确指出旧 Bcrypt 哈希需要升级
-	assert.True(t, mgr.NeedsRehash(bcryptEncoded))
-
-	// 4. 用户登录后重新生成新哈希（Argon2id）
-	newArgonEncoded, err := mgr.Make("mypassword")
-	require.NoError(t, err)
-	assert.True(t, strings.HasPrefix(newArgonEncoded, "$argon2id$"))
-
-	// 5. 新 Argon2id 哈希不再需要升级
-	assert.False(t, mgr.NeedsRehash(newArgonEncoded))
 }

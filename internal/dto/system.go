@@ -3,9 +3,6 @@ package dto
 import "cgin/pkg/ready"
 
 const (
-	// StatusOK 是存活探针的健康状态值。
-	StatusOK = "ok"
-
 	// StatusReady、StatusDegraded 与 StatusNotReady 是就绪探针的状态值。
 	StatusReady    = ready.StatusReady
 	StatusDegraded = ready.StatusDegraded
@@ -18,11 +15,6 @@ const (
 	CheckDisabled    = ready.CheckDisabled
 )
 
-// HealthResource 是 GET /livez 与 GET / 的响应资源。
-type HealthResource struct {
-	Status string `json:"status"`
-}
-
 // ReadinessResource 是 GET /readyz 的响应资源，完全兼容 ready.Result。
 type ReadinessResource = ready.Result
 
@@ -30,6 +22,5 @@ type ReadinessResource = ready.Result
 type ComponentCheck = ready.ComponentStatus
 
 type (
-	HealthResponse    = HealthResource
 	ReadinessResponse = ReadinessResource
 )

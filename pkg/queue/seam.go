@@ -2,10 +2,9 @@ package queue
 
 import (
 	"context"
+	"time"
 
 	"github.com/hibiken/asynq"
-
-	"cgin/internal/config"
 )
 
 // Dispatcher 是业务代码可见的唯一入队入口。
@@ -14,7 +13,7 @@ import (
 // 调用方在 opts 中传入与自声明同名的选项时覆盖自声明 —— Asynq 的选项后写入者生效，
 // 因此「本次派发需要特殊约束」由调用方决定，其余情况交给 Job 自己表达。
 type Dispatcher interface {
-	Dispatch(ctx context.Context, job Job, opts ...DispatchOption) error
+	Dispatch(ctx context.Context, job Job, opts ...asynq.Option) error
 }
 
 // Inspector 是运维巡检面：队列状态与归档失败任务的跨队列与单队列重试、删除、清空。
@@ -43,10 +42,10 @@ type Inspector interface {
 //
 // 队列组成与优先级权重属于部署决策，因此由调用方以 队列名→权重 的形式传入，
 // 而不是固化在模块内部；未声明任何队列时只监听默认队列。
+// 调度器只依赖时区：时区是环境属性，不应把整个应用配置穿透到队列层。
 type Worker interface {
 	RunWorker(queues map[string]int) error
 	StopWorker() error
-	StartScheduler(cfg *config.Config) error
-	RunScheduler(ctx context.Context, cfg *config.Config) error
+	StartScheduler(loc *time.Location) error
 	StopScheduler() error
 }

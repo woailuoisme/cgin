@@ -41,6 +41,27 @@ func TestIssueAndParse(t *testing.T) {
 	assert.True(t, pair.AccessExpiresAt.Before(pair.RefreshExpiresAt), "访问令牌寿命必须短于刷新令牌")
 }
 
+// TestIssueWithoutRefreshToken 校验关闭刷新令牌时只签访问令牌，且访问令牌仍可解析。
+func TestIssueWithoutRefreshToken(t *testing.T) {
+	issuer := newIssuer(testSecret, "cgin-test", 15*time.Minute)
+
+	pair, err := issuer.IssueWithCustom("u_1", "user", 15*time.Minute, 0, nil, false)
+	require.NoError(t, err)
+	assert.NotEmpty(t, pair.AccessToken)
+	assert.Empty(t, pair.RefreshToken, "关闭刷新令牌时不得签发 refresh token")
+	assert.True(t, pair.RefreshExpiresAt.IsZero())
+
+	claims, err := issuer.Parse(pair.AccessToken, authentication.TypeAccess)
+	require.NoError(t, err)
+	assert.Equal(t, "u_1", claims.Subject)
+
+	// 默认路径仍签发双令牌（回归保护）
+	defaultPair, err := issuer.Issue("u_1", "user")
+	require.NoError(t, err)
+	assert.NotEmpty(t, defaultPair.AccessToken)
+	assert.NotEmpty(t, defaultPair.RefreshToken)
+}
+
 // TestParseRejectsCrossTypeUsage 校验刷新令牌不能当访问令牌用，反之亦然。
 func TestParseRejectsCrossTypeUsage(t *testing.T) {
 	issuer := newIssuer(testSecret, "cgin-test", 15*time.Minute)
@@ -214,7 +235,7 @@ func TestJWTCodec_StatelessOperations(t *testing.T) {
 
 	pair, err := codec.IssuePair("usr_100", "user", 10*time.Minute, time.Hour, map[string]any{
 		"scope": "read:all",
-	})
+	}, true)
 	require.NoError(t, err)
 	assert.NotEmpty(t, pair.AccessToken)
 	assert.NotEmpty(t, pair.RefreshToken)

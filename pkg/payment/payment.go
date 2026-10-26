@@ -139,16 +139,6 @@ func (r CreateRequest) EffectiveAmount() int64 {
 	return r.Amount
 }
 
-// EffectiveMoney 返回实际生效的 Money 值对象。
-// 若 Money 字段非空则直接返回解引用副本；否则基于 EffectiveAmount 与 CNY 币种构造默认 Money。
-func (r CreateRequest) EffectiveMoney() money.Money {
-	if r.Money != nil {
-		return *r.Money
-	}
-	m, _ := money.NewFromCents(r.Amount, "CNY")
-	return m
-}
-
 // Instruction 描述客户端如何把付款人交给渠道完成支付。
 // Action 与 Value/Params 的组合由渠道返回物归一而来：
 //   - qr_code：Value 为二维码链接，由客户端自行渲染；
@@ -233,20 +223,10 @@ type PaymentResult struct {
 	ChannelState string
 	// PaidAmount 实际到账金额，单位为分。
 	PaidAmount int64
-	// Money 实际到账金额对应的高精度货币值对象（可选）。
-	Money *money.Money
 	// PaidAt 支付完成时刻，未支付时为空。
 	PaidAt *time.Time
 	// PayerID 付款人的渠道身份。
 	PayerID string
-}
-
-// WithMoney 辅助链式注入高精度货币值对象。
-func (p *PaymentResult) WithMoney(m money.Money) *PaymentResult {
-	if p != nil {
-		p.Money = &m
-	}
-	return p
 }
 
 // RefundResult 是渠道退款状态的规范化结果。
@@ -265,18 +245,8 @@ type RefundResult struct {
 	ChannelState string
 	// RefundAmount 本次退款金额，单位为分。
 	RefundAmount int64
-	// Money 本次退款金额对应的高精度货币值对象（可选）。
-	Money *money.Money
 	// RefundedAt 退款成功时刻，未成功时为空。
 	RefundedAt *time.Time
-}
-
-// WithMoney 辅助链式注入高精度货币值对象。
-func (r *RefundResult) WithMoney(m money.Money) *RefundResult {
-	if r != nil {
-		r.Money = &m
-	}
-	return r
 }
 
 // NotificationAck 描述渠道要求的通知应答内容。

@@ -2,7 +2,6 @@ package queue
 
 import (
 	"cmp"
-	"context"
 	"fmt"
 	"slices"
 	"strconv"
@@ -12,23 +11,19 @@ import (
 
 	"github.com/adhocore/gronx"
 	"github.com/hibiken/asynq"
-	"github.com/rs/zerolog"
 	"github.com/samber/lo"
 )
 
 // Schedule 集中管理和编排周期性定时调度任务（类似 Laravel Console Kernel Schedule）。
 type Schedule struct {
-	registry Registry
-	entries  []*ScheduleEntry
-	mu       sync.Mutex
-	once     sync.Once
+	entries []*ScheduleEntry
+	mu      sync.Mutex
+	once    sync.Once
 }
 
-// NewSchedule 创建具有指定注册表的周期性任务调度构建器。
-func NewSchedule(registries ...Registry) *Schedule {
-	return &Schedule{
-		registry: cmp.Or(lo.FirstOrEmpty(registries), DefaultRegistry()),
-	}
+// NewSchedule 创建周期性任务调度构建器。
+func NewSchedule() *Schedule {
+	return &Schedule{}
 }
 
 // Job 添加一个待编排调度的任务实例。类型在编译期确定，非任务对象无法进入调度编排。
@@ -82,7 +77,7 @@ func (s *Schedule) Register() {
 			}
 
 			if entry.withoutOverlapping {
-				s.registry.SetJobLockTTL(entry.job.TaskName(), entry.lockTTL)
+				DefaultRegistry().SetJobLockTTL(entry.job.TaskName(), entry.lockTTL)
 			}
 
 			opts := entry.opts
@@ -90,7 +85,7 @@ func (s *Schedule) Register() {
 				opts = append(opts, asynq.Queue(entry.queueName))
 			}
 
-			s.registry.Cron(entry.spec, entry.job, opts...)
+			DefaultRegistry().Cron(entry.spec, entry.job, opts...)
 		}
 	})
 }
@@ -259,81 +254,6 @@ func (e *ScheduleEntry) LockTTL() time.Duration {
 // Job 返回当前条目所绑定的任务。
 func (e *ScheduleEntry) Job() Job {
 	return e.job
-}
-
-// overlappingJobWrapper 为实现了防并发重叠机制的任务包装器。
-type overlappingJobWrapper struct {
-	inner   Job
-	lockTTL time.Duration
-	locker  Locker
-	logger  *zerolog.Logger
-}
-
-var _ Job = (*overlappingJobWrapper)(nil)
-
-// WrapOverlappingJob 为指定任务附加基于基础设施分布式锁的防并发重叠执行保护。
-// locker 为 nil 时退化为直接执行（无锁基础设施的部署形态）。
-func WrapOverlappingJob(job Job, ttl time.Duration, locker Locker) Job {
-	return WrapOverlappingJobWithLogger(nil, job, ttl, locker)
-}
-
-// WrapOverlappingJobWithLogger 同上，并显式注入结构性日志器，避免绕过调用方的日志通道。
-func WrapOverlappingJobWithLogger(l *zerolog.Logger, job Job, ttl time.Duration, locker Locker) Job {
-	return &overlappingJobWrapper{
-		inner:   job,
-		lockTTL: cmp.Or(ttl, DefaultScheduleLockTTL),
-		locker:  locker,
-		logger:  l,
-	}
-}
-
-// log 返回注入的日志器，未注入时退回包级兜底实例。
-func (w *overlappingJobWrapper) log() *zerolog.Logger {
-	if w.logger != nil {
-		return w.logger
-	}
-	return fallbackLog()
-}
-
-// TaskName 返回被包装任务的唯一标识名。
-func (w *overlappingJobWrapper) TaskName() string {
-	return w.inner.TaskName()
-}
-
-// WithoutOverlapping 返回防并发重叠锁的超时时间并标记已启用。
-func (w *overlappingJobWrapper) WithoutOverlapping() (time.Duration, bool) {
-	return w.lockTTL, true
-}
-
-// Handle 执行被包装任务，并在执行前后通过分布式锁确保同一时刻只有一个实例在运行。
-//
-// 错误传播的两种情形都在下面第一个分支里：TryLock 在锁基础设施故障时返回 (false, err)，
-// 在抢到锁时返回 (true, 内层任务的执行结果)，两者都必须原样上抛。
-func (w *overlappingJobWrapper) Handle(ctx context.Context) error {
-	if w.locker == nil {
-		// 无锁基础设施时直接执行
-		return w.inner.Handle(ctx)
-	}
-
-	lockKey := "schedule:lock:" + w.inner.TaskName()
-	acquired, err := TryLock(ctx, w.locker, lockKey, w.lockTTL, func(lockCtx context.Context) error {
-		return w.inner.Handle(lockCtx)
-	})
-
-	// 锁基础设施故障必须先于「未抢到锁」判定：两者都返回 acquired=false，
-	// 但前者是灾难性错误，静默跳过会让任务既不执行也不告警。
-	if err != nil {
-		return err
-	}
-	if !acquired {
-		w.log().Warn().
-			Str("task", w.inner.TaskName()).
-			Str("lock_key", lockKey).
-			Msg("scheduled task skipped due to active overlap lock")
-		return nil
-	}
-
-	return nil
 }
 
 // parseOptionalTimeHM 解析可选的 "HH:MM"。

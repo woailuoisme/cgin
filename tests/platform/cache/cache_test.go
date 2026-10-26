@@ -10,9 +10,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 
 	"cgin/pkg/cache"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 type userSession struct {
 	ID       string `json:"id"`
@@ -283,4 +288,78 @@ func TestMemoryStore_CapacityEviction(t *testing.T) {
 		}
 	}
 	assert.LessOrEqual(t, aliveCount, 5, "内存缓存数量不应超过设定容量上限")
+}
+
+func TestRememberJSONAllowMissing(t *testing.T) {
+	store := cache.NewMemoryStore()
+	defer func() { _ = store.Shutdown() }()
+
+	ctx := context.Background()
+	missingKey := "user:missing:999"
+
+	var loadCalls atomic.Int64
+	loadMissing := func(context.Context) (userSession, error) {
+		loadCalls.Add(1)
+		return userSession{}, cache.ErrNotFound
+	}
+
+	// 1. 首次查询不存在的键，回源一次并写入负缓存哨兵
+	_, err := cache.RememberJSONAllowMissing(ctx, store, missingKey, 10*time.Minute, 30*time.Second, loadMissing)
+	require.ErrorIs(t, err, cache.ErrNotFound)
+	assert.Equal(t, int64(1), loadCalls.Load())
+
+	// 验证负缓存使用的是 missingTTL 而非正常 ttl
+	remTTL, err := store.TTL(ctx, missingKey)
+	require.NoError(t, err)
+	assert.Positive(t, remTTL)
+	assert.LessOrEqual(t, remTTL, 30*time.Second)
+
+	// 2. 再次查询同一不存在的键，直接命中负缓存返回 ErrNotFound，不再穿透回源
+	_, err = cache.RememberJSONAllowMissing(ctx, store, missingKey, 10*time.Minute, 30*time.Second, loadMissing)
+	require.ErrorIs(t, err, cache.ErrNotFound)
+	assert.Equal(t, int64(1), loadCalls.Load())
+
+	// GetJSON 读取负缓存键同样返回 ErrNotFound
+	_, err = cache.GetJSON[userSession](ctx, store, missingKey)
+	require.ErrorIs(t, err, cache.ErrNotFound)
+
+	// 3. 正常存在的键按原 TTL 缓存
+	foundKey := "user:found:100"
+	var foundCalls int
+	got, err := cache.RememberJSONAllowMissing(ctx, store, foundKey, 5*time.Minute, 30*time.Second, func(context.Context) (userSession, error) {
+		foundCalls++
+		return userSession{ID: "100", Username: "alice", Role: "admin"}, nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "alice", got.Username)
+	assert.Equal(t, 1, foundCalls)
+
+	got2, err := cache.RememberJSONAllowMissing(ctx, store, foundKey, 5*time.Minute, 30*time.Second, func(context.Context) (userSession, error) {
+		foundCalls++
+		return userSession{}, nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "alice", got2.Username)
+	assert.Equal(t, 1, foundCalls)
+}
+
+func TestJitterTTL(t *testing.T) {
+	base := 10 * time.Minute
+
+	assert.Equal(t, time.Duration(0), cache.JitterTTL(0, 0.1))
+	assert.Equal(t, base, cache.JitterTTL(base, 0))
+	assert.Equal(t, base, cache.JitterTTL(base, -0.2))
+
+	for range 50 {
+		jittered := cache.JitterTTL(base, 0.1)
+		assert.GreaterOrEqual(t, jittered, 9*time.Minute)
+		assert.LessOrEqual(t, jittered, 11*time.Minute)
+	}
+
+	// 超出 0.9 的比例被截断至 0.9
+	for range 20 {
+		jittered := cache.JitterTTL(base, 2.0)
+		assert.GreaterOrEqual(t, jittered, time.Minute)
+		assert.LessOrEqual(t, jittered, 19*time.Minute)
+	}
 }

@@ -24,7 +24,7 @@ import (
 //
 // 需要访问 shared 领域表的渠道（如 database）不在此处装配：平台层不得反向依赖
 // shared 业务包，改由 bootstrap 构造后经 extra 参数注入。
-func New(cfg config.NotificationConfig, m mailer.Mailer, rt realtime.Manager, extra ...Channel) (*Notifier, error) {
+func New(cfg config.NotificationConfig, m mailer.Mailer, rt realtime.Publisher, extra ...Channel) (*Notifier, error) {
 	poolSize := cmp.Or(cfg.WorkerPool, 10)
 	queueSize := cmp.Or(cfg.QueueSize, 100)
 

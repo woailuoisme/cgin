@@ -6,6 +6,8 @@ import (
 	"slices"
 	"sync"
 	"testing"
+
+	"github.com/hibiken/asynq"
 )
 
 var (
@@ -26,7 +28,7 @@ func NewMemoryDispatcher() *MemoryDispatcher {
 }
 
 // Dispatch 将任务记录到内部切片，完全满足 Dispatcher 契约。
-func (m *MemoryDispatcher) Dispatch(_ context.Context, job Job, _ ...DispatchOption) error {
+func (m *MemoryDispatcher) Dispatch(_ context.Context, job Job, _ ...asynq.Option) error {
 	if job == nil {
 		return errors.New("queue: cannot dispatch nil job")
 	}
@@ -117,7 +119,7 @@ func NewSyncDispatcher() *SyncDispatcher {
 }
 
 // Dispatch 立即同步执行任务 Handle 方法。
-func (s *SyncDispatcher) Dispatch(ctx context.Context, job Job, _ ...DispatchOption) error {
+func (s *SyncDispatcher) Dispatch(ctx context.Context, job Job, _ ...asynq.Option) error {
 	if job == nil {
 		return errors.New("queue: cannot dispatch nil job")
 	}

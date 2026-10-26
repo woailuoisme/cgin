@@ -2,10 +2,11 @@ package console
 
 import (
 	"context"
-	"sync"
 
 	"github.com/rs/zerolog"
+	"github.com/samber/do/v2"
 
+	"cgin/internal/bootstrap"
 	"cgin/internal/config"
 	"cgin/internal/console/core"
 	"cgin/internal/database"
@@ -25,7 +26,7 @@ func (e *ValidationError) Error() string {
 	return e.Message
 }
 
-// Factory 按需提供控制台命令所需的外部依赖与基础设施（懒加载）。
+// Factory 按需提供控制台命令所需的外部依赖与基础设施（由 samber/do 容器管理生命周期）。
 // 命令通过依赖工厂按需获取服务，实现对底层物理依赖（配置、数据库连接、终端流、交互 Prompt）的彻底解耦。
 type Factory interface {
 	IOStreams() *core.IOStreams
@@ -33,31 +34,24 @@ type Factory interface {
 	Config() (*config.Config, error)
 	DB(ctx context.Context) (*database.DB, error)
 	Logger() *zerolog.Logger
+	Injector() *do.RootScope
 }
 
 // defaultFactory 提供生产环境默认的懒加载工厂实现。
 type defaultFactory struct {
 	ioStreams *core.IOStreams
 	prompter  core.Prompter
-
-	cfgOnce sync.Once
-	cfg     *config.Config
-	cfgErr  error
-
-	dbOnce sync.Once
-	db     *database.DB
-	dbErr  error
-
-	loggerOnce sync.Once
-	logger     *zerolog.Logger
+	injector  *do.RootScope
 }
 
 // NewDefaultFactory 构造生产环境默认的依赖工厂实例。
 func NewDefaultFactory() Factory {
 	streams := core.SystemIOStreams()
+	injector := bootstrap.NewInjector()
 	return &defaultFactory{
 		ioStreams: streams,
 		prompter:  core.NewHuhPrompter(streams.CanPrompt),
+		injector:  injector,
 	}
 }
 
@@ -71,43 +65,28 @@ func (f *defaultFactory) Prompter() core.Prompter {
 	return f.prompter
 }
 
-// Config 懒加载并缓存强类型应用配置。
+// Config 懒加载并返回强类型应用配置。
 func (f *defaultFactory) Config() (*config.Config, error) {
-	f.cfgOnce.Do(func() {
-		f.cfg, f.cfgErr = config.Load()
-	})
-	return f.cfg, f.cfgErr
+	return do.Invoke[*config.Config](f.injector)
 }
 
-// DB 懒加载并缓存数据访问入口。
-func (f *defaultFactory) DB(ctx context.Context) (*database.DB, error) {
-	f.dbOnce.Do(func() {
-		cfg, err := f.Config()
-		if err != nil {
-			f.dbErr = err
-			return
-		}
-		pool, err := database.Open(ctx, cfg.Database, cfg.App.Name)
-		if err != nil {
-			f.dbErr = err
-			return
-		}
-		f.db = database.NewDB(pool)
-	})
-	return f.db, f.dbErr
+// DB 懒加载并返回数据访问入口。
+func (f *defaultFactory) DB(_ context.Context) (*database.DB, error) {
+	return do.Invoke[*database.DB](f.injector)
 }
 
 // Logger 懒加载并返回结构化 Zerolog 日志记录器。
 func (f *defaultFactory) Logger() *zerolog.Logger {
-	f.loggerOnce.Do(func() {
-		cfg, err := f.Config()
-		if err == nil {
-			f.logger = logger.New(cfg)
-		} else {
-			f.logger = logger.Nop()
-		}
-	})
-	return f.logger
+	log, err := do.Invoke[*zerolog.Logger](f.injector)
+	if err != nil {
+		return logger.Nop()
+	}
+	return log
+}
+
+// Injector 返回底层的依赖注入容器。
+func (f *defaultFactory) Injector() *do.RootScope {
+	return f.injector
 }
 
 // TestFactory 提供供纯内存单元测试使用的可定制工厂实现。
@@ -119,6 +98,7 @@ type TestFactory struct {
 	DBValue       *database.DB
 	DBErr         error
 	LoggerValue   *zerolog.Logger
+	InjectorValue *do.RootScope
 }
 
 func (f *TestFactory) IOStreams() *core.IOStreams {
@@ -149,4 +129,11 @@ func (f *TestFactory) Logger() *zerolog.Logger {
 		return logger.Nop()
 	}
 	return f.LoggerValue
+}
+
+func (f *TestFactory) Injector() *do.RootScope {
+	if f.InjectorValue != nil {
+		return f.InjectorValue
+	}
+	return do.New()
 }

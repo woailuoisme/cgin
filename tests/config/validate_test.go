@@ -50,9 +50,9 @@ func TestValidationErrorsNameEnvironmentVariable(t *testing.T) {
 		wantEnv string
 	}{
 		{
-			name:    "DB_MAX_IDLE_CONNS 超过 DB_MAX_OPEN_CONNS",
-			env:     [][2]string{{"DB_MAX_OPEN_CONNS", "5"}, {"DB_MAX_IDLE_CONNS", "10"}},
-			wantEnv: "DB_MAX_IDLE_CONNS",
+			name:    "DB_MIN_CONNS 超过 DB_MAX_OPEN_CONNS",
+			env:     [][2]string{{"DB_MAX_OPEN_CONNS", "5"}, {"DB_MIN_CONNS", "10"}},
+			wantEnv: "DB_MIN_CONNS",
 		},
 		{
 			name:    "DB_CONNECT_TIMEOUT 非正",

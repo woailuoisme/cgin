@@ -2,17 +2,15 @@ package cache
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/samber/hot"
 	"golang.org/x/sync/singleflight"
 )
-
-var errClosed = errors.New("cache: memory store is closed")
 
 const defaultMemoryCapacity = 10_000
 
@@ -29,13 +27,13 @@ func (it memoryItem) isExpired(now time.Time) bool {
 }
 
 // MemoryStore 基于 samber/hot 的高性能纯内存缓存实现，适用于本地开发、测试与脱机环境。
-// 内置 WTinyLFU 驱逐策略、容量上限保护、TTL 抖动清理与并发安全保障。
+// 内置 WTinyLFU 驱逐策略、容量上限保护、精确惰性过期与并发安全保障（零后台常驻协程）。
 type MemoryStore struct {
 	hot    *hot.HotCache[string, memoryItem]
 	locker *MemoryLocker
 	group  singleflight.Group
-	mu     sync.Mutex // 保护 Increment / SetNX 竞态与关闭状态
-	closed bool
+	mu     sync.Mutex // 保护 Increment / SetNX / DeleteIfMatch 复合读写原子性
+	closed atomic.Bool
 }
 
 // NewMemoryStore 创建基于 samber/hot 的纯内存缓存存储实例。
@@ -51,7 +49,6 @@ func NewMemoryStoreWithCapacity(capacity int) *MemoryStore {
 
 	h := hot.NewHotCache[string, memoryItem](hot.WTinyLFU, capacity).
 		WithTTL(time.Hour).
-		WithJanitor().
 		Build()
 
 	return &MemoryStore{
@@ -73,23 +70,19 @@ func (m *MemoryStore) Driver() string {
 
 // Ping 检查内存驱动可用性（遵循 ctx 取消信号）。
 func (m *MemoryStore) Ping(ctx context.Context) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.closed {
+	if m.closed.Load() {
 		return errClosed
 	}
 	return ctx.Err()
 }
 
-// Close 释放内存与清理协程。
+// Close 释放内存与关联锁资源。
 func (m *MemoryStore) Close() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.closed {
+	if !m.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-	m.closed = true
-	m.hot.StopJanitor()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.hot.Purge()
 	if m.locker != nil {
 		_ = m.locker.Close()
@@ -97,21 +90,25 @@ func (m *MemoryStore) Close() error {
 	return nil
 }
 
-// isClosed 报告内存缓存是否已关闭。
-func (m *MemoryStore) isClosed() bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.closed
+// Shutdown 实现优雅停机钩子契约。
+func (m *MemoryStore) Shutdown() error {
+	return m.Close()
+}
+
+func (m *MemoryStore) checkReady(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if m.closed.Load() {
+		return errClosed
+	}
+	return nil
 }
 
 // Get 读取指定键的值，键不存在或已过期返回 ErrNotFound。
 func (m *MemoryStore) Get(ctx context.Context, key string) (string, error) {
-	if err := ctx.Err(); err != nil {
+	if err := m.checkReady(ctx); err != nil {
 		return "", err
-	}
-
-	if m.isClosed() {
-		return "", errClosed
 	}
 
 	item, found, err := m.hot.Get(key)
@@ -122,8 +119,7 @@ func (m *MemoryStore) Get(ctx context.Context, key string) (string, error) {
 		return "", ErrNotFound
 	}
 
-	now := time.Now()
-	if item.isExpired(now) {
+	if item.isExpired(time.Now()) {
 		m.hot.Delete(key)
 		return "", ErrNotFound
 	}
@@ -133,39 +129,38 @@ func (m *MemoryStore) Get(ctx context.Context, key string) (string, error) {
 
 // Set 写入键值并设置过期时间。ttl 必须大于 0。
 func (m *MemoryStore) Set(ctx context.Context, key, value string, ttl time.Duration) error {
-	if err := ctx.Err(); err != nil {
+	if err := m.checkReady(ctx); err != nil {
 		return err
 	}
 	if ttl <= 0 {
-		return fmt.Errorf("cache: ttl for key %s must be positive, got %s", key, ttl)
+		return invalidTTLErr(key, ttl)
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closed {
+	if m.closed.Load() {
 		return errClosed
 	}
 
-	item := memoryItem{
+	m.hot.SetWithTTL(key, memoryItem{
 		value:     value,
 		expiresAt: time.Now().Add(ttl),
-	}
-	m.hot.SetWithTTL(key, item, ttl)
+	}, ttl)
 	return nil
 }
 
 // SetNX 仅在键不存在或已过期时写入。
 func (m *MemoryStore) SetNX(ctx context.Context, key, value string, ttl time.Duration) (bool, error) {
-	if err := ctx.Err(); err != nil {
+	if err := m.checkReady(ctx); err != nil {
 		return false, err
 	}
 	if ttl <= 0 {
-		return false, fmt.Errorf("cache: ttl for key %s must be positive, got %s", key, ttl)
+		return false, invalidTTLErr(key, ttl)
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closed {
+	if m.closed.Load() {
 		return false, errClosed
 	}
 
@@ -184,12 +179,8 @@ func (m *MemoryStore) SetNX(ctx context.Context, key, value string, ttl time.Dur
 
 // Exists 检查键是否存在且未过期。
 func (m *MemoryStore) Exists(ctx context.Context, key string) (bool, error) {
-	if err := ctx.Err(); err != nil {
+	if err := m.checkReady(ctx); err != nil {
 		return false, err
-	}
-
-	if m.isClosed() {
-		return false, errClosed
 	}
 
 	item, found := m.hot.Peek(key)
@@ -202,26 +193,25 @@ func (m *MemoryStore) Exists(ctx context.Context, key string) (bool, error) {
 
 // Increment 原子自增并保持窗口过期时间：首次创建时设置过期时间，后续自增保留原过期时间。
 func (m *MemoryStore) Increment(ctx context.Context, key string, ttl time.Duration) (int64, error) {
-	if err := ctx.Err(); err != nil {
+	if err := m.checkReady(ctx); err != nil {
 		return 0, err
 	}
 	if ttl <= 0 {
-		return 0, fmt.Errorf("cache: ttl for key %s must be positive, got %s", key, ttl)
+		return 0, invalidTTLErr(key, ttl)
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closed {
+	if m.closed.Load() {
 		return 0, errClosed
 	}
 
 	now := time.Now()
 	item, found := m.hot.Peek(key)
 	if !found || item.isExpired(now) {
-		exp := now.Add(ttl)
 		m.hot.SetWithTTL(key, memoryItem{
 			value:     "1",
-			expiresAt: exp,
+			expiresAt: now.Add(ttl),
 		}, ttl)
 		return 1, nil
 	}
@@ -244,12 +234,8 @@ func (m *MemoryStore) Increment(ctx context.Context, key string, ttl time.Durati
 
 // TTL 获取剩余有效时间：键不存在或过期返回 0，永久有效返回 -1s。
 func (m *MemoryStore) TTL(ctx context.Context, key string) (time.Duration, error) {
-	if err := ctx.Err(); err != nil {
+	if err := m.checkReady(ctx); err != nil {
 		return 0, err
-	}
-
-	if m.isClosed() {
-		return 0, errClosed
 	}
 
 	item, found := m.hot.Peek(key)
@@ -276,7 +262,7 @@ func (m *MemoryStore) TTL(ctx context.Context, key string) (time.Duration, error
 
 // Delete 删除指定键列表，返回实际有效删除的数量。
 func (m *MemoryStore) Delete(ctx context.Context, keys ...string) (int64, error) {
-	if err := ctx.Err(); err != nil {
+	if err := m.checkReady(ctx); err != nil {
 		return 0, err
 	}
 	if len(keys) == 0 {
@@ -285,7 +271,7 @@ func (m *MemoryStore) Delete(ctx context.Context, keys ...string) (int64, error)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closed {
+	if m.closed.Load() {
 		return 0, errClosed
 	}
 
@@ -304,13 +290,13 @@ func (m *MemoryStore) Delete(ctx context.Context, keys ...string) (int64, error)
 
 // DeleteIfMatch 仅当键的当前值等于 expected 时原子删除该键，返回是否真正删除。
 func (m *MemoryStore) DeleteIfMatch(ctx context.Context, key, expected string) (bool, error) {
-	if err := ctx.Err(); err != nil {
+	if err := m.checkReady(ctx); err != nil {
 		return false, err
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closed {
+	if m.closed.Load() {
 		return false, errClosed
 	}
 
@@ -339,47 +325,22 @@ func (m *MemoryStore) Remember(
 	ttl time.Duration,
 	load func(context.Context) (string, error),
 ) (string, error) {
-	cached, err := m.Get(ctx, key)
-	if err == nil {
-		return cached, nil
-	}
-	if !errors.Is(err, ErrNotFound) {
-		return "", err
-	}
-
-	ch := m.group.DoChan(key, func() (any, error) {
-		fillCtx := context.WithoutCancel(ctx)
-
-		cached, err := m.Get(fillCtx, key)
-		if err == nil {
-			return cached, nil
-		}
-		if !errors.Is(err, ErrNotFound) {
-			return "", err
-		}
-
-		loaded, err := load(fillCtx)
-		if err != nil {
-			return "", err
-		}
-
-		_ = m.Set(fillCtx, key, loaded, ttl)
-		return loaded, nil
-	})
-
-	select {
-	case res := <-ch:
-		if res.Err != nil {
-			return "", res.Err
-		}
-		val, ok := res.Val.(string)
-		if !ok {
-			return "", errors.New("cache: load result is not a string")
-		}
-		return val, nil
-	case <-ctx.Done():
-		return "", ctx.Err()
-	}
+	return rememberFlight(
+		ctx,
+		&m.group,
+		key,
+		func(gCtx context.Context) (string, error) {
+			return m.Get(gCtx, key)
+		},
+		func(fillCtx context.Context) (string, error) {
+			loaded, err := load(fillCtx)
+			if err != nil {
+				return "", err
+			}
+			_ = m.Set(fillCtx, key, loaded, ttl)
+			return loaded, nil
+		},
+	)
 }
 
 // Locker 返回关联该纯内存存储环境的单例互斥锁管理器。

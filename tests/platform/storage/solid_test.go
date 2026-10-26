@@ -2,6 +2,7 @@ package storage_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,20 +27,16 @@ func TestStorage_RoleInterfaces(t *testing.T) {
 	assert.Equal(t, "local", disk.Driver())
 }
 
-// TestStorage_CapabilityDetection 验证预签名能力的显式探查机制 (LSP)。
-func TestStorage_CapabilityDetection(t *testing.T) {
+// TestStorage_PresignUnsupported 验证不支持预签名的驱动以哨兵错误显式拒绝，而不是静默返回空地址。
+func TestStorage_PresignUnsupported(t *testing.T) {
 	local, _ := newLocalDisk(t, "http://localhost:8080")
+	ctx := t.Context()
 
-	// 1. 本地磁盘不支持预签名
-	assert.False(t, storage.SupportsPresign(local))
-	presigner, ok := storage.AsPresigner(local)
-	assert.False(t, ok)
-	assert.Nil(t, presigner)
+	_, err := local.TemporaryURL(ctx, "avatar.png", time.Minute)
+	require.ErrorIs(t, err, storage.ErrPresignUnsupported)
 
-	// 2. nil 磁盘安全探查
-	assert.False(t, storage.SupportsPresign(nil))
-	_, ok = storage.AsPresigner(nil)
-	assert.False(t, ok)
+	_, err = local.PresignPut(ctx, "avatar.png", time.Minute)
+	require.ErrorIs(t, err, storage.ErrPresignUnsupported)
 }
 
 // TestStorage_DriverDispatch 验证内置驱动按名称分发，未知驱动立即报错。

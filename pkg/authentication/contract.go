@@ -140,6 +140,8 @@ func WithClaims(claims map[string]any) Option {
 }
 
 // WithRefreshToken 控制是否生成刷新令牌。
+// 为 false 时签发结果不含 refresh token（Session.RefreshToken 为空串），
+// 该会话到期后必须重新登录，无法续期。
 func WithRefreshToken(enabled bool) Option {
 	return func(o *options) {
 		o.withRefreshToken = enabled

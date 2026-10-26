@@ -83,7 +83,7 @@ func TestLivenessIgnoresDependencies(t *testing.T) {
 
 	status, body := get(t, engine, "/livez")
 	assert.Equal(t, http.StatusOK, status)
-	assert.JSONEq(t, `{"status":"ok"}`, body)
+	assert.Equal(t, "ok", body, "存活探针只回纯文本 ok：k8s 只看状态码，不解析 body")
 	assert.Empty(t, logs.String(), "存活探针不该产生任何探测日志")
 
 	// 校验已彻底移除的 /healthz 返回 404
@@ -91,13 +91,13 @@ func TestLivenessIgnoresDependencies(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, oldStatus)
 }
 
-// TestRootEndpointReturnsOK 验证根路径 GET / 返回 200 与 ok 状态。
+// TestRootEndpointReturnsOK 验证根路径 GET / 返回 200 与纯文本 ok。
 func TestRootEndpointReturnsOK(t *testing.T) {
 	engine, _ := newProbe(t, stubPinger{}, stubPinger{})
 
 	status, body := get(t, engine, "/")
 	assert.Equal(t, http.StatusOK, status)
-	assert.JSONEq(t, `{"status":"ok"}`, body)
+	assert.Equal(t, "ok", body)
 }
 
 // TestReadinessAllHealthy 覆盖全通路径。

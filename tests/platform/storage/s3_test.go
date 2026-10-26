@@ -123,7 +123,7 @@ func TestS3HealthCheckReportsFailure(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 
-	err = disk.HealthCheck(ctx)
+	err = disk.Ping(ctx)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "S3 bucket cgin")
 }

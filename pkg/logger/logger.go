@@ -11,7 +11,6 @@ import (
 	"io"
 	"os"
 	"regexp"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -56,13 +55,6 @@ func newFallbackLogger() zerolog.Logger {
 		Logger()
 }
 
-// setDefault 以原子写替换兜底日志器，nil 视为未注入并忽略。
-func setDefault(l *zerolog.Logger) {
-	if l != nil {
-		defaultLogger.Store(l)
-	}
-}
-
 // defaultLog 返回当前兜底日志器，保证永不为 nil。
 func defaultLog() *zerolog.Logger {
 	if l := defaultLogger.Load(); l != nil {
@@ -82,11 +74,6 @@ func Nop() *zerolog.Logger {
 // Default 返回当前全局默认日志器。
 func Default() *zerolog.Logger {
 	return defaultLog()
-}
-
-// SetDefault 显式设置全局默认的兜底日志器。
-func SetDefault(l *zerolog.Logger) {
-	setDefault(l)
 }
 
 // DefaultRedactKeys 预设的敏感字段键名列表（全小写存储，按键名精确匹配）。
@@ -116,7 +103,6 @@ type Options struct {
 	Writer      io.Writer
 	NoColor     *bool
 	Redact      bool
-	RedactKeys  []string
 	AddCaller   bool
 	Hooks       []zerolog.Hook
 }
@@ -160,13 +146,10 @@ func WithColor(enabled bool) Option {
 	}
 }
 
-// WithRedaction 设置是否启用敏感数据脱敏过滤器，并可选覆盖敏感字段键名列表。
-func WithRedaction(enabled bool, customKeys ...string) Option {
+// WithRedaction 设置是否启用敏感数据脱敏过滤器（键名取自 DefaultRedactKeys）。
+func WithRedaction(enabled bool) Option {
 	return func(o *Options) {
 		o.Redact = enabled
-		if len(customKeys) > 0 {
-			o.RedactKeys = slices.Clone(customKeys)
-		}
 	}
 }
 
@@ -207,48 +190,55 @@ func ParseLevel(lvl string) zerolog.Level {
 // jsonRedactedValue 是 JSON 字段脱敏后的占位值。
 const jsonRedactedValue = `"[REDACTED]"`
 
-// redactingWriter 对已序列化的日志做键级脱敏。
-//
-// JSON 格式走「字符串感知的结构扫描」而非正则：正则无法处理嵌套的对象与数组，
-// 一旦敏感字段的取值是结构体或 map（如 token 载荷），值会原样落盘。
-// 控制台格式没有结构信息，退化用 key=value 正则兜底。
-type redactingWriter struct {
+// jsonRedactingWriter 专职处理 JSON 格式的敏感数据脱敏，执行零正则、字符串感知的结构扫描。
+type jsonRedactingWriter struct {
 	out  io.Writer
 	keys map[string]struct{}
-	kv   *regexp.Regexp
 }
 
-// newRedactingWriter 构建脱敏写入器；keys 为空时回退内置敏感键集合。
-func newRedactingWriter(out io.Writer, keys []string) io.Writer {
-	if len(keys) == 0 {
-		keys = DefaultRedactKeys
-	}
-
-	set := make(map[string]struct{}, len(keys))
-	escaped := make([]string, 0, len(keys))
-	for _, k := range keys {
+func newJSONRedactingWriter(out io.Writer) io.Writer {
+	set := make(map[string]struct{}, len(DefaultRedactKeys))
+	for _, k := range DefaultRedactKeys {
 		trimmed := strings.TrimSpace(k)
-		if trimmed == "" {
-			continue
+		if trimmed != "" {
+			set[strings.ToLower(trimmed)] = struct{}{}
 		}
-		set[strings.ToLower(trimmed)] = struct{}{}
-		escaped = append(escaped, regexp.QuoteMeta(trimmed))
 	}
-
-	// 控制台取值以空白或分隔符收尾，排除引号与逗号可避免吞掉后续字段。
-	kv := regexp.MustCompile(`(?i)(\b(?:` + strings.Join(escaped, "|") + `)=)(?:"[^"]*"|[^\s\n,}"]+)`)
-
-	return &redactingWriter{out: out, keys: set, kv: kv}
+	return &jsonRedactingWriter{out: out, keys: set}
 }
 
-// Write 先做 JSON 结构脱敏，再用 key=value 正则兜底控制台格式。
-func (w *redactingWriter) Write(p []byte) (n int, err error) {
+func (w *jsonRedactingWriter) Write(p []byte) (n int, err error) {
 	replaced := w.redactJSON(p)
-	replaced = w.kv.ReplaceAllFunc(replaced, redactConsolePair)
-
 	written, err := w.out.Write(replaced)
 	if err == nil && written != len(replaced) {
-		// 底层短写且未报错属于异常，按 io.Writer 契约显式上报，避免日志静默丢失。
+		return len(p), io.ErrShortWrite
+	}
+	return len(p), err
+}
+
+// consoleRedactingWriter 专职处理控制台 key=value 格式的敏感数据脱敏。
+type consoleRedactingWriter struct {
+	out io.Writer
+	kv  *regexp.Regexp
+}
+
+func newConsoleRedactingWriter(out io.Writer) io.Writer {
+	escaped := make([]string, 0, len(DefaultRedactKeys))
+	for _, k := range DefaultRedactKeys {
+		trimmed := strings.TrimSpace(k)
+		if trimmed != "" {
+			escaped = append(escaped, regexp.QuoteMeta(trimmed))
+		}
+	}
+
+	kv := regexp.MustCompile(`(?i)(\b(?:` + strings.Join(escaped, "|") + `)=)(?:"[^"]*"|[^\s\n,}"]+)`)
+	return &consoleRedactingWriter{out: out, kv: kv}
+}
+
+func (w *consoleRedactingWriter) Write(p []byte) (n int, err error) {
+	replaced := w.kv.ReplaceAllFunc(p, redactConsolePair)
+	written, err := w.out.Write(replaced)
+	if err == nil && written != len(replaced) {
 		return len(p), io.ErrShortWrite
 	}
 	return len(p), err
@@ -267,7 +257,7 @@ func redactConsolePair(match []byte) []byte {
 // redactJSON 扫描 JSON 文本，把敏感键的取值整体替换为占位符。
 //
 // 支持字符串、数字、布尔、null 以及嵌套的对象与数组；字符串内部的引号与转义已正确处理。
-func (w *redactingWriter) redactJSON(p []byte) []byte {
+func (w *jsonRedactingWriter) redactJSON(p []byte) []byte {
 	// 控制台通道的普通行不含引号，不必为整行重新分配缓冲。
 	if bytes.IndexByte(p, '"') < 0 {
 		return p
@@ -304,7 +294,7 @@ func (w *redactingWriter) redactJSON(p []byte) []byte {
 }
 
 // sensitiveFieldSpan 判断 "key" 之后是否紧跟冒号且键命中敏感集合，命中则返回取值的起止下标。
-func (w *redactingWriter) sensitiveFieldSpan(p []byte, keyStart, keyEnd int) (int, int, bool) {
+func (w *jsonRedactingWriter) sensitiveFieldSpan(p []byte, keyStart, keyEnd int) (int, int, bool) {
 	if _, sensitive := w.keys[strings.ToLower(string(p[keyStart+1:keyEnd-1]))]; !sensitive {
 		return 0, 0, false
 	}
@@ -411,7 +401,7 @@ func scanJSONComposite(p []byte, i int) (int, bool) {
 }
 
 // buildConsoleWriter 构建面向本地控制台的着色/格式化写入器。
-func buildConsoleWriter(opt Options) io.Writer {
+func buildConsoleWriter(opt Options) zerolog.ConsoleWriter {
 	out := cmp.Or[io.Writer](opt.Writer, os.Stdout)
 	shouldColor := shouldColorFromEnv(opt.Env)
 	if opt.NoColor != nil {
@@ -434,11 +424,10 @@ func buildConsoleWriter(opt Options) io.Writer {
 // NewWithOptions 遵循依赖倒置原则，依据函数式选项构建并发安全的 Zerolog 日志器。
 func NewWithOptions(opts ...Option) *zerolog.Logger {
 	opt := Options{
-		Level:      "info",
-		Channel:    "console",
-		Redact:     true,
-		RedactKeys: DefaultRedactKeys,
-		AddCaller:  true,
+		Level:     "info",
+		Channel:   "console",
+		Redact:    true,
+		AddCaller: true,
 	}
 	for _, fn := range opts {
 		fn(&opt)
@@ -446,13 +435,17 @@ func NewWithOptions(opts ...Option) *zerolog.Logger {
 
 	var out io.Writer
 	if opt.Channel == "json" {
-		out = cmp.Or[io.Writer](opt.Writer, os.Stdout)
+		target := cmp.Or[io.Writer](opt.Writer, os.Stdout)
+		if opt.Redact {
+			target = newJSONRedactingWriter(target)
+		}
+		out = target
 	} else {
-		out = buildConsoleWriter(opt)
-	}
-
-	if opt.Redact {
-		out = newRedactingWriter(out, opt.RedactKeys)
+		cw := buildConsoleWriter(opt)
+		if opt.Redact {
+			cw.Out = newConsoleRedactingWriter(cw.Out)
+		}
+		out = cw
 	}
 
 	lvl := ParseLevel(opt.Level)
@@ -469,7 +462,7 @@ func NewWithOptions(opts ...Option) *zerolog.Logger {
 		l = l.Hook(h)
 	}
 
-	setDefault(&l)
+	defaultLogger.Store(&l)
 	return &l
 }
 

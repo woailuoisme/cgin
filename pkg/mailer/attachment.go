@@ -1,13 +1,10 @@
 package mailer
 
 import (
-	"cmp"
 	"errors"
 	"os"
 	"path/filepath"
 	"slices"
-
-	"github.com/samber/lo"
 )
 
 // Attachment 表示邮件附件，既支持纯内存字节流（如 PDF/Excel 生成），也兼容本地文件路径。
@@ -25,17 +22,25 @@ type Attachment struct {
 // NewAttachmentFromBytes 创建基于内存二进制字节流的附件对象（零磁盘 I/O）。
 // 采用防御性拷贝隔离输入切片，遵循 Uber Go Style Guide 边界规范。
 func NewAttachmentFromBytes(filename string, content []byte, contentType ...string) Attachment {
+	var ct string
+	if len(contentType) > 0 {
+		ct = contentType[0]
+	}
 	return Attachment{
 		Filename:    filename,
 		Content:     slices.Clone(content),
-		ContentType: lo.FirstOrEmpty(contentType),
+		ContentType: ct,
 	}
 }
 
 // NewAttachmentFromPath 创建基于本地文件系统路径的附件对象。
 func NewAttachmentFromPath(path string, filename ...string) Attachment {
+	name := filepath.Base(path)
+	if len(filename) > 0 && filename[0] != "" {
+		name = filename[0]
+	}
 	return Attachment{
-		Filename: cmp.Or(lo.FirstOr(filename, ""), filepath.Base(path)),
+		Filename: name,
 		Path:     path,
 	}
 }

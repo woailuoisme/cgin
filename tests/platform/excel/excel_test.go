@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/xuri/excelize/v2"
 
+	"cgin/pkg/errs"
 	"cgin/pkg/excel"
 )
 
@@ -139,4 +142,205 @@ func TestWriteRejectsNilArguments(t *testing.T) {
 
 	require.Error(t, excel.Write(t.Context(), nil, "Users", nil, rowIterator(nil, nil)))
 	require.Error(t, excel.Write(t.Context(), &buffer, "Users", nil, nil))
+}
+
+type sampleRecord struct {
+	Email string
+	Name  string
+	Score int
+}
+
+func sampleSchema() []excel.Column[sampleRecord] {
+	return []excel.Column[sampleRecord]{
+		{
+			Header:   "Email",
+			Required: true,
+			Encode:   func(r *sampleRecord) any { return r.Email },
+			Decode: func(cell string, dst *sampleRecord) error {
+				if !strings.Contains(cell, "@") {
+					return errors.New("invalid email")
+				}
+				dst.Email = strings.ToLower(cell)
+				return nil
+			},
+		},
+		{
+			Header:   "Name",
+			Required: true,
+			Encode:   func(r *sampleRecord) any { return r.Name },
+			Decode: func(cell string, dst *sampleRecord) error {
+				dst.Name = cell
+				return nil
+			},
+		},
+		{
+			Header:   "Score",
+			Required: false,
+			Encode:   func(r *sampleRecord) any { return r.Score },
+			Decode: func(cell string, dst *sampleRecord) error {
+				val, err := strconv.Atoi(cell)
+				if err != nil {
+					return errors.New("score must be an integer")
+				}
+				dst.Score = val
+				return nil
+			},
+		},
+	}
+}
+
+func TestWriteTableAndReadTableRoundTrip(t *testing.T) {
+	input := []sampleRecord{
+		{Email: "alice@example.com", Name: "Alice", Score: 95},
+		{Email: "bob@example.com", Name: "Bob", Score: 88},
+		{Email: "carol@example.com", Name: "Carol", Score: 72},
+	}
+
+	var buf bytes.Buffer
+	idx := 0
+	err := excel.WriteTable(t.Context(), &buf, "Members", sampleSchema(), func() (sampleRecord, bool, error) {
+		if idx >= len(input) {
+			return sampleRecord{}, false, nil
+		}
+		item := input[idx]
+		idx++
+		return item, true, nil
+	})
+	require.NoError(t, err)
+
+	var (
+		batches [][]sampleRecord
+		gotAll  []sampleRecord
+	)
+	err = excel.ReadTable(
+		t.Context(),
+		bytes.NewReader(buf.Bytes()),
+		sampleSchema(),
+		func(_ context.Context, rows []sampleRecord) error {
+			cloned := append([]sampleRecord(nil), rows...)
+			batches = append(batches, cloned)
+			gotAll = append(gotAll, cloned...)
+			return nil
+		},
+		excel.WithSheet[sampleRecord]("Members"),
+		excel.WithChunkSize[sampleRecord](2),
+		excel.WithUniqueKey[sampleRecord]("email", func(r *sampleRecord) string { return r.Email }),
+	)
+	require.NoError(t, err)
+	assert.Len(t, batches, 2, "3 行数据按 chunkSize=2 应拆成 2 个批次回调")
+	assert.Equal(t, input, gotAll)
+}
+
+func TestReadTable_ErrorCodes(t *testing.T) {
+	cols := sampleSchema()
+
+	t.Run("文件超限返回 EXCEL_FILE_TOO_LARGE", func(t *testing.T) {
+		var buf bytes.Buffer
+		require.NoError(t, excel.Write(t.Context(), &buf, "Sheet1", []string{"Email", "Name"}, rowIterator([][]any{{"a@b.c", "A"}}, nil)))
+
+		err := excel.ReadTable(
+			t.Context(),
+			bytes.NewReader(buf.Bytes()),
+			cols,
+			func(context.Context, []sampleRecord) error { return nil },
+			excel.WithMaxBytes[sampleRecord](10),
+		)
+		require.Error(t, err)
+		bizErr, ok := errs.As(err)
+		require.True(t, ok)
+		assert.Equal(t, errs.CodeExcelFileTooLarge, bizErr.Code())
+	})
+
+	t.Run("损坏文件返回 EXCEL_OPEN_ERROR", func(t *testing.T) {
+		err := excel.ReadTable(
+			t.Context(),
+			strings.NewReader("not-a-valid-zip-or-xlsx"),
+			cols,
+			func(context.Context, []sampleRecord) error { return nil },
+		)
+		require.Error(t, err)
+		bizErr, ok := errs.As(err)
+		require.True(t, ok)
+		assert.Equal(t, errs.CodeExcelOpenError, bizErr.Code())
+	})
+
+	t.Run("指定不存在的工作表返回 EMPTY_SHEETS", func(t *testing.T) {
+		var buf bytes.Buffer
+		require.NoError(t, excel.Write(t.Context(), &buf, "Sheet1", []string{"Email", "Name"}, rowIterator(nil, nil)))
+
+		err := excel.ReadTable(
+			t.Context(),
+			bytes.NewReader(buf.Bytes()),
+			cols,
+			func(context.Context, []sampleRecord) error { return nil },
+			excel.WithSheet[sampleRecord]("NonExistent"),
+		)
+		require.Error(t, err)
+		bizErr, ok := errs.As(err)
+		require.True(t, ok)
+		assert.Equal(t, errs.CodeEmptySheets, bizErr.Code())
+	})
+
+	t.Run("缺失必填表头列返回 EXCEL_MAP_ERROR", func(t *testing.T) {
+		var buf bytes.Buffer
+		require.NoError(t, excel.Write(t.Context(), &buf, "Sheet1", []string{"Email"}, rowIterator([][]any{{"a@b.c"}}, nil)))
+
+		err := excel.ReadTable(
+			t.Context(),
+			bytes.NewReader(buf.Bytes()),
+			cols,
+			func(context.Context, []sampleRecord) error { return nil },
+		)
+		require.Error(t, err)
+		bizErr, ok := errs.As(err)
+		require.True(t, ok)
+		assert.Equal(t, errs.CodeExcelMapError, bizErr.Code())
+		assert.Contains(t, bizErr.Fields(), "name")
+	})
+
+	t.Run("单元格校验失败返回 EXCEL_READ_ROW_ERROR 并定位行列坐标", func(t *testing.T) {
+		var buf bytes.Buffer
+		rows := [][]any{
+			{"not-an-email", "", "not-int"},
+		}
+		require.NoError(t, excel.Write(t.Context(), &buf, "Sheet1", []string{"email", "name", "score"}, rowIterator(rows, nil)))
+
+		err := excel.ReadTable(
+			t.Context(),
+			bytes.NewReader(buf.Bytes()),
+			cols,
+			func(context.Context, []sampleRecord) error { return nil },
+		)
+		require.Error(t, err)
+		bizErr, ok := errs.As(err)
+		require.True(t, ok)
+		assert.Equal(t, errs.CodeExcelReadRowError, bizErr.Code())
+
+		fields := bizErr.Fields()
+		assert.Contains(t, fields, "rows.2.email")
+		assert.Contains(t, fields, "rows.2.name")
+		assert.Contains(t, fields, "rows.2.score")
+	})
+
+	t.Run("文件内重复唯一键返回 EXCEL_DUPLICATE_ROW", func(t *testing.T) {
+		var buf bytes.Buffer
+		rows := [][]any{
+			{"dup@example.com", "First"},
+			{"DUP@example.com", "Second"},
+		}
+		require.NoError(t, excel.Write(t.Context(), &buf, "Sheet1", []string{"Email", "Name"}, rowIterator(rows, nil)))
+
+		err := excel.ReadTable(
+			t.Context(),
+			bytes.NewReader(buf.Bytes()),
+			cols,
+			func(context.Context, []sampleRecord) error { return nil },
+			excel.WithUniqueKey[sampleRecord]("email", func(r *sampleRecord) string { return r.Email }),
+		)
+		require.Error(t, err)
+		bizErr, ok := errs.As(err)
+		require.True(t, ok)
+		assert.Equal(t, errs.CodeExcelDuplicateRow, bizErr.Code())
+		assert.Contains(t, bizErr.Fields(), "rows.3.email")
+	})
 }

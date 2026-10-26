@@ -77,11 +77,9 @@ type Presigner interface {
 	PresignPut(ctx context.Context, path string, ttl time.Duration) (string, error)
 }
 
-// Pinger 定义存储服务可用性与健康检测的角色契约。
+// Pinger 定义存储服务的健康探测契约，启动期校验与就绪探针共用同一个入口。
 type Pinger interface {
-	// HealthCheck 探测存储是否可用，供启动期与就绪探针使用。
-	HealthCheck(ctx context.Context) error
-	// Ping 探测存储可用性（满足 ready.Pinger 契约）。
+	// Ping 探测存储是否可用（满足 ready.Pinger 契约）。
 	Ping(ctx context.Context) error
 }
 
@@ -98,32 +96,6 @@ type Disk interface {
 	Driver() string
 }
 
-// PresignChecker 是能够显式报告是否支持预签名的驱动扩展契约。
-type PresignChecker interface {
-	SupportsPresign() bool
-}
-
-// SupportsPresign 探查目标 Disk 实例是否具备预签名能力。
-func SupportsPresign(d Disk) bool {
-	if d == nil {
-		return false
-	}
-	if c, ok := d.(PresignChecker); ok {
-		return c.SupportsPresign()
-	}
-	// 默认 S3 驱动支持预签名，本地文件驱动不支持
-	return d.Driver() != config.StorageDriverLocal
-}
-
-// AsPresigner 尝试将 Disk 转换为具备预签名能力的 Presigner 角色接口。
-func AsPresigner(d Disk) (Presigner, bool) {
-	if !SupportsPresign(d) {
-		return nil, false
-	}
-	p, ok := d.(Presigner)
-	return p, ok
-}
-
 // Open 根据配置构造存储驱动并执行可用性健康探测。
 func Open(ctx context.Context, cfg config.StorageConfig) (Disk, error) {
 	disk, err := createDriver(cfg)
@@ -131,7 +103,7 @@ func Open(ctx context.Context, cfg config.StorageConfig) (Disk, error) {
 		return nil, err
 	}
 
-	if err := disk.HealthCheck(ctx); err != nil {
+	if err := disk.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("storage driver %s is unavailable: %w", cfg.Driver, err)
 	}
 	return disk, nil

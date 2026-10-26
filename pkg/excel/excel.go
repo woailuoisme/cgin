@@ -31,6 +31,50 @@ const (
 // RowIterator 按行产出待写入的单元格值；ok 为 false 表示迭代结束。
 type RowIterator func() (row []any, ok bool, err error)
 
+// Column 描述强类型表格单列的双向映射契约（零反射声明式 Schema）。
+type Column[T any] struct {
+	// Header 工作表首行表头列名。
+	Header string
+	// Required 导入时该列是否必填（表头必须存在且单元格非空）。
+	Required bool
+	// Encode 导出时将领域实体投影为单元格值的纯函数。
+	Encode func(row *T) any
+	// Decode 导入时将单元格文本解析回领域实体字段的纯函数。
+	Decode func(cell string, dst *T) error
+}
+
+// WriteTable 基于声明式 Column[T] 列契约，将类型安全迭代器产出的实体流式写入 xlsx。
+func WriteTable[T any](
+	ctx context.Context,
+	w io.Writer,
+	sheet string,
+	cols []Column[T],
+	next func() (T, bool, error),
+) error {
+	if next == nil {
+		return errors.New("excel: nil table iterator")
+	}
+
+	header := make([]string, len(cols))
+	for i, c := range cols {
+		header[i] = c.Header
+	}
+
+	return Write(ctx, w, sheet, header, func() ([]any, bool, error) {
+		item, ok, err := next()
+		if err != nil || !ok {
+			return nil, ok, err
+		}
+		row := make([]any, len(cols))
+		for i, c := range cols {
+			if c.Encode != nil {
+				row[i] = c.Encode(&item)
+			}
+		}
+		return row, true, nil
+	})
+}
+
 // Write 把表头与迭代器产出的行流式写入单个工作表的 xlsx 并落到 w。
 //
 // 内存占用为 O(1)：行数据逐条写入流式写入器，不缓存全量数据。

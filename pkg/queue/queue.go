@@ -150,20 +150,29 @@ type CronEntry struct {
 	Opts []asynq.Option
 }
 
-// Registry 负责集中注册任务工厂与 Cron 周期调度规则。
-//
-// 处理器注册收工厂而不是实例：worker 每次执行都需要一个元数据完整的新实例，
-// 由 Job 的构造器给出（而不是反射复制原型），因此类型在编译期确定、不再有静默丢弃。
-type Registry interface {
-	// Job 注册任务工厂；工厂返回的实例自带 JobMeta，payload 由 worker 反序列化填充。
-	Job(factory func() Job)
-	// Cron 登记一条周期调度规则。这里接收的是声明实例而非工厂：该实例是调度载荷的来源，
-	// 因此可以携带调用方给定的参数（如清理目录），处理器则由 Job 工厂负责注册。
-	Cron(spec string, job Job, opts ...asynq.Option)
-	// SetJobLockTTL 在注册表中配置任务名称级别的防重叠锁超时时间。
-	SetJobLockTTL(taskName string, ttl time.Duration)
-	// Get 查询指定任务名绑定的任务构造工厂。
-	Get(taskName string) (func() Job, bool)
+// JobOptions 把 Job 自声明的执行约束编译为 asynq 原生选项。
+// 顺序即优先级：调用方追加的选项在后面，按 asynq「后写入者生效」覆盖同类型选项。
+func JobOptions(job Job) []asynq.Option {
+	opts := make([]asynq.Option, 0, 4)
+
+	if queueName := ResolveQueueName(job); queueName != "" {
+		opts = append(opts, asynq.Queue(queueName))
+	}
+
+	retries := DefaultMaxRetries
+	if rp, ok := job.(MaxRetriesProvider); ok && rp.MaxRetries() > 0 {
+		retries = rp.MaxRetries()
+	}
+	opts = append(opts, asynq.MaxRetry(retries))
+
+	if tp, ok := job.(TimeoutProvider); ok && tp.Timeout() > 0 {
+		opts = append(opts, asynq.Timeout(tp.Timeout()))
+	}
+	if rp, ok := job.(RetentionProvider); ok && rp.Retention() > 0 {
+		opts = append(opts, asynq.Retention(rp.Retention()))
+	}
+
+	return opts
 }
 
 // QueueStatus 表示队列当前运行状态的统计指标。
@@ -172,41 +181,42 @@ type QueueStatus struct {
 	Pending   int
 	Running   int
 	Succeeded int
-	Failed    int
 	Scheduled int
 	Retry     int
 	Archived  int
 	Paused    bool
 }
 
-type jobRegistry struct {
+// Registry 集中注册任务工厂与 Cron 周期调度规则。
+//
+// 处理器注册收工厂而不是实例：worker 每次执行都需要一个元数据完整的新实例，
+// 由 Job 的构造器给出（而不是反射复制原型），因此类型在编译期确定、不再有静默丢弃。
+type Registry struct {
+	mu          sync.RWMutex
 	jobs        map[string]func() Job
 	cronEntries []CronEntry
 	jobLocks    map[string]time.Duration
-	mu          sync.RWMutex
 }
 
-var _ Registry = (*jobRegistry)(nil)
+var defaultReg = NewRegistry()
 
-var defaultReg = &jobRegistry{
-	jobs:     make(map[string]func() Job),
-	jobLocks: make(map[string]time.Duration),
-}
-
-// NewRegistry 创建独立的任务与调度注册表实例（供隔离测试或独立队列实例注入使用）。
-func NewRegistry() Registry {
-	return &jobRegistry{
+// NewRegistry 新建独立的注册中心，供测试或多实例场景隔离使用；
+// 生产代码统一使用 DefaultRegistry()。
+func NewRegistry() *Registry {
+	return &Registry{
 		jobs:     make(map[string]func() Job),
 		jobLocks: make(map[string]time.Duration),
 	}
 }
 
 // DefaultRegistry 返回全局单例任务与调度注册中心。
-func DefaultRegistry() Registry {
+// 队列注册表收敛为进程级单例：调度器、ServeMux 与巡检命令共享同一份注册状态。
+func DefaultRegistry() *Registry {
 	return defaultReg
 }
 
-func (r *jobRegistry) Job(factory func() Job) {
+// Job 注册任务工厂；工厂返回的实例自带 JobMeta，payload 由 worker 反序列化填充。
+func (r *Registry) Job(factory func() Job) {
 	if factory == nil {
 		panic("queue: nil job factory registered")
 	}
@@ -223,7 +233,7 @@ func (r *jobRegistry) Job(factory func() Job) {
 }
 
 // Get 查询已注册的任务构造工厂。
-func (r *jobRegistry) Get(taskName string) (func() Job, bool) {
+func (r *Registry) Get(taskName string) (func() Job, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -231,7 +241,9 @@ func (r *jobRegistry) Get(taskName string) (func() Job, bool) {
 	return f, ok
 }
 
-func (r *jobRegistry) Cron(spec string, job Job, opts ...asynq.Option) {
+// Cron 登记一条周期调度规则。这里接收的是声明实例而非工厂：该实例是调度载荷的来源，
+// 因此可以携带调用方给定的参数（如清理目录），处理器则由 Job 工厂负责注册。
+func (r *Registry) Cron(spec string, job Job, opts ...asynq.Option) {
 	if job == nil || spec == "" {
 		return
 	}
@@ -247,7 +259,7 @@ func (r *jobRegistry) Cron(spec string, job Job, opts ...asynq.Option) {
 }
 
 // SetJobLockTTL 在注册表中配置指定任务名对应的防重叠锁超时时间。
-func (r *jobRegistry) SetJobLockTTL(taskName string, ttl time.Duration) {
+func (r *Registry) SetJobLockTTL(taskName string, ttl time.Duration) {
 	if taskName == "" {
 		return
 	}
@@ -262,7 +274,7 @@ func (r *jobRegistry) SetJobLockTTL(taskName string, ttl time.Duration) {
 }
 
 // LookupLockTTL 查找任务的防重叠锁配置（优先尊重 Job 自声明，次之查询注册表）。
-func (r *jobRegistry) LookupLockTTL(taskName string, job Job) (time.Duration, bool) {
+func (r *Registry) LookupLockTTL(taskName string, job Job) (time.Duration, bool) {
 	if olp, ok := job.(OverlappingLockProvider); ok {
 		if ttl, enabled := olp.WithoutOverlapping(); enabled {
 			return ttl, true
@@ -276,10 +288,10 @@ func (r *jobRegistry) LookupLockTTL(taskName string, job Job) (time.Duration, bo
 	return ttl, ok
 }
 
-// GetCronEntries 返回所有已注册的定时周期任务切片副本。
-func GetCronEntries() []CronEntry {
-	defaultReg.mu.RLock()
-	defer defaultReg.mu.RUnlock()
+// Entries 返回所有已注册的定时周期任务切片副本。
+func (r *Registry) Entries() []CronEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 
-	return slices.Clone(defaultReg.cronEntries)
+	return slices.Clone(r.cronEntries)
 }

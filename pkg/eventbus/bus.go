@@ -1,4 +1,3 @@
-// Package eventbus 提供基于 Watermill CQRS 的领域事件总线、路由器与中间件生命周期管理。
 package eventbus
 
 import (
@@ -7,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
@@ -14,7 +14,6 @@ import (
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/ThreeDotsLabs/watermill/message/router/middleware"
 	"github.com/rs/zerolog"
-	"github.com/samber/lo"
 
 	"cgin/internal/config"
 	"cgin/pkg/logger"
@@ -33,6 +32,7 @@ type Option func(*Manager)
 // Manager 封装基于 Watermill CQRS 的事件总线、路由器与事件处理器生命周期。
 type Manager struct {
 	cfg            config.EventBusConfig
+	baseLogger     *zerolog.Logger
 	logger         watermill.LoggerAdapter
 	driver         PubSubDriver
 	router         *message.Router
@@ -46,9 +46,9 @@ type Manager struct {
 	handlerTimeout       time.Duration
 	customMiddlewares    []message.HandlerMiddleware
 
-	mu      sync.RWMutex
+	mu      sync.Mutex
 	running bool
-	closed  bool
+	closed  atomic.Bool
 }
 
 // WithCloseTimeout 设置事件路由器优雅退出的排空超时时间。
@@ -114,6 +114,7 @@ func NewManager(cfg config.EventBusConfig, zlog *zerolog.Logger, opts ...Option)
 
 	m := &Manager{
 		cfg:                  cfg,
+		baseLogger:           cmp.Or(zlog, logger.Default()),
 		logger:               adapter,
 		closeTimeout:         10 * time.Second,
 		retryMax:             3,
@@ -123,7 +124,9 @@ func NewManager(cfg config.EventBusConfig, zlog *zerolog.Logger, opts ...Option)
 	}
 
 	for _, opt := range opts {
-		opt(m)
+		if opt != nil {
+			opt(m)
+		}
 	}
 
 	driver, err := createDriver(m.cfg, adapter)
@@ -141,7 +144,13 @@ func NewManager(cfg config.EventBusConfig, zlog *zerolog.Logger, opts ...Option)
 	}
 	m.router = router
 
-	// 挂载中间件管道：异常恢复、链路追踪与上下文还原、关联标识、重试机制、超时控制与自定义拦截器。
+	// 挂载中间件管道：
+	// 1. Recoverer（异常恢复）
+	// 2. observabilityContextMiddleware（还原 Remote SpanContext + logger.WithContext(request_id)）
+	// 3. CorrelationID（关联标识）
+	// 4. finalErrorBoundaryMiddleware（重试耗尽后的毒丸兜底与 oops 结构化错误日志，防止 gochannel 无限 Nack）
+	// 5. Retry（指数退避重试）
+	// 6. Timeout（单次执行超时控制）
 	retryMiddleware := middleware.Retry{
 		MaxRetries:          m.retryMax,
 		InitialInterval:     m.retryInitialInterval,
@@ -153,21 +162,24 @@ func NewManager(cfg config.EventBusConfig, zlog *zerolog.Logger, opts ...Option)
 
 	router.AddMiddleware(
 		middleware.Recoverer,
-		traceAndCorrelationContextMiddleware,
+		observabilityContextMiddleware(m.baseLogger),
 		middleware.CorrelationID,
+		finalErrorBoundaryMiddleware(),
 		retryMiddleware.Middleware,
 		middleware.Timeout(m.handlerTimeout),
 	)
 
 	for _, mw := range m.customMiddlewares {
-		router.AddMiddleware(mw)
+		if mw != nil {
+			router.AddMiddleware(mw)
+		}
 	}
 
 	marshaler := defaultJSONMarshaler()
 
 	eventBus, err := cqrs.NewEventBusWithConfig(driver, cqrs.EventBusConfig{
 		GeneratePublishTopic: func(params cqrs.GenerateEventPublishTopicParams) (string, error) {
-			return qualifyTopic(cfg.TopicPrefix, params.EventName), nil
+			return qualifyTopic(m.cfg.TopicPrefix, params.EventName), nil
 		},
 		OnPublish: injectEventMetadata,
 		Marshaler: marshaler,
@@ -182,9 +194,9 @@ func NewManager(cfg config.EventBusConfig, zlog *zerolog.Logger, opts ...Option)
 
 	eventProcessor, err := cqrs.NewEventProcessorWithConfig(router, cqrs.EventProcessorConfig{
 		GenerateSubscribeTopic: func(params cqrs.EventProcessorGenerateSubscribeTopicParams) (string, error) {
-			return qualifyTopic(cfg.TopicPrefix, params.EventName), nil
+			return qualifyTopic(m.cfg.TopicPrefix, params.EventName), nil
 		},
-		SubscriberConstructor: func(params cqrs.EventProcessorSubscriberConstructorParams) (message.Subscriber, error) {
+		SubscriberConstructor: func(cqrs.EventProcessorSubscriberConstructorParams) (message.Subscriber, error) {
 			return driver, nil
 		},
 		Marshaler: marshaler,
@@ -214,58 +226,24 @@ func NewTestManager(opts ...Option) *Manager {
 	return mgr
 }
 
-// EventBus 返回内部的 CQRS EventBus 实例。
-func (m *Manager) EventBus() *cqrs.EventBus {
-	if m == nil {
-		return nil
-	}
-	return m.eventBus
-}
-
-// EventProcessor 返回内部的 CQRS EventProcessor 实例。
-func (m *Manager) EventProcessor() *cqrs.EventProcessor {
-	if m == nil {
-		return nil
-	}
-	return m.eventProcessor
-}
-
-// Router 返回内部维护的 Watermill 消息路由器。
-func (m *Manager) Router() *message.Router {
-	if m == nil {
-		return nil
-	}
-	return m.router
-}
-
-// Publisher 返回底层消息发布者。
-func (m *Manager) Publisher() message.Publisher {
-	if m == nil {
-		return nil
-	}
-	return m.driver
-}
-
-// Subscriber 返回底层消息订阅者。
-func (m *Manager) Subscriber() message.Subscriber {
-	if m == nil {
-		return nil
-	}
-	return m.driver
-}
-
 // RegisterHandler 向 EventProcessor 注册一个或多个强类型领域事件处理器，满足 Subscriber 接口契约。
 func (m *Manager) RegisterHandler(handlers ...EventHandler) error {
 	if m == nil || m.eventProcessor == nil {
 		return errors.New("event processor is not initialized")
 	}
+	if m.closed.Load() {
+		return errors.New("event bus manager is already closed")
+	}
 	if len(handlers) == 0 {
 		return nil
 	}
 
-	cqrsHandlers := lo.FilterMap(handlers, func(h EventHandler, _ int) (cqrs.EventHandler, bool) {
-		return h, h != nil
-	})
+	cqrsHandlers := make([]cqrs.EventHandler, 0, len(handlers))
+	for _, h := range handlers {
+		if h != nil {
+			cqrsHandlers = append(cqrsHandlers, h)
+		}
+	}
 	if len(cqrsHandlers) == 0 {
 		return nil
 	}
@@ -273,15 +251,16 @@ func (m *Manager) RegisterHandler(handlers ...EventHandler) error {
 	return m.eventProcessor.AddHandlers(cqrsHandlers...)
 }
 
-// RegisterHandlers 是 RegisterHandler 的语义化别名，方便批量注册强类型处理器。
-func (m *Manager) RegisterHandlers(handlers ...EventHandler) error {
-	return m.RegisterHandler(handlers...)
-}
-
-// Publish 将领域事件通过 EventBus 发布至对应的 Topic。
-func (m *Manager) Publish(ctx context.Context, event any) error {
+// Publish 将强类型领域事件通过 EventBus 发布至对应的 Topic。
+func (m *Manager) Publish(ctx context.Context, event Event) error {
 	if m == nil || m.eventBus == nil {
 		return errors.New("event bus is not initialized")
+	}
+	if m.closed.Load() {
+		return errors.New("event bus manager is already closed")
+	}
+	if event == nil {
+		return errors.New("event payload cannot be nil")
 	}
 	return m.eventBus.Publish(ctx, event)
 }
@@ -291,11 +270,11 @@ func (m *Manager) Run(ctx context.Context) error {
 	if m == nil || m.router == nil {
 		return errors.New("event bus router is not initialized")
 	}
-	m.mu.Lock()
-	if m.closed {
-		m.mu.Unlock()
+	if m.closed.Load() {
 		return errors.New("event bus manager is already closed")
 	}
+
+	m.mu.Lock()
 	if m.running {
 		m.mu.Unlock()
 		return errors.New("event bus manager is already running")
@@ -303,7 +282,6 @@ func (m *Manager) Run(ctx context.Context) error {
 	m.running = true
 	m.mu.Unlock()
 
-	// 复位运行标记，保证退出后实例可安全重启。
 	defer func() {
 		m.mu.Lock()
 		m.running = false
@@ -328,26 +306,22 @@ func (m *Manager) Close() error {
 	if m == nil {
 		return nil
 	}
-	m.mu.Lock()
-	if m.closed {
-		m.mu.Unlock()
+	if !m.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-	m.closed = true
-	m.mu.Unlock()
 
-	var errs []error
+	var closeErrs []error
 	if m.router != nil {
-		errs = append(errs, m.router.Close())
+		closeErrs = append(closeErrs, m.router.Close())
 	}
 	if m.driver != nil {
-		errs = append(errs, m.driver.Close())
+		closeErrs = append(closeErrs, m.driver.Close())
 	}
 
-	return errors.Join(errs...)
+	return errors.Join(closeErrs...)
 }
 
-// Shutdown 确保应用停止时自动回收总线资源，等同于 Close。
+// Shutdown 确保应用停止时自动回收总线资源，满足 do.ShutdownerWithError 契约。
 func (m *Manager) Shutdown() error {
 	return m.Close()
 }
@@ -355,11 +329,8 @@ func (m *Manager) Shutdown() error {
 func defaultJSONMarshaler() cqrs.JSONMarshaler {
 	return cqrs.JSONMarshaler{
 		GenerateName: func(v any) string {
-			if n, ok := v.(Event); ok {
-				return n.EventName()
-			}
-			if n, ok := v.(interface{ Name() string }); ok {
-				return n.Name()
+			if ev, ok := v.(Event); ok {
+				return ev.EventName()
 			}
 			return cqrs.StructName(v)
 		},

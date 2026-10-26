@@ -21,14 +21,15 @@ import (
 
 // Client 是队列基础设施的唯一实现类型：同一实例同时满足 Dispatcher、Inspector 与 Worker 三个 seam。
 type Client struct {
-	client          *asynq.Client
-	inspector       *asynq.Inspector
-	locker          Locker
-	registry        Registry
-	redisOpt        asynq.RedisConnOpt
+	client    *asynq.Client
+	inspector *asynq.Inspector
+	locker    Locker
+	redisOpt  asynq.RedisConnOpt
+
+	// 构造期固定字段：不再需要锁保护与后置 setter。
 	concurrency     int
 	shutdownTimeout time.Duration
-	logger          atomic.Pointer[zerolog.Logger]
+	logger          *zerolog.Logger
 	middlewares     []Middleware
 
 	// mu 保护运行期可变字段：server 与 scheduler 由业务 goroutine 写入、停机钩子读取
@@ -43,89 +44,50 @@ var (
 	_ Worker     = (*Client)(nil)
 )
 
+// Options 汇总队列客户端的可选依赖；未提供的字段各自退回安全默认值。
+type Options struct {
+	// Locker 为防并发重叠锁基础设施；nil 时退化为无锁部署形态。
+	Locker Locker
+	// Logger 为客户端内部告警的输出通道；nil 时退回包级兜底日志器。
+	Logger *zerolog.Logger
+	// Middlewares 为 worker 执行链的附加中间件（内置于 Locking/Logging 等之后）。
+	Middlewares []Middleware
+}
+
 // NewClient 初始化 Asynq 客户端与运维探针 Inspector。
 // 优先使用 12-Factor 单行 URL（支持 TLS 与 Sentinel）。
-func NewClient(cfg config.QueueConfig, lockers ...Locker) (*Client, func(), error) {
+func NewClient(cfg config.QueueConfig, opts Options) (*Client, error) {
 	redisURL := cmp.Or(cfg.RedisURL, "redis://127.0.0.1:6379")
 	redisOpt, err := asynq.ParseRedisURI(redisURL)
 	if err != nil {
-		return nil, nil, oops.Code(errs.CodeInternal).In("queue.NewClient.ParseRedisURI").Wrap(err)
+		return nil, oops.Code(errs.CodeInternal).In("queue.NewClient.ParseRedisURI").Wrap(err)
 	}
 
-	client := asynq.NewClient(redisOpt)
-	inspector := asynq.NewInspector(redisOpt)
-
-	var locker Locker
-	if len(lockers) > 0 && lockers[0] != nil {
-		locker = lockers[0]
+	logger := opts.Logger
+	if logger == nil {
+		logger = fallbackLog()
 	}
 
-	concurrency := cmp.Or(cfg.Concurrency, 10)
-	shutdownTimeout := cmp.Or(cfg.ShutdownTimeout, 3*time.Second)
-
-	c := &Client{
-		client:          client,
-		inspector:       inspector,
-		locker:          locker,
-		registry:        defaultReg,
+	return &Client{
+		client:          asynq.NewClient(redisOpt),
+		inspector:       asynq.NewInspector(redisOpt),
+		locker:          opts.Locker,
 		redisOpt:        redisOpt,
-		concurrency:     concurrency,
-		shutdownTimeout: shutdownTimeout,
-	}
-
-	cleanup := func() {
-		_ = c.Close()
-	}
-
-	return c, cleanup, nil
-}
-
-// SetRegistry 注入自定义任务注册表实例（未注入时默认使用 DefaultRegistry）。
-func (c *Client) SetRegistry(reg Registry) {
-	if reg != nil {
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		c.registry = reg
-	}
-}
-
-// SetConcurrency 配置工作协程并发处理数上限。
-func (c *Client) SetConcurrency(n int) {
-	if n > 0 {
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		c.concurrency = n
-	}
+		concurrency:     cmp.Or(cfg.Concurrency, 10),
+		shutdownTimeout: cmp.Or(cfg.ShutdownTimeout, 3*time.Second),
+		logger:          logger,
+		middlewares:     slices.Clone(opts.Middlewares),
+	}, nil
 }
 
 // Concurrency 返回配置的工作协程并发数上限。
 func (c *Client) Concurrency() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	return c.concurrency
-}
-
-// SetShutdownTimeout 设置优雅停机等待超时时间。
-func (c *Client) SetShutdownTimeout(d time.Duration) {
-	if d > 0 {
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		c.shutdownTimeout = d
-	}
 }
 
 // ShutdownTimeout 返回优雅停机等待超时时间。
 func (c *Client) ShutdownTimeout() time.Duration {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return cmp.Or(c.shutdownTimeout, 10*time.Second)
-}
-
-// SetLogger 设置自定义日志记录器，无锁并发安全；nil 忽略。
-func (c *Client) SetLogger(l *zerolog.Logger) {
-	if l != nil {
-		c.logger.Store(l)
-	}
+	return c.shutdownTimeout
 }
 
 // fallbackLogger 是队列包内部告警（调度注册失败、锁续期失败等）的兜底输出。
@@ -150,22 +112,12 @@ func fallbackLog() *zerolog.Logger {
 	return &nopLogger
 }
 
-// log 返回生效的日志器；未注入时退回包级兜底实例（永不为 nil，零锁竞争）。
+// log 返回生效的日志器（构造期已固定，永不为 nil）。
 func (c *Client) log() *zerolog.Logger {
-	if c == nil {
+	if c == nil || c.logger == nil {
 		return fallbackLog()
 	}
-	if l := c.logger.Load(); l != nil {
-		return l
-	}
-	return fallbackLog()
-}
-
-// Use 注册全局工作协程任务执行中间件 (OCP)。
-func (c *Client) Use(middlewares ...Middleware) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.middlewares = append(c.middlewares, middlewares...)
+	return c.logger
 }
 
 // Close 释放队列客户端与运维探针资源。
@@ -182,11 +134,6 @@ func (c *Client) Close() error {
 	return nil
 }
 
-// Shutdown 优雅关闭队列客户端及其持有的所有连接资源。
-func (c *Client) Shutdown() error {
-	return c.Close()
-}
-
 // HealthCheck 检查队列底层 Redis 连接健康状态。
 func (c *Client) HealthCheck() error {
 	if c == nil || c.inspector == nil {
@@ -197,7 +144,7 @@ func (c *Client) HealthCheck() error {
 }
 
 // Dispatch 将任务投递到队列，自动序列化载荷并应用 Job 自声明的执行约束与元数据信封。
-func (c *Client) Dispatch(ctx context.Context, job Job, opts ...DispatchOption) error {
+func (c *Client) Dispatch(ctx context.Context, job Job, opts ...asynq.Option) error {
 	if c == nil || c.client == nil {
 		return errs.Internal(errors.New("queue: client is nil"))
 	}
@@ -205,27 +152,7 @@ func (c *Client) Dispatch(ctx context.Context, job Job, opts ...DispatchOption) 
 		return errs.Internal(errors.New("queue: job is nil"))
 	}
 
-	cfg := &DispatchConfig{
-		QueueName:  ResolveQueueName(job),
-		MaxRetries: DefaultMaxRetries,
-	}
-	if rp, ok := job.(MaxRetriesProvider); ok && rp.MaxRetries() > 0 {
-		cfg.MaxRetries = rp.MaxRetries()
-	}
-	if tp, ok := job.(TimeoutProvider); ok && tp.Timeout() > 0 {
-		cfg.Timeout = tp.Timeout()
-	}
-	if retp, ok := job.(RetentionProvider); ok && retp.Retention() > 0 {
-		cfg.Retention = retp.Retention()
-	}
-
-	for _, opt := range opts {
-		if opt != nil {
-			opt(cfg)
-		}
-	}
-
-	payload, err := wrapEnvelope(ctx, job, cfg.Headers)
+	payload, err := wrapEnvelope(ctx, job)
 	if err != nil {
 		return errs.Internal(err)
 	}
@@ -238,7 +165,7 @@ func (c *Client) Dispatch(ctx context.Context, job Job, opts ...DispatchOption) 
 	}
 
 	task := asynq.NewTask(job.TaskName(), payload)
-	asynqOpts := cfg.compileAsynqOptions()
+	asynqOpts := append(JobOptions(job), opts...)
 
 	if _, err := c.client.EnqueueContext(ctx, task, asynqOpts...); err != nil {
 		return errs.Internal(fmt.Errorf("queue: failed to enqueue task: %w", err))
@@ -274,7 +201,6 @@ func (c *Client) Queues() ([]QueueStatus, error) {
 			Pending:   info.Pending,
 			Running:   info.Active,
 			Succeeded: info.Completed,
-			Failed:    info.Archived,
 			Scheduled: info.Scheduled,
 			Retry:     info.Retry,
 			Archived:  info.Archived,
@@ -334,6 +260,7 @@ func (c *Client) ListFailedAll(page, pageSize int) ([]*asynq.TaskInfo, error) {
 }
 
 // listAllArchivedTasks 遍历全部活跃队列汇总已归档的失败任务。
+// 逐页拉取至短页为止：单页固定截断会让跨队列巡检静默漏掉超出一页的任务。
 func (c *Client) listAllArchivedTasks() ([]*asynq.TaskInfo, error) {
 	queues, err := c.inspector.Queues()
 	if err != nil {
@@ -342,17 +269,22 @@ func (c *Client) listAllArchivedTasks() ([]*asynq.TaskInfo, error) {
 
 	var allTasks []*asynq.TaskInfo
 	for _, q := range queues {
-		tasks, err := c.inspector.ListArchivedTasks(q, asynq.Page(1), asynq.PageSize(1000))
-		if err != nil {
-			if !errors.Is(err, asynq.ErrQueueNotFound) {
-				c.log().Warn().
-					Err(err).
-					Str("queue", q).
-					Msg("failed to list archived tasks, skipped")
+		for page := 1; ; page++ {
+			tasks, err := c.inspector.ListArchivedTasks(q, asynq.Page(page), asynq.PageSize(1000))
+			if err != nil {
+				if !errors.Is(err, asynq.ErrQueueNotFound) {
+					c.log().Warn().
+						Err(err).
+						Str("queue", q).
+						Msg("failed to list archived tasks, skipped")
+				}
+				break
 			}
-			continue
+			allTasks = append(allTasks, tasks...)
+			if len(tasks) < 1000 {
+				break
+			}
 		}
-		allTasks = append(allTasks, tasks...)
 	}
 
 	return allTasks, nil

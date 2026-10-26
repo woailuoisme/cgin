@@ -79,23 +79,6 @@ func (l Loader) Languages() ([]string, error) {
 	return languages, nil
 }
 
-// Sections 返回一门语言下的全部分节名（即同名 TOML 文件的基名），已排序。
-func (l Loader) Sections(lang string) ([]string, error) {
-	entries, err := fs.ReadDir(l.filesystem(), lang)
-	if err != nil {
-		return nil, fmt.Errorf("i18n: read language directory %s failed: %w", lang, err)
-	}
-
-	sections := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), sectionSuffix) {
-			continue
-		}
-		sections = append(sections, strings.TrimSuffix(entry.Name(), sectionSuffix))
-	}
-	return sections, nil
-}
-
 // filesystem 返回实际使用的文件系统，零值回退内嵌资源。
 func (l Loader) filesystem() fs.FS {
 	if l.FS != nil {

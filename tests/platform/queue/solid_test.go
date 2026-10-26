@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,7 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"cgin/internal/config"
 	"cgin/pkg/logger"
 	"cgin/pkg/queue"
 )
@@ -56,8 +53,8 @@ func TestQueue_MemoryAndSyncDispatchers(t *testing.T) {
 		Content: "Code: 1234",
 	}
 
-	require.NoError(t, mem.Dispatch(ctx, job1, queue.WithQueue("high")))
-	require.NoError(t, mem.Dispatch(ctx, job2, queue.WithDelay(time.Minute)))
+	require.NoError(t, mem.Dispatch(ctx, job1, asynq.Queue("high")))
+	require.NoError(t, mem.Dispatch(ctx, job2, asynq.ProcessIn(time.Minute)))
 
 	assert.Equal(t, 2, mem.Count())
 	assert.Len(t, mem.DispatchedJobs(), 2)
@@ -102,36 +99,33 @@ func TestQueue_MemoryAndSyncDispatchers(t *testing.T) {
 	require.ErrorIs(t, err, expectedErr)
 }
 
-// TestQueue_DispatchOptions 验证框架原生 DispatchOption 编译与组合能力 (DIP)。
-func TestQueue_DispatchOptions(t *testing.T) {
-	cfg := &queue.DispatchConfig{}
-	now := time.Now().UTC()
-
-	opts := []queue.DispatchOption{
-		queue.WithQueue("critical"),
-		queue.WithDelay(2 * time.Minute),
-		queue.WithProcessAt(now.Add(10 * time.Minute)),
-		queue.WithTimeout(45 * time.Second),
-		queue.WithRetries(7),
-		queue.WithRetention(48 * time.Hour),
-		queue.WithUnique(5 * time.Minute),
-		queue.WithHeader("tenant_id", "org_abc"),
-		queue.WithAsynqOpt(asynq.TaskID("task_custom_123")),
+// TestQueue_JobOptions 验证 Job 自声明的执行约束被编译为 asynq 原生选项。
+func TestQueue_JobOptions(t *testing.T) {
+	declared := &dummyJob{
+		JobMeta: queue.NewJobMeta("notify:email", "critical").
+			WithRetries(7).
+			WithTimeout(45 * time.Second).
+			WithRetention(48 * time.Hour),
 	}
 
+	opts := queue.JobOptions(declared)
+	require.Len(t, opts, 4)
+
+	byType := make(map[asynq.OptionType]any, len(opts))
 	for _, opt := range opts {
-		opt(cfg)
+		byType[opt.Type()] = opt.Value()
 	}
 
-	assert.Equal(t, "critical", cfg.QueueName)
-	assert.Equal(t, 2*time.Minute, cfg.Delay)
-	assert.Equal(t, now.Add(10*time.Minute), cfg.ProcessAt)
-	assert.Equal(t, 45*time.Second, cfg.Timeout)
-	assert.Equal(t, 7, cfg.MaxRetries)
-	assert.Equal(t, 48*time.Hour, cfg.Retention)
-	assert.Equal(t, 5*time.Minute, cfg.UniqueTTL)
-	assert.Equal(t, "org_abc", cfg.Headers["tenant_id"])
-	assert.Len(t, cfg.RawAsynqOpts, 1)
+	assert.Equal(t, "critical", byType[asynq.QueueOpt])
+	assert.Equal(t, 7, byType[asynq.MaxRetryOpt])
+	assert.Equal(t, 45*time.Second, byType[asynq.TimeoutOpt])
+	assert.Equal(t, 48*time.Hour, byType[asynq.RetentionOpt])
+
+	// 未声明重试次数时退回默认值，且不产出可选的超时与保留选项。
+	plain := queue.JobOptions(&dummyJob{JobMeta: queue.NewJobMeta("plain:job")})
+	require.Len(t, plain, 2)
+	assert.Equal(t, queue.DefaultQueueName, plain[0].Value())
+	assert.Equal(t, queue.DefaultMaxRetries, plain[1].Value())
 }
 
 // TestQueue_MiddlewarePipeline 验证任务洋葱模型中间件链执行 (OCP/SRP)。
@@ -215,36 +209,4 @@ func TestQueue_PayloadSizeSecurityGuard(t *testing.T) {
 	// 使用内存派发器或序列化测试校验
 	mem := queue.NewMemoryDispatcher()
 	require.NoError(t, mem.Dispatch(context.Background(), largeJob))
-}
-
-// TestQueue_AtomicLoggerConcurrentSafety 验证热路径日志器的原子无锁安全性。
-func TestQueue_AtomicLoggerConcurrentSafety(t *testing.T) {
-	c, cleanup, err := queue.NewClient(config.QueueConfig{
-		RedisURL: "redis://127.0.0.1:6379",
-	})
-	require.NoError(t, err)
-	defer cleanup()
-
-	var wg sync.WaitGroup
-	var reads atomic.Int64
-
-	// 并发写 logger
-	wg.Go(func() {
-		for range 500 {
-			c.SetLogger(logger.Nop())
-		}
-	})
-
-	// 高并发读 log
-	for range 10 {
-		wg.Go(func() {
-			for range 1000 {
-				_ = c.NewServer(nil) // 内部间接调用 c.log()
-				reads.Add(1)
-			}
-		})
-	}
-
-	wg.Wait()
-	assert.Greater(t, reads.Load(), int64(5000))
 }

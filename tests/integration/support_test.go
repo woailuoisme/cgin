@@ -92,7 +92,7 @@ func openTestDB(t *testing.T) *database.DB {
 
 	cfg.Database.URL = dsn
 	cfg.Database.MaxOpenConns = 4
-	cfg.Database.MaxIdleConns = 4
+	cfg.Database.MinConns = 0
 
 	pool, err := database.Open(t.Context(), cfg.Database, "cgin-tests")
 	require.NoError(t, err)

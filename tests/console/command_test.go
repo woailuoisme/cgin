@@ -34,6 +34,7 @@ func TestRootCommand_Registration(t *testing.T) {
 		"route:list",
 		"scout:import",
 		"scout:flush",
+		"di:tree",
 	}
 
 	commandNames := lo.Map(cmd.Commands(), func(c *cobra.Command, _ int) string {
@@ -63,7 +64,7 @@ func TestRootCommand_Registration(t *testing.T) {
 	groupIDs := lo.Map(cmd.Groups(), func(g *cobra.Group, _ int) string {
 		return g.ID
 	})
-	assert.ElementsMatch(t, []string{"db", "geoip", "jwt", "make", "queue", "route", "scout"}, groupIDs)
+	assert.ElementsMatch(t, []string{"db", "di", "geoip", "jwt", "make", "queue", "route", "scout"}, groupIDs)
 
 	cmdMap := lo.KeyBy(cmd.Commands(), func(c *cobra.Command) string {
 		return c.Name()
@@ -73,6 +74,7 @@ func TestRootCommand_Registration(t *testing.T) {
 	assert.Equal(t, "db", cmdMap["db:migrate"].GroupID)
 	assert.Equal(t, "db", cmdMap["db:seed"].GroupID)
 	assert.Equal(t, "db", cmdMap["db:fresh"].GroupID)
+	assert.Equal(t, "di", cmdMap["di:tree"].GroupID)
 	assert.Equal(t, "geoip", cmdMap["geoip:update"].GroupID)
 	assert.Equal(t, "jwt", cmdMap["jwt:secret"].GroupID)
 	assert.Equal(t, "make", cmdMap["make:crud"].GroupID)

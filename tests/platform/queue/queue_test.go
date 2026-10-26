@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -106,7 +105,7 @@ func TestRegistryJobAndCron(t *testing.T) {
 	job := &dummyJob{JobMeta: queue.NewJobMeta("cron:task")}
 	queue.DefaultRegistry().Cron("*/5 * * * *", job)
 
-	entries := queue.GetCronEntries()
+	entries := queue.DefaultRegistry().Entries()
 	require.NotEmpty(t, entries)
 	found := false
 	for _, e := range entries {
@@ -306,87 +305,41 @@ func TestTryLockBehavior(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func TestWrapOverlappingJob(t *testing.T) {
-	ctx := t.Context()
-	var runCount int32
-
-	job := &countingJob{
-		JobMeta: queue.NewJobMeta("counting:job"),
-		counter: &runCount,
-	}
-
-	// 模拟已加锁状态
-	locked := false
-	locker := &mockLocker{
-		acquireFn: func(_ context.Context, _ string, _ time.Duration) (func(context.Context) error, bool, error) {
-			if locked {
-				return nil, false, nil
-			}
-			locked = true
-			return func(_ context.Context) error {
-				locked = false
-				return nil
-			}, true, nil
-		},
-	}
-
-	wrapped := queue.WrapOverlappingJob(job, 5*time.Minute, locker)
-	assert.Equal(t, "counting:job", wrapped.TaskName())
-
-	lockProvider, isLockProvider := wrapped.(queue.OverlappingLockProvider)
-	require.True(t, isLockProvider)
-	ttl, enabled := lockProvider.WithoutOverlapping()
-	assert.True(t, enabled)
-	assert.Equal(t, 5*time.Minute, ttl)
-
-	// 首次调用，应正常执行
-	require.NoError(t, wrapped.Handle(ctx))
-	assert.Equal(t, int32(1), atomic.LoadInt32(&runCount))
-
-	// 当锁被占用时，调用应跳过执行并不返回错误
-	locked = true
-	require.NoError(t, wrapped.Handle(ctx))
-	assert.Equal(t, int32(1), atomic.LoadInt32(&runCount), "锁被占用时不应增加执行计数")
-}
-
-type countingJob struct {
-	queue.JobMeta
-	counter *int32
-}
-
-func (j *countingJob) Handle(_ context.Context) error {
-	atomic.AddInt32(j.counter, 1)
-	return nil
-}
-
 func TestClientConcurrencyAndShutdownTimeout(t *testing.T) {
-	c, cleanup, err := queue.NewClient(config.QueueConfig{
+	c, err := queue.NewClient(config.QueueConfig{
 		RedisURL:        "redis://127.0.0.1:6379",
 		Concurrency:     5,
 		ShutdownTimeout: 15 * time.Second,
-	})
+	}, queue.Options{})
 	require.NoError(t, err)
-	defer cleanup()
+	defer func() { _ = c.Close() }()
 
 	assert.Equal(t, 5, c.Concurrency())
 	assert.Equal(t, 15*time.Second, c.ShutdownTimeout())
-
-	c.SetConcurrency(20)
-	assert.Equal(t, 20, c.Concurrency())
-
-	c.SetShutdownTimeout(30 * time.Second)
-	assert.Equal(t, 30*time.Second, c.ShutdownTimeout())
 }
 
 func TestClientConcurrencyAndShutdownTimeout_Default(t *testing.T) {
-	c, cleanup, err := queue.NewClient(config.QueueConfig{
+	c, err := queue.NewClient(config.QueueConfig{
 		RedisURL: "redis://127.0.0.1:6379",
-	})
+	}, queue.Options{})
 	require.NoError(t, err)
-	defer cleanup()
+	defer func() { _ = c.Close() }()
 
 	assert.Equal(t, 10, c.Concurrency())
 	assert.Equal(t, 3*time.Second, c.ShutdownTimeout())
+}
+
+// TestSchedulerLifecycle 锁定调度器启停：存在注册条目时可启动，停机幂等且不泄漏 goroutine。
+func TestSchedulerLifecycle(t *testing.T) {
+	queue.DefaultRegistry().Cron("*/5 * * * *", &dummyJob{JobMeta: queue.NewJobMeta("scheduler:lifecycle")})
+
+	c, err := queue.NewClient(config.QueueConfig{RedisURL: "redis://127.0.0.1:6379"}, queue.Options{})
+	require.NoError(t, err)
+	defer func() { _ = c.Close() }()
+
+	require.NoError(t, c.StartScheduler(time.UTC))
+	require.NoError(t, c.StopScheduler())
+	require.NoError(t, c.StopScheduler(), "重复停机必须幂等")
 }
 
 func TestAdaptLocker(t *testing.T) {

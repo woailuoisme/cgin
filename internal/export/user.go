@@ -17,24 +17,37 @@ const (
 	userChunkSize = 500
 )
 
-// userHeader 是用户导出的固定表头。
-var userHeader = []string{"ID", "Name", "Email", "Role", "Status", "Created At"}
-
-// userRow 把用户实体投影为导出单元格，未设置的时间落成空单元格。
-func userRow(entity *sqlc.User) []any {
-	var createdAt string
-	if !entity.CreatedAt.IsZero() {
-		createdAt = entity.CreatedAt.UTC().Format(time.RFC3339)
-	}
-
-	return []any{
-		entity.ID,
-		entity.Name,
-		entity.Email,
-		entity.Role,
-		entity.Status,
-		createdAt,
-	}
+// userColumns 定义用户导出的声明式强类型列契约。
+var userColumns = []excel.Column[sqlc.User]{
+	{
+		Header: "ID",
+		Encode: func(u *sqlc.User) any { return u.ID },
+	},
+	{
+		Header: "Name",
+		Encode: func(u *sqlc.User) any { return u.Name },
+	},
+	{
+		Header: "Email",
+		Encode: func(u *sqlc.User) any { return u.Email },
+	},
+	{
+		Header: "Role",
+		Encode: func(u *sqlc.User) any { return u.Role },
+	},
+	{
+		Header: "Status",
+		Encode: func(u *sqlc.User) any { return u.Status },
+	},
+	{
+		Header: "Created At",
+		Encode: func(u *sqlc.User) any {
+			if u.CreatedAt.IsZero() {
+				return ""
+			}
+			return u.CreatedAt.UTC().Format(time.RFC3339)
+		},
+	},
 }
 
 // Users 把符合条件的用户按键集游标分块拉取并流式写入 xlsx。
@@ -54,21 +67,21 @@ func Users(
 		ended   bool
 	)
 
-	next := func() ([]any, bool, error) {
+	next := func() (sqlc.User, bool, error) {
 		for cursor >= len(buffer) {
 			if err := ctx.Err(); err != nil {
-				return nil, false, err
+				return sqlc.User{}, false, err
 			}
 			if ended {
-				return nil, false, nil
+				return sqlc.User{}, false, nil
 			}
 
 			chunk, err := fetch(ctx, filter, afterID, userChunkSize)
 			if err != nil {
-				return nil, false, err
+				return sqlc.User{}, false, err
 			}
 			if len(chunk) == 0 {
-				return nil, false, nil
+				return sqlc.User{}, false, nil
 			}
 			if len(chunk) < userChunkSize {
 				ended = true
@@ -79,10 +92,10 @@ func Users(
 			afterID = chunk[len(chunk)-1].ID
 		}
 
-		row := userRow(&buffer[cursor])
+		entity := buffer[cursor]
 		cursor++
-		return row, true, nil
+		return entity, true, nil
 	}
 
-	return excel.Write(ctx, w, userSheet, userHeader, next)
+	return excel.WriteTable(ctx, w, userSheet, userColumns, next)
 }

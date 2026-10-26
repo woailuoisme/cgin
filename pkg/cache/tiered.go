@@ -1,12 +1,11 @@
-// Package cache 提供高性能缓存存储、双级自失效缓存与分布式互斥锁支持。
 package cache
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -68,12 +67,14 @@ type TieredStore struct {
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
-	mu     sync.RWMutex
-	closed bool
+	closed atomic.Bool
 }
 
-// 确保 *TieredStore 完整实现 Store 契约。
-var _ Store = (*TieredStore)(nil)
+// 确保 *TieredStore 完整实现 Store 与 LockProvider 契约。
+var (
+	_ Store        = (*TieredStore)(nil)
+	_ LockProvider = (*TieredStore)(nil)
+)
 
 // NewTieredStore 构造基于本地内存 L1 与分布式缓存 L2 的双级自失效缓存实例。
 func NewTieredStore(l1 *MemoryStore, l2 *Client, opts ...TieredOption) *TieredStore {
@@ -126,17 +127,19 @@ func (t *TieredStore) InstanceID() string {
 	return t.instanceID
 }
 
-// Locker 返回互斥锁管理器（优先适配本地内存环境）。
+// Locker 返回互斥锁管理器：存在分布式 L2 时优先返回集群级分布式锁，否则退回本地内存锁。
 func (t *TieredStore) Locker() Locker {
+	if t.l2 != nil {
+		return t.l2.Locker()
+	}
 	return t.l1.Locker()
 }
 
 // Ping 检查双级缓存连通性与可用性。
 func (t *TieredStore) Ping(ctx context.Context) error {
-	if t.isClosed() {
-		return errClosed
+	if err := t.checkReady(ctx); err != nil {
+		return err
 	}
-
 	if err := t.l1.Ping(ctx); err != nil {
 		return err
 	}
@@ -148,16 +151,12 @@ func (t *TieredStore) Ping(ctx context.Context) error {
 
 // Close 安全平滑关闭后台 Pub/Sub 订阅协程并释放存储资源。
 func (t *TieredStore) Close() error {
-	t.mu.Lock()
-	if t.closed {
-		t.mu.Unlock()
+	if !t.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-	t.closed = true
 	if t.cancel != nil {
 		t.cancel()
 	}
-	t.mu.Unlock()
 
 	t.wg.Wait()
 
@@ -173,67 +172,52 @@ func (t *TieredStore) Close() error {
 	return errors.Join(errs...)
 }
 
-// Get 读取指定键的值，优先命中本地 L1 内存；Miss 时穿透至分布式 L2 并回填 L1。
-func (t *TieredStore) Get(ctx context.Context, key string) (string, error) {
+// Shutdown 实现优雅停机钩子契约。
+func (t *TieredStore) Shutdown() error {
+	return t.Close()
+}
+
+func (t *TieredStore) checkReady(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if t.closed.Load() {
+		return errClosed
+	}
+	return nil
+}
+
+// Get 读取指定键的值，优先命中本地 L1 内存；Miss 时穿透至分布式 L2 并按 l1TTL 窗口回填 L1。
+func (t *TieredStore) Get(ctx context.Context, key string) (string, error) {
+	if err := t.checkReady(ctx); err != nil {
 		return "", err
 	}
-	if t.isClosed() {
-		return "", errClosed
-	}
-
-	// 1. 优先查本地 L1
-	val, err := t.l1.Get(ctx, key)
-	if err == nil {
-		return val, nil
-	}
-	if !errors.Is(err, ErrNotFound) && ctx.Err() != nil {
-		return "", ctx.Err()
-	}
-
 	if t.l2 == nil {
-		return "", ErrNotFound
+		return t.l1.Get(ctx, key)
 	}
 
-	// 2. L1 Miss，通过 singleflight 合并并发 L2 回源请求并回填 L1
-	ch := t.group.DoChan("get:"+key, func() (any, error) {
-		fillCtx := context.WithoutCancel(ctx)
-		if cached, err := t.l1.Get(fillCtx, key); err == nil {
-			return cached, nil
-		}
-
-		v, err := t.l2.Get(fillCtx, key)
-		if err != nil {
-			return "", err
-		}
-
-		l1TTL := t.l1TTL
-		if ttl, ttlErr := t.l2.TTL(fillCtx, key); ttlErr == nil {
-			l1TTL = t.effectiveL1TTL(ttl)
-		}
-		_ = t.l1.Set(fillCtx, key, v, l1TTL)
-		return v, nil
-	})
-
-	select {
-	case res := <-ch:
-		if res.Err != nil {
-			return "", res.Err
-		}
-		str, _ := res.Val.(string)
-		return str, nil
-	case <-ctx.Done():
-		return "", ctx.Err()
-	}
+	return rememberFlight(
+		ctx,
+		&t.group,
+		"get:"+key,
+		func(gCtx context.Context) (string, error) {
+			return t.l1.Get(gCtx, key)
+		},
+		func(fillCtx context.Context) (string, error) {
+			v, err := t.l2.Get(fillCtx, key)
+			if err != nil {
+				return "", err
+			}
+			_ = t.l1.Set(fillCtx, key, v, t.l1TTL)
+			return v, nil
+		},
+	)
 }
 
 // Set 写入键值并设置过期时间：先写 L2，再同步写入 L1，最后广播失效通知。
 func (t *TieredStore) Set(ctx context.Context, key, value string, ttl time.Duration) error {
-	if err := ctx.Err(); err != nil {
+	if err := t.checkReady(ctx); err != nil {
 		return err
-	}
-	if t.isClosed() {
-		return errClosed
 	}
 	if ttl <= 0 {
 		return invalidTTLErr(key, ttl)
@@ -246,18 +230,14 @@ func (t *TieredStore) Set(ctx context.Context, key, value string, ttl time.Durat
 	}
 
 	_ = t.l1.Set(ctx, key, value, t.effectiveL1TTL(ttl))
-
 	t.publishInvalidation(ctx, key)
 	return nil
 }
 
 // SetNX 仅在键不存在时写入：穿透至 L2 保证强一致原子抢占。
 func (t *TieredStore) SetNX(ctx context.Context, key, value string, ttl time.Duration) (bool, error) {
-	if err := ctx.Err(); err != nil {
+	if err := t.checkReady(ctx); err != nil {
 		return false, err
-	}
-	if t.isClosed() {
-		return false, errClosed
 	}
 	if ttl <= 0 {
 		return false, invalidTTLErr(key, ttl)
@@ -268,7 +248,6 @@ func (t *TieredStore) SetNX(ctx context.Context, key, value string, ttl time.Dur
 		if err != nil || !ok {
 			return ok, err
 		}
-
 		_ = t.l1.Set(ctx, key, value, t.effectiveL1TTL(ttl))
 		t.publishInvalidation(ctx, key)
 		return true, nil
@@ -279,11 +258,8 @@ func (t *TieredStore) SetNX(ctx context.Context, key, value string, ttl time.Dur
 
 // Exists 检查键是否存在（优先查询 L1，Miss 时查询 L2）。
 func (t *TieredStore) Exists(ctx context.Context, key string) (bool, error) {
-	if err := ctx.Err(); err != nil {
+	if err := t.checkReady(ctx); err != nil {
 		return false, err
-	}
-	if t.isClosed() {
-		return false, errClosed
 	}
 
 	if exists, err := t.l1.Exists(ctx, key); err == nil && exists {
@@ -298,11 +274,8 @@ func (t *TieredStore) Exists(ctx context.Context, key string) (bool, error) {
 
 // Increment 执行原子自增，直接穿透至 L2 保证集群强一致，并同步失效 L1。
 func (t *TieredStore) Increment(ctx context.Context, key string, ttl time.Duration) (int64, error) {
-	if err := ctx.Err(); err != nil {
+	if err := t.checkReady(ctx); err != nil {
 		return 0, err
-	}
-	if t.isClosed() {
-		return 0, errClosed
 	}
 	if ttl <= 0 {
 		return 0, invalidTTLErr(key, ttl)
@@ -323,11 +296,8 @@ func (t *TieredStore) Increment(ctx context.Context, key string, ttl time.Durati
 
 // TTL 获取键的剩余有效时间，以分布式 L2 事实为准。
 func (t *TieredStore) TTL(ctx context.Context, key string) (time.Duration, error) {
-	if err := ctx.Err(); err != nil {
+	if err := t.checkReady(ctx); err != nil {
 		return 0, err
-	}
-	if t.isClosed() {
-		return 0, errClosed
 	}
 
 	if t.l2 != nil {
@@ -338,11 +308,8 @@ func (t *TieredStore) TTL(ctx context.Context, key string) (time.Duration, error
 
 // Delete 删除指定键列表，同步清除 L1 与 L2 并广播失效。
 func (t *TieredStore) Delete(ctx context.Context, keys ...string) (int64, error) {
-	if err := ctx.Err(); err != nil {
+	if err := t.checkReady(ctx); err != nil {
 		return 0, err
-	}
-	if t.isClosed() {
-		return 0, errClosed
 	}
 	if len(keys) == 0 {
 		return 0, nil
@@ -359,11 +326,8 @@ func (t *TieredStore) Delete(ctx context.Context, keys ...string) (int64, error)
 
 // DeleteIfMatch 仅当键值匹配时原子删除（用于分布式锁释放）。
 func (t *TieredStore) DeleteIfMatch(ctx context.Context, key, expected string) (bool, error) {
-	if err := ctx.Err(); err != nil {
+	if err := t.checkReady(ctx); err != nil {
 		return false, err
-	}
-	if t.isClosed() {
-		return false, errClosed
 	}
 
 	if t.l2 != nil {
@@ -379,63 +343,46 @@ func (t *TieredStore) DeleteIfMatch(ctx context.Context, key, expected string) (
 	return t.l1.DeleteIfMatch(ctx, key, expected)
 }
 
-// Remember 防击穿回源读取或计算写入：本地 singleflight 与 L2 双重防护。
+// Remember 防击穿回源读取或计算写入：通过单层 singleflight 协调 L1 / L2 查询与回源。
 func (t *TieredStore) Remember(
 	ctx context.Context,
 	key string,
 	ttl time.Duration,
 	load func(context.Context) (string, error),
 ) (string, error) {
-	if err := ctx.Err(); err != nil {
+	if err := t.checkReady(ctx); err != nil {
 		return "", err
 	}
-	if t.isClosed() {
-		return "", errClosed
-	}
 
-	// 1. 优先查本地 L1
-	if cached, err := t.l1.Get(ctx, key); err == nil {
-		return cached, nil
-	}
+	return rememberFlight(
+		ctx,
+		&t.group,
+		key,
+		func(gCtx context.Context) (string, error) {
+			return t.l1.Get(gCtx, key)
+		},
+		func(fillCtx context.Context) (string, error) {
+			if t.l2 != nil {
+				if v, err := t.l2.Get(fillCtx, key); err == nil {
+					_ = t.l1.Set(fillCtx, key, v, t.effectiveL1TTL(ttl))
+					return v, nil
+				} else if !errors.Is(err, ErrNotFound) {
+					return "", err
+				}
+			}
 
-	// 2. 本地 singleflight 聚合，防止并发穿透
-	ch := t.group.DoChan(key, func() (any, error) {
-		fillCtx := context.WithoutCancel(ctx)
+			loaded, err := load(fillCtx)
+			if err != nil {
+				return "", err
+			}
 
-		// 二次检查 L1
-		if cached, err := t.l1.Get(fillCtx, key); err == nil {
-			return cached, nil
-		}
-
-		var loaded string
-		var err error
-
-		if t.l2 != nil {
-			loaded, err = t.l2.Remember(fillCtx, key, ttl, load)
-		} else {
-			loaded, err = t.l1.Remember(fillCtx, key, ttl, load)
-		}
-		if err != nil {
-			return "", err
-		}
-
-		_ = t.l1.Set(fillCtx, key, loaded, t.effectiveL1TTL(ttl))
-		return loaded, nil
-	})
-
-	select {
-	case res := <-ch:
-		if res.Err != nil {
-			return "", res.Err
-		}
-		val, ok := res.Val.(string)
-		if !ok {
-			return "", errors.New("cache: load result is not a string")
-		}
-		return val, nil
-	case <-ctx.Done():
-		return "", ctx.Err()
-	}
+			if t.l2 != nil {
+				_ = t.l2.Set(fillCtx, key, loaded, ttl)
+			}
+			_ = t.l1.Set(fillCtx, key, loaded, t.effectiveL1TTL(ttl))
+			return loaded, nil
+		},
+	)
 }
 
 // publishInvalidation 向集群广播缓存失效消息。
@@ -518,20 +465,10 @@ func (t *TieredStore) handleInvalidation(payload string) {
 	}
 }
 
-func (t *TieredStore) isClosed() bool {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.closed
-}
-
 // effectiveL1TTL 计算本地 L1 缓存的生效寿命，不超过预设上限。
 func (t *TieredStore) effectiveL1TTL(ttl time.Duration) time.Duration {
 	if ttl > 0 && ttl < t.l1TTL {
 		return ttl
 	}
 	return t.l1TTL
-}
-
-func invalidTTLErr(key string, ttl time.Duration) error {
-	return fmt.Errorf("cache: ttl for key %s must be positive, got %s", key, ttl)
 }

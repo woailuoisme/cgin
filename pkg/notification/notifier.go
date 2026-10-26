@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/hibiken/asynq"
 	"github.com/samber/lo"
 	"github.com/samber/oops"
 	"golang.org/x/sync/errgroup"
@@ -98,6 +99,11 @@ func (n *Notifier) Close() error {
 	return nil
 }
 
+// Shutdown 释放工作协程池，满足 do.ShutdownerWithError 契约。
+func (n *Notifier) Shutdown() error {
+	return n.Close()
+}
+
 // toSlice 将单个实体或切片归一化为 []any。
 func toSlice(target any) []any {
 	if target == nil {
@@ -168,16 +174,16 @@ func dispatchQueueJob(ctx context.Context, q queue.Dispatcher, notif Notificatio
 		return false
 	}
 
-	var dispatchOpts []queue.DispatchOption
+	var dispatchOpts []asynq.Option
 	if sqo, ok := notif.(contract.ShouldQueueWithOptions); ok {
 		if queueName := sqo.QueueName(); queueName != "" {
-			dispatchOpts = append(dispatchOpts, queue.WithQueue(queueName))
+			dispatchOpts = append(dispatchOpts, asynq.Queue(queueName))
 		}
 		if retries := sqo.MaxRetries(); retries > 0 {
-			dispatchOpts = append(dispatchOpts, queue.WithRetries(retries))
+			dispatchOpts = append(dispatchOpts, asynq.MaxRetry(retries))
 		}
 		if delay := sqo.Delay(); delay > 0 {
-			dispatchOpts = append(dispatchOpts, queue.WithDelay(delay))
+			dispatchOpts = append(dispatchOpts, asynq.ProcessIn(delay))
 		}
 	}
 

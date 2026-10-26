@@ -68,6 +68,11 @@ func (d *DB) Close() error {
 	return nil
 }
 
+// Shutdown 释放连接池，满足 do.ShutdownerWithContextAndError 契约。
+func (d *DB) Shutdown(_ context.Context) error {
+	return d.Close()
+}
+
 // ctxQueriesKey 是 context 中存放事务查询集的私有键类型。
 type ctxQueriesKey struct{}
 

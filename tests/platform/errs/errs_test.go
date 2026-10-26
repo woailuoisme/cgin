@@ -507,4 +507,75 @@ func TestOopsFields(t *testing.T) {
 		assert.Equal(t, "query_preview", fields[0].Key)
 		assert.Equal(t, msgInternal, extractValue(fields[0]))
 	})
+
+	t.Run("Error.With 与 WithMap 及 Hint 链式绑定可被提取", func(t *testing.T) {
+		err := errs.New(errs.CodeExcelDuplicateRow, "Duplicate row").
+			With("sheet", "Users").
+			WithMap(map[string]any{"row": 5, "password_hash": "secret"}).
+			Hint("Verify unique column constraints before importing")
+
+		fields := errs.OopsFields(err)
+		fieldMap := make(map[string]any, len(fields))
+		for _, f := range fields {
+			fieldMap[f.Key] = extractValue(f)
+		}
+		assert.Equal(t, "Users", fieldMap["sheet"])
+		assert.Equal(t, 5, fieldMap["row"])
+		assert.Equal(t, "***", fieldMap["password_hash"])
+
+		oopsErr, ok := oops.AsOops(err)
+		require.True(t, ok)
+		assert.Equal(t, "excel", oopsErr.Domain())
+		assert.Equal(t, "Verify unique column constraints before importing", oopsErr.Hint())
+	})
+}
+
+// TestDomainCategorization 验证错误码按业务子系统自动归类到 oops Domain。
+func TestDomainCategorization(t *testing.T) {
+	tests := []struct {
+		code       errs.Code
+		wantDomain string
+	}{
+		{errs.CodeAuthInvalidCredentials, "auth"},
+		{errs.CodeExcelOpenError, "excel"},
+		{errs.CodeEmptySheets, "excel"},
+		{errs.CodeCSVWriteError, "excel"},
+		{errs.CodeNotificationRateLimited, "notification"},
+		{errs.CodeMailMissingRecipient, "mail"},
+		{errs.CodeSMSMissingPhone, "sms"},
+		{errs.CodePaymentCapabilityNotSupported, "payment"},
+		{errs.CodeInvalidPaymentConfig, "payment"},
+		{errs.CodeDatabaseUnavailable, "database"},
+		{errs.CodeBadRequest, "app"},
+	}
+
+	for _, tt := range tests {
+		err := errs.New(tt.code, "msg")
+		oopsErr, ok := oops.AsOops(err)
+		require.True(t, ok)
+		assert.Equal(t, tt.wantDomain, oopsErr.Domain(), "code %s domain mismatch", tt.code)
+	}
+}
+
+// TestConstraintHelpers 验证驱动无关的数据库约束冲突识别辅助函数。
+func TestConstraintHelpers(t *testing.T) {
+	uniqueErr := &pgconn.PgError{Code: "23505", ConstraintName: "idx_user_email"}
+	fkErr := &pgconn.PgError{Code: "23503", ConstraintName: "fk_post_user"}
+	otherErr := errors.New("network timeout")
+
+	name, ok := errs.UniqueConstraint(uniqueErr)
+	assert.True(t, ok)
+	assert.Equal(t, "idx_user_email", name)
+
+	_, ok = errs.UniqueConstraint(fkErr)
+	assert.False(t, ok)
+
+	assert.True(t, errs.IsUniqueViolation(uniqueErr))
+	assert.True(t, errs.IsUniqueViolation(uniqueErr, "idx_user_username", "idx_user_email"))
+	assert.False(t, errs.IsUniqueViolation(uniqueErr, "idx_user_username"))
+	assert.False(t, errs.IsUniqueViolation(otherErr))
+
+	assert.True(t, errs.IsForeignKeyViolation(fkErr))
+	assert.False(t, errs.IsForeignKeyViolation(uniqueErr))
+	assert.False(t, errs.IsForeignKeyViolation(otherErr))
 }

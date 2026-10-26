@@ -36,7 +36,7 @@ func TestImageClientSeparatesPublicAndInternalURL(t *testing.T) {
 	assert.Contains(t, url, "https://img.example.com/insecure/", "签名 URL 必须走对外地址")
 	assert.NotContains(t, url, server.URL, "签名 URL 不得暴露内部探测地址")
 
-	require.NoError(t, client.CheckHealth(t.Context()))
+	require.NoError(t, client.Ping(t.Context()))
 	assert.Equal(t, 1, probes, "健康探测应命中内部地址")
 }
 
@@ -53,5 +53,5 @@ func TestImageClientFallsBackToBaseURL(t *testing.T) {
 		Insecure: true,
 	})
 
-	require.NoError(t, client.CheckHealth(t.Context()))
+	require.NoError(t, client.Ping(t.Context()))
 }

@@ -113,8 +113,8 @@ func NewJWTCodec(secret []byte, issuer string, accessTTL, refreshTTL time.Durati
 	}
 }
 
-// IssuePair 签发访问令牌与刷新令牌对。
-func (c *JWTCodec) IssuePair(userID, role string, accessTTL, refreshTTL time.Duration, customClaims map[string]any) (TokenPair, error) {
+// IssuePair 签发访问令牌与刷新令牌对；withRefresh 为 false 时只签访问令牌。
+func (c *JWTCodec) IssuePair(userID, role string, accessTTL, refreshTTL time.Duration, customClaims map[string]any, withRefresh bool) (TokenPair, error) {
 	now := time.Now().UTC()
 	if accessTTL <= 0 {
 		accessTTL = c.accessTTL
@@ -123,23 +123,27 @@ func (c *JWTCodec) IssuePair(userID, role string, accessTTL, refreshTTL time.Dur
 		refreshTTL = c.refreshTTL
 	}
 	accessExpiresAt := now.Add(accessTTL)
-	refreshExpiresAt := now.Add(refreshTTL)
 
 	accessToken, err := c.Sign(userID, role, TypeAccess, now, accessExpiresAt, customClaims)
 	if err != nil {
 		return TokenPair{}, err
 	}
+
+	pair := TokenPair{AccessToken: accessToken, AccessExpiresAt: accessExpiresAt}
+	if !withRefresh {
+		// 不签刷新令牌：RefreshToken 留空，调用方据此明确“本次会话不可续期”。
+		return pair, nil
+	}
+
+	refreshExpiresAt := now.Add(refreshTTL)
 	refreshToken, err := c.Sign(userID, role, TypeRefresh, now, refreshExpiresAt, nil)
 	if err != nil {
 		return TokenPair{}, err
 	}
 
-	return TokenPair{
-		AccessToken:      accessToken,
-		RefreshToken:     refreshToken,
-		AccessExpiresAt:  accessExpiresAt,
-		RefreshExpiresAt: refreshExpiresAt,
-	}, nil
+	pair.RefreshToken = refreshToken
+	pair.RefreshExpiresAt = refreshExpiresAt
+	return pair, nil
 }
 
 // Sign 构造带 JTI 与规范声明的 HMAC-SHA256 JWT 令牌。
@@ -223,12 +227,12 @@ func (i *TokenIssuer) Blacklist() *BlacklistManager {
 
 // Issue 签发标准访问令牌与刷新令牌。
 func (i *TokenIssuer) Issue(userID, role string) (TokenPair, error) {
-	return i.codec.IssuePair(userID, role, 0, 0, nil)
+	return i.codec.IssuePair(userID, role, 0, 0, nil, true)
 }
 
-// IssueWithCustom 允许覆盖 TTL 与附加自定义声明签发双令牌。
-func (i *TokenIssuer) IssueWithCustom(userID, role string, accessTTL, refreshTTL time.Duration, customClaims map[string]any) (TokenPair, error) {
-	return i.codec.IssuePair(userID, role, accessTTL, refreshTTL, customClaims)
+// IssueWithCustom 允许覆盖 TTL、附加自定义声明并控制是否签发刷新令牌。
+func (i *TokenIssuer) IssueWithCustom(userID, role string, accessTTL, refreshTTL time.Duration, customClaims map[string]any, withRefresh bool) (TokenPair, error) {
+	return i.codec.IssuePair(userID, role, accessTTL, refreshTTL, customClaims, withRefresh)
 }
 
 // Parse 校验并解析原始令牌，校验失败返回标准化 401 错误。

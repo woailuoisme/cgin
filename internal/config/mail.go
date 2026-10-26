@@ -5,11 +5,11 @@ import (
 	"strings"
 )
 
-// MailConfig 描述邮件发信服务配置，支持 mailpit、resend、log、null 与 memory 驱动。
+// MailConfig 描述邮件发信服务配置，支持 mailpit 与 resend 驱动。
 type MailConfig struct {
-	// Enabled 控制是否启用真实邮件外发 (默认 true；设为 false 时无论配置何种驱动均自动旁路降级为 log 发信)。
+	// Enabled 控制是否启用真实邮件外发 (默认 true)。
 	Enabled *bool `env:"MAIL_ENABLED" envDefault:"true"`
-	// Driver 邮件发送驱动 (mailpit: 本地开发与测试, resend: 现代化云端发信, log: 控制台结构化日志, null: 静默丢弃, memory: 内存测试)
+	// Driver 邮件发送驱动 (mailpit: 本地开发与测试, resend: 现代化云端发信)
 	Driver string `env:"MAIL_DRIVER" envDefault:"mailpit"`
 	// FromAddress 发件人邮箱地址
 	FromAddress string `env:"MAIL_FROM_ADDRESS" envDefault:"no-reply@cgin.local"`
@@ -56,10 +56,8 @@ func (m *MailConfig) Validate() error {
 		if strings.TrimSpace(m.Resend.APIKey) == "" {
 			return errors.New("resend api key cannot be empty when mail driver is resend")
 		}
-	case "log", "null", "memory":
-		// 开箱即用无需网络凭据
 	default:
-		return errors.New("unsupported mail driver: " + m.Driver + " (supported: 'mailpit', 'resend', 'log', 'null', 'memory')")
+		return errors.New("unsupported mail driver: " + m.Driver + " (supported: 'mailpit', 'resend')")
 	}
 
 	return nil

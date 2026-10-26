@@ -238,15 +238,12 @@ func TestPaymentMoneyVO(t *testing.T) {
 		Amount: 100, // 应当被 Money 覆盖
 	}
 	assert.Equal(t, int64(9999), req.EffectiveAmount())
-	assert.Equal(t, "CNY", req.EffectiveMoney().Currency().Code)
-	assert.Equal(t, int64(9999), req.EffectiveMoney().ToCents())
 
 	// 回退至普通 Amount
 	reqFallback := payment.CreateRequest{
 		Amount: 8888,
 	}
 	assert.Equal(t, int64(8888), reqFallback.EffectiveAmount())
-	assert.Equal(t, int64(8888), reqFallback.EffectiveMoney().ToCents())
 
 	// 2. RefundRequest 金额推导
 	totalM, err := money.NewFromCents(10000, "CNY")
@@ -261,11 +258,6 @@ func TestPaymentMoneyVO(t *testing.T) {
 	}
 	assert.Equal(t, int64(10000), refundReq.EffectiveTotalAmount())
 	assert.Equal(t, int64(5000), refundReq.EffectiveRefundAmount())
-
-	// 3. PaymentResult WithMoney
-	res := (&payment.PaymentResult{PaidAmount: 6600}).WithMoney(m)
-	assert.NotNil(t, res.Money)
-	assert.Equal(t, int64(9999), res.Money.ToCents())
 }
 
 type stubPayOnlyProvider struct{}
@@ -279,6 +271,7 @@ func (s *stubPayOnlyProvider) HealthCheck() error { return nil }
 func (s *stubPayOnlyProvider) Create(ctx context.Context, req payment.CreateRequest) (*payment.Instruction, error) {
 	return &payment.Instruction{Scene: req.Scene}, nil
 }
+
 func (s *stubPayOnlyProvider) Close(ctx context.Context, req payment.CloseRequest) error { return nil }
 
 func TestPaymentCapabilityISP(t *testing.T) {
@@ -320,18 +313,4 @@ func TestPaymentCapabilityISP(t *testing.T) {
 		OutTradeNo: "STUB_001",
 	}, "stub")
 	require.ErrorIs(t, err, payment.ErrCapabilityNotSupported)
-}
-
-func TestPaymentDriverDispatch(t *testing.T) {
-	t.Run("内置渠道可直接取到工厂", func(t *testing.T) {
-		factory, ok := payment.GetDriverFactory(enum.PaymentChannelWechat)
-		require.True(t, ok)
-		require.NotNil(t, factory)
-	})
-
-	t.Run("未注册渠道返回 false", func(t *testing.T) {
-		factory, ok := payment.GetDriverFactory("custom_driver")
-		assert.False(t, ok)
-		assert.Nil(t, factory)
-	})
 }

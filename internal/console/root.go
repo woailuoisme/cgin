@@ -126,6 +126,7 @@ func NewRootCommandWithFactory(f Factory) *cobra.Command {
 		newRouteListCmd(f),
 		newScoutImportCmd(f),
 		newScoutFlushCmd(f),
+		newDITreeCmd(f),
 	}
 	registerCommandGroups(cmd, commands)
 

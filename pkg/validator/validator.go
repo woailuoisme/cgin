@@ -396,7 +396,7 @@ func BindOptionalJSON(c *gin.Context, target any) error {
 }
 
 // Translate 按请求语言渲染每条校验失败，键为 api.md 约定的字段路径。
-func (v *Validator) Translate(translator *i18n.Translator, language string, valErr govalidator.ValidationErrors) map[string][]string {
+func (v *Validator) Translate(translator i18n.Translator, language string, valErr govalidator.ValidationErrors) map[string][]string {
 	fields := make(map[string][]string, len(valErr))
 	for _, fe := range valErr {
 		field := errs.FieldPath(fe)

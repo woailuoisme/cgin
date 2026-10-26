@@ -244,6 +244,34 @@ func TestGuardLoginAndClaims(t *testing.T) {
 	assert.Equal(t, "tenant_abc", payload["tenant_id"])
 }
 
+// TestGuardLoginWithoutRefreshToken 校验 WithRefreshToken(false) 真正关闭刷新令牌签发。
+func TestGuardLoginWithoutRefreshToken(t *testing.T) {
+	guard := authentication.NewGuard(newTestTokenIssuer(15*time.Minute), newMockUserProvider(), user.ClientPolicy{}, user.Identity)
+	u := &sqlc.User{
+		ID:     "usr_no_refresh",
+		Role:   enum.RoleUser,
+		Status: enum.StatusActive,
+	}
+
+	sess, err := guard.Login(context.Background(), u, authentication.WithRefreshToken(false))
+	require.NoError(t, err)
+	assert.NotEmpty(t, sess.Token)
+	assert.Empty(t, sess.RefreshToken, "关闭刷新令牌时不得返回 refresh token")
+	assert.Positive(t, sess.ExpiresIn)
+
+	// 空刷新令牌不可用于续期
+	_, _, err = guard.Refresh(context.Background(), "")
+	require.Error(t, err)
+	bizErr, ok := errs.As(err)
+	require.True(t, ok)
+	assert.Equal(t, errs.CodeAuthTokenInvalid, bizErr.Code())
+
+	// 默认路径仍签发双令牌
+	withRefresh, err := guard.Login(context.Background(), u)
+	require.NoError(t, err)
+	assert.NotEmpty(t, withRefresh.RefreshToken)
+}
+
 // TestGuardAttemptAndValidate 测试 Attempt 与 Validate 凭据认证契约。
 func TestGuardAttemptAndValidate(t *testing.T) {
 	issuer := newTestTokenIssuer(15 * time.Minute)

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -96,7 +97,7 @@ func NewPaymentService(
 		gateway:   gateway,
 		cache:     cacheClient,
 		cfg:       cfg,
-		publisher: publisher,
+		publisher: cmp.Or(publisher, eventbus.NopPublisher()),
 		handler:   &defaultCallbackHandler{},
 	}
 }
@@ -227,13 +228,11 @@ func (s *PaymentService) dispatchNotification(ctx context.Context, channel enum.
 		if err := s.handler.OnPaymentSuccess(ctx, n.Payment); err != nil {
 			return err
 		}
-		if s.publisher != nil {
-			_ = s.publisher.Publish(ctx, event.PaymentSucceededEvent{
-				Channel:   channel,
-				Payment:   n.Payment,
-				Timestamp: time.Now(),
-			})
-		}
+		_ = s.publisher.Publish(ctx, event.PaymentSucceededEvent{
+			Channel:   channel,
+			Payment:   n.Payment,
+			Timestamp: time.Now(),
+		})
 		return nil
 
 	case enum.PaymentNotificationKindRefund:
@@ -243,13 +242,11 @@ func (s *PaymentService) dispatchNotification(ctx context.Context, channel enum.
 		if err := s.handler.OnRefundSuccess(ctx, n.Refund); err != nil {
 			return err
 		}
-		if s.publisher != nil {
-			_ = s.publisher.Publish(ctx, event.PaymentRefundedEvent{
-				Channel:   channel,
-				Refund:    n.Refund,
-				Timestamp: time.Now(),
-			})
-		}
+		_ = s.publisher.Publish(ctx, event.PaymentRefundedEvent{
+			Channel:   channel,
+			Refund:    n.Refund,
+			Timestamp: time.Now(),
+		})
 		return nil
 
 	default:

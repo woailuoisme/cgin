@@ -113,7 +113,7 @@ type SessionResource struct {
 	// 访问令牌 (JWT Access Token)
 	Token string `json:"token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
 	// 刷新令牌 (Refresh Token)
-	RefreshToken string `json:"refreshToken" example:"rt_01J9X4N8Y0EFGH"`
+	RefreshToken string `json:"refreshToken,omitempty" example:"rt_01J9X4N8Y0EFGH"`
 	// 访问令牌有效期（秒）
 	ExpiresIn int `json:"expiresIn" example:"900"`
 	// 用户身份资料投影

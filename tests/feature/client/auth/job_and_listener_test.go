@@ -39,6 +39,10 @@ func (m *mockMailer) Close() error {
 	return nil
 }
 
+func (m *mockMailer) Shutdown() error {
+	return m.Close()
+}
+
 func (m *mockMailer) Ping(_ context.Context) error {
 	return nil
 }
@@ -71,7 +75,7 @@ func TestWelcomeEmailJobExecution(t *testing.T) {
 	err = injectedWelcome.Handle(t.Context())
 	require.NoError(t, err)
 	require.Len(t, mailMock.sent, 1)
-	assert.Equal(t, "alex@example.com", mailMock.sent[0].To)
+	assert.Equal(t, []string{"alex@example.com"}, mailMock.sent[0].To)
 	assert.Contains(t, mailMock.sent[0].Body, "Alex")
 	assert.Contains(t, mailMock.sent[0].Body, "Welcome to cgin")
 }

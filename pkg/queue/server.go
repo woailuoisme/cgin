@@ -1,7 +1,6 @@
 package queue
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -10,9 +9,6 @@ import (
 	"time"
 
 	"github.com/hibiken/asynq"
-	"github.com/samber/lo"
-
-	"cgin/internal/config"
 )
 
 // RunWorker 启动后台工作协程服务，按队列权重消费任务。
@@ -54,22 +50,11 @@ func (c *Client) StopWorker() error {
 	return nil
 }
 
-// activeRegistry 返回客户端绑定的任务注册表，未设置时退回全局默认注册表。
-func (c *Client) activeRegistry() *jobRegistry {
-	c.mu.RLock()
-	reg := c.registry
-	c.mu.RUnlock()
-	if jr, ok := reg.(*jobRegistry); ok && jr != nil {
-		return jr
-	}
-	return defaultReg
-}
-
 // BuildServeMux 将注册表中的任务工厂编译挂载到 Asynq 的 ServeMux 多路复用器中。
 // 每个任务执行前由工厂创建实例（元数据由构造器给出），再用载荷覆盖业务字段。
 func (c *Client) BuildServeMux() *asynq.ServeMux {
 	mux := asynq.NewServeMux()
-	reg := c.activeRegistry()
+	reg := DefaultRegistry()
 	reg.mu.RLock()
 	defer reg.mu.RUnlock()
 
@@ -101,11 +86,9 @@ func (c *Client) BuildServeMux() *asynq.ServeMux {
 			}
 
 			// 附加全局用户自定义中间件
-			c.mu.RLock()
 			if len(c.middlewares) > 0 {
 				mws = append(mws, c.middlewares...)
 			}
-			c.mu.RUnlock()
 
 			pipeline := Chain(coreHandler, mws...)
 			return pipeline(ctx, job)
@@ -115,18 +98,19 @@ func (c *Client) BuildServeMux() *asynq.ServeMux {
 	return mux
 }
 
-func (c *Client) newScheduler(cfg *config.Config) (*asynq.Scheduler, error) {
+func (c *Client) newScheduler(loc *time.Location) (*asynq.Scheduler, error) {
 	if c == nil {
 		return nil, errors.New("queue: client is nil")
 	}
-
-	loc := lo.Ternary(cfg != nil, cfg.App.Location(), time.UTC)
+	if loc == nil {
+		loc = time.UTC
+	}
 
 	scheduler := asynq.NewScheduler(c.redisOpt, &asynq.SchedulerOpts{
 		Location: loc,
 	})
 
-	reg := c.activeRegistry()
+	reg := DefaultRegistry()
 	reg.mu.RLock()
 	cronEntries := slices.Clone(reg.cronEntries)
 	reg.mu.RUnlock()
@@ -136,7 +120,7 @@ func (c *Client) newScheduler(cfg *config.Config) (*asynq.Scheduler, error) {
 			continue
 		}
 
-		payload, err := wrapEnvelope(context.Background(), entry.Job, nil)
+		payload, err := wrapEnvelope(context.Background(), entry.Job)
 		if err != nil {
 			c.log().Error().
 				Str("task", entry.Job.TaskName()).
@@ -145,9 +129,9 @@ func (c *Client) newScheduler(cfg *config.Config) (*asynq.Scheduler, error) {
 			continue
 		}
 
-		queueName := ResolveQueueName(entry.Job)
 		task := asynq.NewTask(entry.Job.TaskName(), payload)
-		opts := append([]asynq.Option{asynq.Queue(queueName)}, entry.Opts...)
+		// Job 自声明的重试/超时/保留与条目自定义选项全部下发（后者位置在后，同类型覆盖）。
+		opts := append(JobOptions(entry.Job), entry.Opts...)
 
 		entryID, err := scheduler.Register(entry.Spec, task, opts...)
 		if err != nil {
@@ -162,7 +146,7 @@ func (c *Client) newScheduler(cfg *config.Config) (*asynq.Scheduler, error) {
 		c.log().Info().
 			Str("task", entry.Job.TaskName()).
 			Str("spec", entry.Spec).
-			Str("queue", queueName).
+			Str("queue", ResolveQueueName(entry.Job)).
 			Str("entry_id", entryID).
 			Msg("periodic task registered successfully")
 	}
@@ -170,58 +154,34 @@ func (c *Client) newScheduler(cfg *config.Config) (*asynq.Scheduler, error) {
 	return scheduler, nil
 }
 
-// StartScheduler 异步启动周期性定时调度器（用于与 Worker 联合共存运行）。
+// StartScheduler 启动周期性定时调度器，停机由 StopScheduler 统一负责。
 //
-// 调度器生命周期跟随进程，因此不再向上游返回错误；但必须带 panic 守卫：
-// 后台任务崩溃不能直接带跌整个 Worker 进程。
-func (c *Client) StartScheduler(cfg *config.Config) error {
-	scheduler, err := c.newScheduler(cfg)
+// 刻意不使用 Scheduler.Run()：它在内部阻塞等待进程级 SIGTERM/SIGINT 并自行 Shutdown，
+// 既与 queue:work 自身的信号处理重复注册，又会在被外部 Shutdown 后留下一个永不退出的
+// 阻塞 goroutine 与一份泄漏的 signal 订阅。生命周期本层已显式掌控，故只调用非阻塞的 Start。
+// 无已注册条目时不启动空转调度器，直接返回 nil。
+//
+// 注意：Start 返回后调度器在独立 goroutine 中运行，其中的 panic 无法被本函数 recover，
+// 会直接终止进程——由进程守护负责重启，这是 asynq 的既定行为。
+func (c *Client) StartScheduler(loc *time.Location) error {
+	if len(DefaultRegistry().Entries()) == 0 {
+		c.log().Debug().Msg("periodic task scheduler skipped, no entries registered")
+		return nil
+	}
+
+	scheduler, err := c.newScheduler(loc)
 	if err != nil {
 		return err
 	}
+	if err := scheduler.Start(); err != nil {
+		return err
+	}
+
 	c.mu.Lock()
 	c.scheduler = scheduler
 	c.mu.Unlock()
-
-	go func() {
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				c.log().Error().Any("panic", recovered).Msg("periodic task scheduler panicked")
-			}
-		}()
-		if err := scheduler.Run(); err != nil {
-			c.log().Error().Err(err).Msg("periodic task scheduler encountered an error")
-		}
-	}()
 
 	return nil
-}
-
-// RunScheduler 阻塞启动并运行周期性定时调度器，直到上下文被取消。
-func (c *Client) RunScheduler(ctx context.Context, cfg *config.Config) error {
-	scheduler, err := c.newScheduler(cfg)
-	if err != nil {
-		return err
-	}
-	c.mu.Lock()
-	c.scheduler = scheduler
-	c.mu.Unlock()
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- scheduler.Run()
-	}()
-
-	select {
-	case <-ctx.Done():
-		_ = c.StopScheduler()
-		return nil
-	case err := <-errCh:
-		c.mu.Lock()
-		c.scheduler = nil
-		c.mu.Unlock()
-		return err
-	}
 }
 
 // StopScheduler 优雅停止底层 asynq.Scheduler 周期调度器实例。
@@ -245,12 +205,12 @@ func (c *Client) StopScheduler() error {
 }
 
 // NewServer 创建用于承载任务执行的工作端 Asynq Server。
-// 并发数来自 SetConcurrency，队列权重来自调用方；只有停机超时这类框架级策略留在模块内。
+// 并发数在构造期已固定，队列权重来自调用方；只有停机超时这类框架级策略留在模块内。
 func (c *Client) NewServer(queues map[string]int) *asynq.Server {
 	return asynq.NewServer(
 		c.redisOpt,
 		asynq.Config{
-			Concurrency:     cmp.Or(c.Concurrency(), 10),
+			Concurrency:     c.concurrency,
 			Queues:          maps.Clone(queues),
 			ShutdownTimeout: c.ShutdownTimeout(),
 			ErrorHandler:    asynq.ErrorHandlerFunc(c.handleTaskError),

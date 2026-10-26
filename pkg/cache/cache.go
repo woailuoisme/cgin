@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/redis/rueidis"
@@ -22,28 +23,23 @@ import (
 const (
 	// defaultPort REDIS_URL 未指定端口时的默认端口。
 	defaultPort = "6379"
-	// namespace 统一键命名空间前缀。
-	namespace = "cgin"
 	// opTimeout 单次 Redis 操作默认超时。
 	opTimeout = 500 * time.Millisecond
 )
 
-// ErrNotFound 表示键不存在。
-var ErrNotFound = errors.New("cache: key not found")
+// 确保 *Client 完整实现 Store 与 LockProvider 契约。
+var (
+	_ Store        = (*Client)(nil)
+	_ LockProvider = (*Client)(nil)
+)
 
 // Client 封装 Redis/Valkey 客户端操作。
 type Client struct {
-	rdb    rueidis.Client
-	group  singleflight.Group
-	locker *RedisLocker
-}
-
-// Key 拼接带应用命名空间的缓存键（例如 Key("jwt", "revoked", jti) -> cgin:jwt:revoked:<jti>）。
-func Key(parts ...string) string {
-	if len(parts) == 0 {
-		return namespace
-	}
-	return namespace + ":" + strings.Join(parts, ":")
+	rdb        rueidis.Client
+	clientOpt  rueidis.ClientOption
+	group      singleflight.Group
+	lockerOnce sync.Once
+	locker     *RedisLocker
 }
 
 // Open 建立连接并执行 PING 探测。
@@ -58,18 +54,14 @@ func Open(ctx context.Context, cfg config.CacheConfig) (*Client, error) {
 		return nil, fmt.Errorf("cache: connect Redis failed: %w", err)
 	}
 
-	client := &Client{rdb: rdb}
+	client := &Client{
+		rdb:       rdb,
+		clientOpt: option,
+	}
 	if err := client.Ping(ctx); err != nil {
 		rdb.Close()
 		return nil, fmt.Errorf("cache: ping Redis failed: %w", err)
 	}
-
-	locker, err := NewRedisLocker(cfg)
-	if err != nil {
-		rdb.Close()
-		return nil, fmt.Errorf("cache: init redis locker failed: %w", err)
-	}
-	client.locker = locker
 
 	return client, nil
 }
@@ -133,17 +125,41 @@ func withOpTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(ctx, opTimeout)
 }
 
-// Close 释放连接池与锁管理器。
+// Close 释放连接池与按需初始化的锁管理器。
 func (c *Client) Close() error {
+	if c == nil {
+		return nil
+	}
+	// 占位阻止 Close 之后首次触发 Locker() 初始化连接池
+	c.lockerOnce.Do(func() {})
 	if c.locker != nil {
 		_ = c.locker.Close()
 	}
-	c.rdb.Close()
+	if c.rdb != nil {
+		c.rdb.Close()
+	}
 	return nil
 }
 
-// Locker 返回与当前存储后端关联的互斥锁管理器（满足 LockProvider 契约）。
+// Shutdown 释放客户端连接与互斥锁，满足 do.ShutdownerWithError 契约。
+func (c *Client) Shutdown() error {
+	return c.Close()
+}
+
+// Locker 按需惰性初始化并返回与当前存储后端关联的互斥锁管理器（满足 LockProvider 契约）。
 func (c *Client) Locker() Locker {
+	if c == nil || c.rdb == nil {
+		return nil
+	}
+	c.lockerOnce.Do(func() {
+		locker, err := newRedisLockerFromOption(c.clientOpt)
+		if err == nil {
+			c.locker = locker
+		}
+	})
+	if c.locker == nil {
+		return nil
+	}
 	return c.locker
 }
 
@@ -170,7 +186,7 @@ func (c *Client) Get(ctx context.Context, key string) (string, error) {
 // Set 写入一个带过期时间的键。ttl 必须为正数，避免误写永久键。
 func (c *Client) Set(ctx context.Context, key, value string, ttl time.Duration) error {
 	if ttl <= 0 {
-		return fmt.Errorf("cache: ttl for key %s must be positive, got %s", key, ttl)
+		return invalidTTLErr(key, ttl)
 	}
 	return c.do(ctx, c.rdb.B().Set().Key(key).Value(value).Ex(ttl).Build()).Error()
 }
@@ -178,7 +194,7 @@ func (c *Client) Set(ctx context.Context, key, value string, ttl time.Duration) 
 // SetNX 仅在键不存在时写入，返回是否写入成功（用于分布式互斥抢占）。
 func (c *Client) SetNX(ctx context.Context, key, value string, ttl time.Duration) (bool, error) {
 	if ttl <= 0 {
-		return false, fmt.Errorf("cache: ttl for key %s must be positive, got %s", key, ttl)
+		return false, invalidTTLErr(key, ttl)
 	}
 
 	err := c.do(ctx, c.rdb.B().Set().Key(key).Value(value).Nx().Ex(ttl).Build()).Error()
@@ -203,7 +219,7 @@ func (c *Client) Exists(ctx context.Context, key string) (bool, error) {
 // Increment 基于 Lua 脚本原子自增，并在首次创建时绑定过期时间。
 func (c *Client) Increment(ctx context.Context, key string, ttl time.Duration) (int64, error) {
 	if ttl <= 0 {
-		return 0, fmt.Errorf("cache: ttl for key %s must be positive, got %s", key, ttl)
+		return 0, invalidTTLErr(key, ttl)
 	}
 
 	// 向上取整到秒，避免不足 1 秒被 EXPIRE 解析为立即删除。
@@ -258,58 +274,27 @@ func (c *Client) Remember(
 	ttl time.Duration,
 	load func(context.Context) (string, error),
 ) (string, error) {
-	cached, err := c.Get(ctx, key)
-	if err == nil {
-		return cached, nil
-	}
-	if !errors.Is(err, ErrNotFound) {
-		return "", err
-	}
-
-	// 使用 DoChan 保证各协程可依据自身 Context 独立退出。
-	ch := c.group.DoChan(key, func() (any, error) {
-		// 回源操作脱离单次请求取消信号，但保留上下文元数据与日志追踪。
-		fillCtx := context.WithoutCancel(ctx)
-
-		// 二次检查缓存，防止并发排队期间已有其它协程写入。
-		cached, err := c.Get(fillCtx, key)
-		if err == nil {
-			return cached, nil
-		}
-		if !errors.Is(err, ErrNotFound) {
-			return "", err
-		}
-
-		loaded, err := load(fillCtx)
-		if err != nil {
-			return "", err
-		}
-
-		if err := c.Set(fillCtx, key, loaded, ttl); err != nil {
-			logger.FromContext(fillCtx).Warn().
-				Err(err).
-				Str("key", key).
-				Msg("failed to write origin data to cache")
-		}
-		return loaded, nil
-	})
-
-	var result any
-	select {
-	case res := <-ch:
-		if res.Err != nil {
-			return "", res.Err
-		}
-		result = res.Val
-	case <-ctx.Done():
-		return "", ctx.Err()
-	}
-
-	value, ok := result.(string)
-	if !ok {
-		return "", errors.New("cache: load result is not a string")
-	}
-	return value, nil
+	return rememberFlight(
+		ctx,
+		&c.group,
+		key,
+		func(gCtx context.Context) (string, error) {
+			return c.Get(gCtx, key)
+		},
+		func(fillCtx context.Context) (string, error) {
+			loaded, err := load(fillCtx)
+			if err != nil {
+				return "", err
+			}
+			if err := c.Set(fillCtx, key, loaded, ttl); err != nil {
+				logger.FromContext(fillCtx).Warn().
+					Err(err).
+					Str("key", key).
+					Msg("failed to write origin data to cache")
+			}
+			return loaded, nil
+		},
+	)
 }
 
 // incrementScript 保证自增与设置 TTL 原子完成。

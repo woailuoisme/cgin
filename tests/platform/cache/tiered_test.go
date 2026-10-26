@@ -173,10 +173,18 @@ func TestTieredStore_JSONHelpers(t *testing.T) {
 func TestTieredStore_Locker(t *testing.T) {
 	l1 := cache.NewMemoryStore()
 	tiered := cache.NewTieredStore(l1, nil)
-	defer func() { _ = tiered.Close() }()
+	defer func() { _ = tiered.Shutdown() }()
 
-	locker := tiered.Locker()
+	var lp cache.LockProvider = tiered
+	locker := lp.Locker()
 	require.NotNil(t, locker)
+	assert.Equal(t, l1.Locker(), locker, "无 L2 时应退回 L1 内存锁")
+
+	// 当配置了 L2 实例时，Locker() 必须返回 L2 分布式锁管理器
+	l2Client := &cache.Client{}
+	tieredWithL2 := cache.NewTieredStore(cache.NewMemoryStore(), l2Client)
+	defer func() { _ = tieredWithL2.Shutdown() }()
+	assert.Nil(t, tieredWithL2.Locker(), "注入了 L2 时应委派给 l2.Locker() 而非 l1.Locker()")
 
 	ctx := context.Background()
 	lockKey := "test:tiered:lock"

@@ -58,12 +58,10 @@ func (s *AuthService) ResetPassword(ctx context.Context, req dto.ResetPasswordBo
 		return dto.StatusResource{}, err
 	}
 
-	if s.publisher != nil {
-		_ = s.publisher.Publish(ctx, &event.PasswordChanged{
-			UserID:    user.ID,
-			ChangedAt: time.Now(),
-		})
-	}
+	_ = s.publisher.Publish(ctx, &event.PasswordChanged{
+		UserID:    user.ID,
+		ChangedAt: time.Now(),
+	})
 
 	// 重置密码成功后作废该用户在此之前签发的所有会话令牌
 	_ = s.guard.InvalidateAll(ctx, user.ID)

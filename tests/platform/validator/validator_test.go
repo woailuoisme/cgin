@@ -62,7 +62,7 @@ type numericProbe struct {
 }
 
 // newTranslator 装载指定默认语言并构造 Translator。
-func newTranslator(t *testing.T, defaultLanguage string) *i18n.Translator {
+func newTranslator(t *testing.T, defaultLanguage string) i18n.Translator {
 	t.Helper()
 
 	translator, err := i18n.New(&config.Config{
@@ -82,7 +82,7 @@ func newContext(body string) *gin.Context {
 }
 
 // bindJSON 模拟 Gin 原生 ShouldBindJSON 并协同 translator 进行字段翻译。
-func bindJSON(t *testing.T, c *gin.Context, target any, translator *i18n.Translator) error {
+func bindJSON(t *testing.T, c *gin.Context, target any, translator i18n.Translator) error {
 	t.Helper()
 	err := c.ShouldBindJSON(target)
 	if err == nil {
