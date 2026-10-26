@@ -8,9 +8,10 @@ import (
 
 	"cgin/internal/database/sqlc"
 	admindto "cgin/internal/dto/admin"
+	"cgin/internal/enum"
+	"cgin/internal/export"
+	"cgin/internal/user"
 	"cgin/pkg/response"
-	"cgin/shared/enums"
-	"cgin/shared/user"
 )
 
 // userStore 声明后台用户管理所需的用户读写能力（接口由消费方定义）。
@@ -57,7 +58,7 @@ func (s *UserService) ListUsers(ctx context.Context, query admindto.ListUsersQue
 
 // ExportUsers 流式导出匹配条件的所有用户数据至目标 io.Writer，采用键集游标分块拉取杜绝 OOM。
 func (s *UserService) ExportUsers(ctx context.Context, query admindto.ListUsersQueryParams, w io.Writer) error {
-	return writeUsersXLSX(ctx, w, s.userService.ListAfter, query.ToFilter())
+	return export.Users(ctx, w, s.userService.ListAfter, query.ToFilter())
 }
 
 // GetUser 返回管理视角的单个用户。
@@ -77,7 +78,7 @@ func (s *UserService) CreateUser(ctx context.Context, req admindto.CreateUserBod
 		Username:      req.Username,
 		Image:         req.Image,
 		Role:          req.Role,
-		Status:        enums.StatusActive,
+		Status:        enum.StatusActive,
 		EmailVerified: req.EmailVerified,
 		Password:      req.Password,
 	})

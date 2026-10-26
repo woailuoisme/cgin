@@ -208,7 +208,7 @@ func TestDocumentWithConcerns(t *testing.T) {
 
 // TestInvoiceDocumentTemplate 校验发票模板在中英两种语言下都能渲染出合法 PDF。
 //
-// 展示文案取自 messages/<语言>/invoice.toml，故渲染前必须把翻译器注入文档；
+// 展示文案取自 message/<语言>/invoice.toml，故渲染前必须把翻译器注入文档；
 // 文案本体的正确性由 tests/platform/i18n 的用例锁定，这里只负责"语言这条路能走通"。
 func TestInvoiceDocumentTemplate(t *testing.T) {
 	ctx := t.Context()

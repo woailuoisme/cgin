@@ -16,10 +16,10 @@ import (
 	"github.com/samber/lo"
 
 	"cgin/internal/config"
-	"cgin/messages"
+	"cgin/message"
 )
 
-// 语言包内的分节名，与 messages/<语言>/<分节>.toml 一一对应。
+// 语言包内的分节名，与 message/<语言>/<分节>.toml 一一对应。
 const (
 	sectionValidation = "validation"
 	sectionFields     = "fields"
@@ -68,7 +68,7 @@ func NewWithFS(defaultLanguage string, fsys fs.FS) (*Translator, error) {
 
 // New 装载内嵌的全部语言包，保持现有配置签名兼容。
 func New(cfg *config.Config) (*Translator, error) {
-	return NewWithFS(cfg.I18n.DefaultLanguage, messages.FS)
+	return NewWithFS(cfg.I18n.DefaultLanguage, message.FS)
 }
 
 // loadBundle 动态遍历并读取单门语言目录下的全部 TOML 文案文件。

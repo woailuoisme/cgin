@@ -54,6 +54,13 @@ func main() {
 			os.Exit(0)
 		}
 
+		// 用法错误（标志解析失败或参数语义不合法）以退出码 2 结束并指向对应帮助，
+		// 与 git / gh / kubectl 的约定一致，便于脚本区分“用法错”与“运行失败”。
+		if usageErr, ok := errors.AsType[*console.UsageError](err); ok {
+			_, _ = fmt.Fprintf(os.Stderr, "cgin: %v\nRun '%s --help' for usage.\n", usageErr.Err, usageErr.CommandPath)
+			os.Exit(2)
+		}
+
 		log := logger.Default()
 		// 通过结构化日志记录致命退出事件（生产 JSON 模式下供 APM/Loki 搜集）
 		log.Error().Err(err).Msg("process terminated with error")

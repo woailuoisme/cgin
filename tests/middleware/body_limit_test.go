@@ -63,36 +63,3 @@ func TestBodyLimit(t *testing.T) {
 		assert.JSONEq(t, `{"size":11}`, rec.Body.String())
 	})
 }
-
-// TestCacheBodyBypassMultipart 验证 CacheBody 对常规 JSON 正常缓存，对 multipart 上传请求旁路放行。
-func TestCacheBodyBypassMultipart(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	mw := global.New(global.Deps{})
-
-	engine := gin.New()
-	engine.Use(mw.CacheBody())
-	engine.POST("/check-cache", func(c *gin.Context) {
-		_, cached := c.Get(gin.BodyBytesKey)
-		c.JSON(http.StatusOK, gin.H{"cached": cached})
-	})
-
-	t.Run("常规 JSON 请求被正常缓存", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/check-cache", strings.NewReader(`{"test":123}`))
-		req.Header.Set("Content-Type", "application/json")
-		rec := httptest.NewRecorder()
-		engine.ServeHTTP(rec, req)
-
-		require.Equal(t, http.StatusOK, rec.Code)
-		assert.JSONEq(t, `{"cached":true}`, rec.Body.String())
-	})
-
-	t.Run("multipart 上传请求自动旁路不缓存", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/check-cache", strings.NewReader("fake multipart content"))
-		req.Header.Set("Content-Type", "multipart/form-data; boundary=test")
-		rec := httptest.NewRecorder()
-		engine.ServeHTTP(rec, req)
-
-		require.Equal(t, http.StatusOK, rec.Code)
-		assert.JSONEq(t, `{"cached":false}`, rec.Body.String())
-	})
-}

@@ -15,9 +15,9 @@ import (
 	"cgin/internal/config"
 	"cgin/internal/database"
 	"cgin/internal/database/sqlc"
+	"cgin/internal/enum"
 	"cgin/pkg/hasher"
 	"cgin/pkg/logger"
-	"cgin/shared/enums"
 )
 
 // FixturePassword 是本地开发演示账号统一使用的明文口令。
@@ -72,7 +72,7 @@ func (s *UserSeeder) Seed(ctx context.Context, db *database.DB) error {
 	ids := lo.Map(created, func(item sqlc.User, _ int) string { return item.ID })
 	if err := db.Queries(ctx).CreateAccountsBatch(ctx, sqlc.CreateAccountsBatchParams{
 		UserIDList: ids,
-		ProviderID: string(enums.ProviderCredential),
+		ProviderID: string(enum.ProviderCredential),
 		Password:   &hash,
 	}); err != nil {
 		return fmt.Errorf("user seeder create accounts failed: %w", err)
@@ -130,8 +130,8 @@ func demoUserRow() map[string]any {
 		"name":                  "Demo User",
 		"email":                 "user.demo@example.com",
 		"email_verified":        true,
-		"role":                  string(enums.RoleUser),
-		"status":                string(enums.StatusActive),
+		"role":                  string(enum.RoleUser),
+		"status":                string(enum.StatusActive),
 		"phone_number_verified": false,
 	}
 }
@@ -146,8 +146,8 @@ func generatedUserRows(total int) []map[string]any {
 			"name":                  faker.Name(),
 			"email":                 fmt.Sprintf("user%d.%s", i, strings.ToLower(faker.Email())),
 			"email_verified":        true,
-			"role":                  string(enums.RoleUser),
-			"status":                string(enums.StatusActive),
+			"role":                  string(enum.RoleUser),
+			"status":                string(enum.StatusActive),
 			"username":              fmt.Sprintf("%s%d", strings.ToLower(faker.Username()), i),
 			"phone_number_verified": true,
 		}
@@ -156,7 +156,7 @@ func generatedUserRows(total int) []map[string]any {
 		}
 		if i == 1 {
 			expires := time.Now().UTC().Add(30 * 24 * time.Hour)
-			row["status"] = string(enums.StatusBanned)
+			row["status"] = string(enum.StatusBanned)
 			row["banned"] = true
 			row["ban_reason"] = "temporarily banned for violating community guidelines"
 			row["ban_expires"] = expires.Format(time.RFC3339)

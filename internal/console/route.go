@@ -31,6 +31,8 @@ type RouteEntry struct {
 
 // RouteListOptions 封装 route:list 命令的参数与依赖容器 (SRP & DIP)。
 type RouteListOptions struct {
+	noopComplete
+
 	MethodFilter string
 	PathFilter   string
 	SortField    string
@@ -48,11 +50,6 @@ func NewRouteListOptions(f Factory) *RouteListOptions {
 	}
 }
 
-// Complete 从命令行上下文解析并补全配置。
-func (o *RouteListOptions) Complete(_ *cobra.Command, _ []string) error {
-	return nil
-}
-
 // Validate 校验路由查询与排序选项。
 func (o *RouteListOptions) Validate() error {
 	sort := strings.ToLower(strings.TrimSpace(o.SortField))
@@ -68,7 +65,7 @@ func (o *RouteListOptions) Run(_ context.Context) error {
 
 	cfg, cfgErr := o.Factory.Config()
 	if cfgErr != nil || cfg == nil {
-		_, _ = fmt.Fprintf(streams.ErrOut, "warning: load config failed, rendering routes with defaults: %v\n", cfgErr)
+		core.WarnTo(streams.ErrOut, "warning: load config failed, rendering routes with defaults: %v", cfgErr)
 		cfg = config.Default()
 	}
 
@@ -135,7 +132,7 @@ func newRouteListCmd(f Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "route:list",
 		Short: "List all registered HTTP routes with methods and handlers",
-		Args:  cobra.NoArgs,
+		Args:  maxArgs(0),
 		RunE:  runCommand(opts),
 	}
 

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"cgin/pkg/money"
-	"cgin/pkg/payment/enums"
+	"cgin/pkg/payment/enum"
 )
 
 // ErrCapabilityNotSupported 表示渠道或 Provider 未实现请求的操作能力（如不支持退款或查单）。
@@ -27,21 +27,21 @@ type Gateway interface {
 	// Create 发起一次收款，内部自动根据 req.Scene 路由到声明了该场景的渠道应用。
 	Create(ctx context.Context, req CreateRequest) (*Instruction, error)
 	// Query 主动查询支付状态。若未显式指定 application，则自动使用对应渠道的默认应用。
-	Query(ctx context.Context, channel enums.PaymentChannel, req QueryRequest, application ...string) (*PaymentResult, error)
+	Query(ctx context.Context, channel enum.PaymentChannel, req QueryRequest, application ...string) (*PaymentResult, error)
 	// Close 关闭一笔未支付的收款。若未显式指定 application，则自动使用对应渠道的默认应用。
-	Close(ctx context.Context, channel enums.PaymentChannel, req CloseRequest, application ...string) error
+	Close(ctx context.Context, channel enum.PaymentChannel, req CloseRequest, application ...string) error
 	// Refund 发起全额或部分退款。若未显式指定 application，则自动使用对应渠道的默认应用。
-	Refund(ctx context.Context, channel enums.PaymentChannel, req RefundRequest, application ...string) (*RefundResult, error)
+	Refund(ctx context.Context, channel enum.PaymentChannel, req RefundRequest, application ...string) (*RefundResult, error)
 	// QueryRefund 主动查询退款状态。若未显式指定 application，则自动使用对应渠道的默认应用。
-	QueryRefund(ctx context.Context, channel enums.PaymentChannel, req QueryRefundRequest, application ...string) (*RefundResult, error)
+	QueryRefund(ctx context.Context, channel enum.PaymentChannel, req QueryRefundRequest, application ...string) (*RefundResult, error)
 	// ParseNotification 聚合解析并验签渠道异步通知。
-	ParseNotification(ctx context.Context, channel enums.PaymentChannel, application string, req *http.Request) (*Notification, error)
+	ParseNotification(ctx context.Context, channel enum.PaymentChannel, application string, req *http.Request) (*Notification, error)
 	// For 按「渠道 + 应用标识」显式解析 Provider（保留高级自定义退路）。
-	For(channel enums.PaymentChannel, application string) (Provider, error)
+	For(channel enum.PaymentChannel, application string) (Provider, error)
 	// ForScene 按「渠道 + 支付场景」显式解析 Provider。
-	ForScene(channel enums.PaymentChannel, scene enums.PaymentScene) (Provider, error)
+	ForScene(channel enum.PaymentChannel, scene enum.PaymentScene) (Provider, error)
 	// Applications 返回指定渠道下已注册的应用标识。
-	Applications(channel enums.PaymentChannel) []string
+	Applications(channel enum.PaymentChannel) []string
 	// HealthCheck 检查全部渠道应用的健康状态。
 	HealthCheck() error
 }
@@ -83,11 +83,11 @@ type HealthChecker interface {
 // Provider 定义单一渠道应用的基础规范化契约 (遵循 ISP 原则解耦各原子能力)。
 type Provider interface {
 	// Channel 返回该 Provider 所属的支付渠道。
-	Channel() enums.PaymentChannel
+	Channel() enum.PaymentChannel
 	// Application 返回该 Provider 绑定的渠道应用标识。
 	Application() string
 	// Scenes 返回该渠道应用声明可承载的支付场景。
-	Scenes() []enums.PaymentScene
+	Scenes() []enum.PaymentScene
 
 	HealthChecker
 }
@@ -104,7 +104,7 @@ type FullProvider interface {
 // CreateRequest 描述一次收款创建请求，字段为渠道中立的规范化语义。
 type CreateRequest struct {
 	// Scene 支付场景，决定调用渠道的哪个下单接口以及需要哪些附加参数。
-	Scene enums.PaymentScene
+	Scene enum.PaymentScene
 	// OutTradeNo 我方商户订单号，在同一渠道内唯一且重试时保持不变。
 	OutTradeNo string
 	// Amount 收款金额，单位为分（当 Money 为 nil 时作为备选生效，保持向后兼容）。
@@ -122,7 +122,7 @@ type CreateRequest struct {
 	// ReturnURL 同步回跳地址，仅支付宝电脑网站与手机网站支付需要。
 	ReturnURL string
 	// PayerID 付款人的渠道身份，微信为 openid、支付宝小程序为 buyer_id。
-	// 仅 enums.PaymentScene.RequiresPayerIdentity 为真的场景必填。
+	// 仅 enum.PaymentScene.RequiresPayerIdentity 为真的场景必填。
 	PayerID string
 	// ClientIP 付款人客户端 IP，微信 H5 支付必填。
 	ClientIP string
@@ -156,9 +156,9 @@ func (r CreateRequest) EffectiveMoney() money.Money {
 //   - invoke_params：Params 为渠道二次签名后的参数集合。
 type Instruction struct {
 	// Scene 该指令对应的支付场景。
-	Scene enums.PaymentScene
+	Scene enum.PaymentScene
 	// Action 客户端应当执行的动作。
-	Action enums.PaymentInstructionAction
+	Action enum.PaymentInstructionAction
 	// Value 二维码链接或跳转地址，动作非 invoke_params 时有效。
 	Value string
 	// Params 调起渠道 SDK 所需的签名参数集合，动作为 invoke_params 时有效。
@@ -228,7 +228,7 @@ type PaymentResult struct {
 	// ChannelTradeNo 渠道交易号。
 	ChannelTradeNo string
 	// Status 归一化后的支付状态。
-	Status enums.PaymentStatus
+	Status enum.PaymentStatus
 	// ChannelState 渠道返回的原始状态字符串，供审计与排障使用。
 	ChannelState string
 	// PaidAmount 实际到账金额，单位为分。
@@ -260,7 +260,7 @@ type RefundResult struct {
 	// 需要关联原收款时一律使用 OutTradeNo，不得以支付交易号冒充退款单号。
 	ChannelRefundNo string
 	// Status 归一化后的退款状态。
-	Status enums.PaymentRefundStatus
+	Status enum.PaymentRefundStatus
 	// ChannelState 渠道返回的原始状态字符串，供审计与排障使用。
 	ChannelState string
 	// RefundAmount 本次退款金额，单位为分。
@@ -310,22 +310,22 @@ const (
 )
 
 // notificationAcks 汇总各渠道的成功与失败应答报文。
-var notificationAcks = map[enums.PaymentChannel]struct {
+var notificationAcks = map[enum.PaymentChannel]struct {
 	Success NotificationAck
 	Failure NotificationAck
 }{
-	enums.PaymentChannelWechat: {
+	enum.PaymentChannelWechat: {
 		Success: NotificationAck{ContentType: wechatAckContentType, Body: wechatSuccessAckBody},
 		Failure: NotificationAck{ContentType: wechatAckContentType, Body: wechatFailureAckBody},
 	},
-	enums.PaymentChannelAlipay: {
+	enum.PaymentChannelAlipay: {
 		Success: NotificationAck{ContentType: alipayAckContentType, Body: alipaySuccessAckBody},
 		Failure: NotificationAck{ContentType: alipayAckContentType, Body: alipayFailureAckBody},
 	},
 }
 
 // SuccessAck 返回指定渠道要求的通知成功应答。
-func SuccessAck(channel enums.PaymentChannel) NotificationAck {
+func SuccessAck(channel enum.PaymentChannel) NotificationAck {
 	if ack, ok := notificationAcks[channel]; ok {
 		return ack.Success
 	}
@@ -338,7 +338,7 @@ func SuccessAck(channel enums.PaymentChannel) NotificationAck {
 // 失败应答同样必须符合渠道协议：渠道据此判定本次投递失败并按重试策略重发。
 // 未收录的渠道返回纯文本失败应答兜底——任何不等于渠道成功报文的内容都会被判定为失败，
 // 因此兜底不会导致通知被静默吞掉。
-func FailureAck(channel enums.PaymentChannel) NotificationAck {
+func FailureAck(channel enum.PaymentChannel) NotificationAck {
 	if ack, ok := notificationAcks[channel]; ok {
 		return ack.Failure
 	}
@@ -349,7 +349,7 @@ func FailureAck(channel enums.PaymentChannel) NotificationAck {
 // Notification 是渠道异步通知的规范化结果。
 type Notification struct {
 	// Kind 通知类型，支付通知与退款通知共用同一回调端点。
-	Kind enums.PaymentNotificationKind
+	Kind enum.PaymentNotificationKind
 	// ID 渠道通知 ID，可作为回调报文的幂等键。
 	ID string
 	// Event 渠道原始事件类型或交易状态。

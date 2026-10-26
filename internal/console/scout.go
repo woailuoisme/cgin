@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"cgin/internal/console/core"
+	"cgin/internal/index"
 	"cgin/pkg/search"
-	"cgin/shared/indexes"
 )
 
 // ScoutImportOptions 封装 scout:import 命令的参数与依赖容器 (SRP & DIP)。
@@ -31,9 +31,9 @@ func NewScoutImportOptions(f Factory) *ScoutImportOptions {
 }
 
 // Complete 从命令行上下文解析并补全配置。
-func (o *ScoutImportOptions) Complete(_ *cobra.Command, args []string) error {
-	if len(args) > 0 {
-		o.Model = strings.TrimSpace(args[0])
+func (o *ScoutImportOptions) Complete(args []string) error {
+	if model := firstArg(args); model != "" {
+		o.Model = model
 	}
 	return nil
 }
@@ -75,7 +75,7 @@ func (o *ScoutImportOptions) Run(ctx context.Context) error {
 	}
 
 	streams := o.Factory.IOStreams()
-	catalog := indexes.Catalog(db)
+	catalog := index.Catalog(db)
 
 	var targets []search.ModelDescriptor
 	if o.All {
@@ -87,7 +87,7 @@ func (o *ScoutImportOptions) Run(ctx context.Context) error {
 	} else {
 		desc, ok := catalog.Lookup(o.Model)
 		if !ok {
-			return fmt.Errorf("model [%s] is not registered as searchable (available: %s)", o.Model, strings.Join(indexes.Names(), ", "))
+			return fmt.Errorf("model [%s] is not registered as searchable (available: %s)", o.Model, strings.Join(index.Names(), ", "))
 		}
 		targets = []search.ModelDescriptor{desc}
 	}
@@ -108,14 +108,9 @@ func newScoutImportCmd(f Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "scout:import [model]",
 		Short: "Import model records into the search index",
-		Args: func(_ *cobra.Command, args []string) error {
-			if !opts.All && (len(args) == 0 || strings.TrimSpace(args[0]) == "") {
-				return errors.New("please specify a model name or use --all to import all models")
-			}
-			return nil
-		},
+		Args:  maxArgs(1),
 		ValidArgsFunction: func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-			return indexes.Names(), cobra.ShellCompDirectiveNoFileComp
+			return index.Names(), cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: runCommand(opts),
 	}
@@ -139,9 +134,9 @@ func NewScoutFlushOptions(f Factory) *ScoutFlushOptions {
 }
 
 // Complete 从命令行上下文解析并补全配置。
-func (o *ScoutFlushOptions) Complete(_ *cobra.Command, args []string) error {
-	if len(args) > 0 {
-		o.Model = strings.TrimSpace(args[0])
+func (o *ScoutFlushOptions) Complete(args []string) error {
+	if model := firstArg(args); model != "" {
+		o.Model = model
 	}
 	return nil
 }
@@ -167,9 +162,9 @@ func (o *ScoutFlushOptions) Run(ctx context.Context) error {
 		return errors.New("search engine is disabled (check SCOUT_DRIVER and MEILISEARCH_HOST)")
 	}
 
-	desc, ok := indexes.Catalog(nil).Lookup(o.Model)
+	desc, ok := index.Catalog(nil).Lookup(o.Model)
 	if !ok {
-		return fmt.Errorf("model [%s] is not registered as searchable (available: %s)", o.Model, strings.Join(indexes.Names(), ", "))
+		return fmt.Errorf("model [%s] is not registered as searchable (available: %s)", o.Model, strings.Join(index.Names(), ", "))
 	}
 
 	streams := o.Factory.IOStreams()
@@ -209,14 +204,9 @@ func newScoutFlushCmd(f Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "scout:flush <model>",
 		Short: "Flush all of the model's records from the search index",
-		Args: func(_ *cobra.Command, args []string) error {
-			if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
-				return errors.New("please provide a model name to flush")
-			}
-			return nil
-		},
+		Args:  maxArgs(1),
 		ValidArgsFunction: func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-			return indexes.Names(), cobra.ShellCompDirectiveNoFileComp
+			return index.Names(), cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: runCommand(opts),
 	}

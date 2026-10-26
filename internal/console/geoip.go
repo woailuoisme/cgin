@@ -45,7 +45,7 @@ func NewGeoIPUpdateOptions(f Factory) *GeoIPUpdateOptions {
 }
 
 // Complete 从配置与默认值解析并补全路径。
-func (o *GeoIPUpdateOptions) Complete(_ *cobra.Command, _ []string) error {
+func (o *GeoIPUpdateOptions) Complete(_ []string) error {
 	if o.Path != "" {
 		return nil
 	}
@@ -236,7 +236,7 @@ func newGeoIPUpdateCmd(f Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "geoip:update",
 		Short: "Download or update the offline ip2region IP database (ip2region_v4.xdb)",
-		Args:  cobra.NoArgs,
+		Args:  maxArgs(0),
 		RunE:  runCommand(opts),
 	}
 

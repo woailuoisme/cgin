@@ -7,7 +7,7 @@ package sqlc
 import (
 	"time"
 
-	"cgin/shared/enums"
+	"cgin/internal/enum"
 )
 
 type Account struct {
@@ -66,8 +66,8 @@ type User struct {
 	Email               string
 	EmailVerified       bool
 	Image               *string
-	Role                enums.Role
-	Status              enums.Status
+	Role                enum.Role
+	Status              enum.Status
 	Banned              bool
 	TwoFactorEnabled    bool
 	Username            *string

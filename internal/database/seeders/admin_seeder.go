@@ -11,10 +11,10 @@ import (
 	"cgin/internal/config"
 	"cgin/internal/database"
 	"cgin/internal/database/sqlc"
+	"cgin/internal/enum"
 	"cgin/pkg/hasher"
 	"cgin/pkg/logger"
 	"cgin/pkg/validator"
-	"cgin/shared/enums"
 )
 
 // AdminSeeder 负责初始超级管理员账号的幂等播种。
@@ -64,8 +64,8 @@ func (s *AdminSeeder) Seed(ctx context.Context, db *database.DB) error {
 			Name:          cfg.Seed.AdminName,
 			Email:         email,
 			EmailVerified: true,
-			Role:          string(enums.RoleAdmin),
-			Status:        string(enums.StatusActive),
+			Role:          string(enum.RoleAdmin),
+			Status:        string(enum.StatusActive),
 		})
 		if err != nil {
 			return err
@@ -73,7 +73,7 @@ func (s *AdminSeeder) Seed(ctx context.Context, db *database.DB) error {
 		if _, err := q.CreateAccount(ctx, sqlc.CreateAccountParams{
 			UserID:     row.ID,
 			AccountID:  row.ID,
-			ProviderID: string(enums.ProviderCredential),
+			ProviderID: string(enum.ProviderCredential),
 			Password:   &hash,
 		}); err != nil {
 			return err

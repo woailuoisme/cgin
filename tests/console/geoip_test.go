@@ -63,14 +63,14 @@ func TestGeoIPUpdateOptions_Complete(t *testing.T) {
 	t.Run("preserves explicitly specified path", func(t *testing.T) {
 		opts := console.NewGeoIPUpdateOptions(f)
 		opts.Path = "/custom/path/ip.xdb"
-		require.NoError(t, opts.Complete(nil, nil))
+		require.NoError(t, opts.Complete(nil))
 		assert.Equal(t, "/custom/path/ip.xdb", opts.Path)
 	})
 
 	t.Run("completes with default path when empty", func(t *testing.T) {
 		opts := console.NewGeoIPUpdateOptions(f)
 		opts.Path = ""
-		require.NoError(t, opts.Complete(nil, nil))
+		require.NoError(t, opts.Complete(nil))
 		assert.Equal(t, "storage/app/geoip/ip2region_v4.xdb", opts.Path)
 	})
 }

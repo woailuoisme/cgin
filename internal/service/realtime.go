@@ -9,9 +9,9 @@ import (
 	"cgin/internal/config"
 	"cgin/internal/database/sqlc"
 	"cgin/internal/dto"
+	appuser "cgin/internal/user"
 	"cgin/pkg/errs"
 	platformRealtime "cgin/pkg/realtime"
-	shareduser "cgin/shared/user"
 )
 
 // userRoleReader 声明签发连接凭据所需的用户角色读取能力。
@@ -66,7 +66,7 @@ func (s *RealtimeService) IssueToken(ctx context.Context, userID, role string) (
 		if err != nil {
 			return nil, err
 		}
-		if err := shareduser.GuardState(entity); err != nil {
+		if err := appuser.GuardState(entity); err != nil {
 			return nil, err
 		}
 		role = string(entity.Role)
@@ -110,7 +110,7 @@ func (s *RealtimeService) AuthorizeSubscribe(
 	user := platformRealtime.User{ID: req.User}
 	if s.users != nil && req.User != "" {
 		entity, err := s.users.Get(ctx, req.User)
-		if err != nil || shareduser.GuardState(entity) != nil {
+		if err != nil || appuser.GuardState(entity) != nil {
 			return proxyError(platformRealtime.ProxyErrorCodePermissionDenied, "Permission denied"), nil //nolint:nilerr // 协议要求以 200 + error 字段表达拒绝
 		}
 		user.Role = string(entity.Role)

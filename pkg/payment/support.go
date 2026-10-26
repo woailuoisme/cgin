@@ -18,7 +18,7 @@ import (
 	"github.com/dromara/carbon/v2"
 
 	"cgin/pkg/errs"
-	"cgin/pkg/payment/enums"
+	"cgin/pkg/payment/enum"
 )
 
 const (
@@ -133,14 +133,14 @@ func decodeRSAPublicKey(content []byte) (*rsa.PublicKey, error) {
 }
 
 // resolveScenes 解析渠道应用声明的支付场景集合，并校验场景归属于该渠道。
-func resolveScenes(raw []string, channel enums.PaymentChannel) (map[enums.PaymentScene]struct{}, error) {
+func resolveScenes(raw []string, channel enum.PaymentChannel) (map[enum.PaymentScene]struct{}, error) {
 	if len(raw) == 0 {
 		return nil, errs.BadRequest("payment application declares no scene: " + channel.String())
 	}
 
-	scenes := make(map[enums.PaymentScene]struct{}, len(raw))
+	scenes := make(map[enum.PaymentScene]struct{}, len(raw))
 	for _, item := range raw {
-		scene, err := enums.PaymentSceneFromString(strings.TrimSpace(item))
+		scene, err := enum.PaymentSceneFromString(strings.TrimSpace(item))
 		if err != nil {
 			return nil, errs.BadRequest(
 				fmt.Sprintf("invalid payment scene declared by application for channel %s: %s", channel.String(), item),
@@ -159,7 +159,7 @@ func resolveScenes(raw []string, channel enums.PaymentChannel) (map[enums.Paymen
 }
 
 // sortedScenes 把场景集合展开为按字典序排序的切片，保证对外暴露顺序稳定。
-func sortedScenes(scenes map[enums.PaymentScene]struct{}) []enums.PaymentScene {
+func sortedScenes(scenes map[enum.PaymentScene]struct{}) []enum.PaymentScene {
 	return slices.Sorted(maps.Keys(scenes))
 }
 

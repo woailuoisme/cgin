@@ -14,7 +14,7 @@ import (
 
 	"cgin/internal/config"
 	"cgin/pkg/errs"
-	"cgin/pkg/payment/enums"
+	"cgin/pkg/payment/enum"
 )
 
 // 微信支付币种常量。
@@ -41,7 +41,7 @@ type wechatProvider struct {
 	mchID             string
 	apiV3Key          string
 	notifyURL         string
-	scenes            map[enums.PaymentScene]struct{}
+	scenes            map[enum.PaymentScene]struct{}
 	client            *wechat.ClientV3
 	platformPublicKey *rsa.PublicKey
 }
@@ -58,7 +58,7 @@ func newWechatProvider(
 	certsDir string,
 	log *zerolog.Logger,
 ) (*wechatProvider, error) {
-	scenes, err := resolveScenes(cfg.Scenes, enums.PaymentChannelWechat)
+	scenes, err := resolveScenes(cfg.Scenes, enum.PaymentChannelWechat)
 	if err != nil {
 		return nil, err
 	}
@@ -156,13 +156,13 @@ func (p *wechatProvider) loadPlatformPublicKey(cfg config.WechatPaymentAppConfig
 }
 
 // Channel 返回微信支付渠道。
-func (p *wechatProvider) Channel() enums.PaymentChannel { return enums.PaymentChannelWechat }
+func (p *wechatProvider) Channel() enum.PaymentChannel { return enum.PaymentChannelWechat }
 
 // Application 返回该 Provider 绑定的应用标识。
 func (p *wechatProvider) Application() string { return p.appKey }
 
 // Scenes 返回该应用声明可承载的支付场景。
-func (p *wechatProvider) Scenes() []enums.PaymentScene { return sortedScenes(p.scenes) }
+func (p *wechatProvider) Scenes() []enum.PaymentScene { return sortedScenes(p.scenes) }
 
 // HealthCheck 检查客户端与平台公钥材料是否就绪。
 func (p *wechatProvider) HealthCheck() error {
@@ -211,15 +211,15 @@ func (p *wechatProvider) Create(ctx context.Context, req CreateRequest) (*Instru
 	body := p.createBodyMap(req)
 
 	switch req.Scene {
-	case enums.PaymentSceneWechatNative:
+	case enum.PaymentSceneWechatNative:
 		return p.createNativeInstruction(ctx, req, body)
-	case enums.PaymentSceneWechatH5:
+	case enum.PaymentSceneWechatH5:
 		return p.createH5Instruction(ctx, req, body)
-	case enums.PaymentSceneWechatApp:
+	case enum.PaymentSceneWechatApp:
 		return p.createAppInstruction(ctx, req, body)
-	case enums.PaymentSceneWechatJsapi:
+	case enum.PaymentSceneWechatJsapi:
 		return p.createJsapiInstruction(ctx, req, body)
-	case enums.PaymentSceneWechatMiniProgram:
+	case enum.PaymentSceneWechatMiniProgram:
 		return p.createMiniProgramInstruction(ctx, req, body)
 	default:
 		return nil, errs.BadRequest("unsupported wechat payment scene " + req.Scene.String())
@@ -244,7 +244,7 @@ func (p *wechatProvider) createNativeInstruction(
 
 	return &Instruction{
 		Scene:  req.Scene,
-		Action: enums.PaymentInstructionQRCode,
+		Action: enum.PaymentInstructionQRCode,
 		Value:  response.Response.CodeUrl,
 	}, nil
 }
@@ -276,7 +276,7 @@ func (p *wechatProvider) createH5Instruction(
 
 	return &Instruction{
 		Scene:  req.Scene,
-		Action: enums.PaymentInstructionRedirectURL,
+		Action: enum.PaymentInstructionRedirectURL,
 		Value:  response.Response.H5Url,
 	}, nil
 }
@@ -543,7 +543,7 @@ func (p *wechatProvider) attachPaymentNotification(
 		return nil, errs.Internal(fmt.Errorf("failed to encode wechat payment notification payload: %w", err))
 	}
 
-	notification.Kind = enums.PaymentNotificationKindPayment
+	notification.Kind = enum.PaymentNotificationKindPayment
 	notification.Payload = encoded
 	notification.Payment = mapWechatDecryptPayResult(decrypted)
 
@@ -570,7 +570,7 @@ func (p *wechatProvider) attachRefundNotification(
 		return nil, errs.Internal(fmt.Errorf("failed to encode wechat refund notification payload: %w", err))
 	}
 
-	notification.Kind = enums.PaymentNotificationKindRefund
+	notification.Kind = enum.PaymentNotificationKindRefund
 	notification.Payload = encoded
 	notification.Refund = mapWechatDecryptRefundResult(decrypted)
 
@@ -595,10 +595,10 @@ func (p *wechatProvider) checkResponse(code int, rawError string, operation stri
 }
 
 // newAppInstruction 将微信 App 支付二次签名参数转为规范化支付指令。
-func newAppInstruction(scene enums.PaymentScene, params *wechat.AppPayParams) *Instruction {
+func newAppInstruction(scene enum.PaymentScene, params *wechat.AppPayParams) *Instruction {
 	return &Instruction{
 		Scene:  scene,
-		Action: enums.PaymentInstructionInvokeParams,
+		Action: enum.PaymentInstructionInvokeParams,
 		Params: map[string]string{
 			"appid":     params.Appid,
 			"partnerid": params.Partnerid,
@@ -612,10 +612,10 @@ func newAppInstruction(scene enums.PaymentScene, params *wechat.AppPayParams) *I
 }
 
 // newJsapiInstruction 将微信 JSAPI/公众号或小程序支付二次签名参数转为规范化支付指令。
-func newJsapiInstruction(scene enums.PaymentScene, params *wechat.JSAPIPayParams) *Instruction {
+func newJsapiInstruction(scene enum.PaymentScene, params *wechat.JSAPIPayParams) *Instruction {
 	return &Instruction{
 		Scene:  scene,
-		Action: enums.PaymentInstructionInvokeParams,
+		Action: enum.PaymentInstructionInvokeParams,
 		Params: map[string]string{
 			"appId":     params.AppId,
 			"timeStamp": params.TimeStamp,
@@ -645,7 +645,7 @@ func mapWechatQueryOrderResponse(order *wechat.QueryOrder) *PaymentResult {
 	if order.Payer != nil {
 		result.PayerID = order.Payer.Openid
 	}
-	if result.Status == enums.PaymentStatusSucceeded {
+	if result.Status == enum.PaymentStatusSucceeded {
 		result.PaidAt = optionalChannelTime(order.SuccessTime)
 	}
 
@@ -693,7 +693,7 @@ func mapWechatDecryptPayResult(decrypted *wechat.V3DecryptPayResult) *PaymentRes
 	if decrypted.Payer != nil {
 		result.PayerID = decrypted.Payer.Openid
 	}
-	if result.Status == enums.PaymentStatusSucceeded {
+	if result.Status == enum.PaymentStatusSucceeded {
 		result.PaidAt = optionalChannelTime(decrypted.SuccessTime)
 	}
 
@@ -725,33 +725,33 @@ func mapWechatDecryptRefundResult(decrypted *wechat.V3DecryptRefundResult) *Refu
 
 // mapWechatTradeState 把微信交易状态映射为本地支付状态。
 // REFUND 表示该笔收款已转入退款，其支付本身是成功的，因此同样归入成功态。
-func mapWechatTradeState(state string) enums.PaymentStatus {
+func mapWechatTradeState(state string) enum.PaymentStatus {
 	switch state {
 	case wechat.TradeStateSuccess, wechat.TradeStateRefund:
-		return enums.PaymentStatusSucceeded
+		return enum.PaymentStatusSucceeded
 	case wechat.TradeStateNoPay, wechat.TradeStatePaying:
-		return enums.PaymentStatusPending
+		return enum.PaymentStatusPending
 	case wechat.TradeStateClosed, wechat.TradeStateRevoked:
-		return enums.PaymentStatusClosed
+		return enum.PaymentStatusClosed
 	case wechat.TradeStatePayError:
-		return enums.PaymentStatusFailed
+		return enum.PaymentStatusFailed
 	default:
-		return enums.PaymentStatusUnknown
+		return enum.PaymentStatusUnknown
 	}
 }
 
 // mapWechatRefundStatus 把微信退款状态映射为本地退款状态。
-func mapWechatRefundStatus(state string) enums.PaymentRefundStatus {
+func mapWechatRefundStatus(state string) enum.PaymentRefundStatus {
 	switch state {
 	case wechatRefundStatusSuccess:
-		return enums.PaymentRefundStatusSucceeded
+		return enum.PaymentRefundStatusSucceeded
 	case wechatRefundStatusProcessing:
-		return enums.PaymentRefundStatusPending
+		return enum.PaymentRefundStatusPending
 	case wechatRefundStatusClosed:
-		return enums.PaymentRefundStatusCanceled
+		return enum.PaymentRefundStatusCanceled
 	case wechatRefundStatusAbnormal:
-		return enums.PaymentRefundStatusFailed
+		return enum.PaymentRefundStatusFailed
 	default:
-		return enums.PaymentRefundStatusUnknown
+		return enum.PaymentRefundStatusUnknown
 	}
 }

@@ -12,40 +12,6 @@ import (
 	"cgin/internal/middleware/global"
 )
 
-// TestSecurityHeaders 锁定安全响应头这道防线，以及 HSTS 只在生产下发的边界。
-func TestSecurityHeaders(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	serve := func(production bool) *httptest.ResponseRecorder {
-		mw := global.New(global.Deps{Production: production})
-		engine := gin.New()
-		engine.Use(mw.SecurityHeaders())
-		engine.GET("/ping", func(c *gin.Context) { c.String(http.StatusOK, "pong") })
-
-		rec := httptest.NewRecorder()
-		engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ping", nil))
-		return rec
-	}
-
-	t.Run("基础防护头始终下发", func(t *testing.T) {
-		rec := serve(false)
-
-		require.Equal(t, http.StatusOK, rec.Code)
-		assert.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
-		assert.Equal(t, "DENY", rec.Header().Get("X-Frame-Options"))
-		assert.Equal(t, "no-referrer", rec.Header().Get("Referrer-Policy"))
-		assert.Equal(t, "none", rec.Header().Get("X-Permitted-Cross-Domain-Policies"))
-		assert.Equal(t, "camera=(), microphone=(), geolocation=(), payment=()", rec.Header().Get("Permissions-Policy"))
-	})
-
-	t.Run("HSTS 只在生产下发", func(t *testing.T) {
-		// 本地开发走 http：浏览器一旦记住 HSTS，后续 http 请求会被升级成 https 而连不上，
-		// 且这个决定无法靠改服务端撤销。
-		assert.Empty(t, serve(false).Header().Get("Strict-Transport-Security"))
-		assert.Equal(t, "max-age=31536000; includeSubDomains; preload", serve(true).Header().Get("Strict-Transport-Security"))
-	})
-}
-
 // TestRecovery 锁定 panic 边界的对外行为：状态码统一为 500，响应体不带任何内部细节。
 func TestRecovery(t *testing.T) {
 	gin.SetMode(gin.TestMode)

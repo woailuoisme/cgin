@@ -698,7 +698,7 @@
                     ],
                     "allOf": [
                         {
-                            "$ref": "#/definitions/enums.Role"
+                            "$ref": "#/definitions/enum.Role"
                         }
                     ],
                     "example": "user"
@@ -712,7 +712,7 @@
                     ],
                     "allOf": [
                         {
-                            "$ref": "#/definitions/enums.Status"
+                            "$ref": "#/definitions/enum.Status"
                         }
                     ],
                     "example": "active"
@@ -1047,7 +1047,7 @@
                 }
             }
         },
-        "enums.Role": {
+        "enum.Role": {
             "type": "string",
             "enum": [
                 "user",
@@ -1058,7 +1058,7 @@
                 "RoleAdmin"
             ]
         },
-        "enums.Status": {
+        "enum.Status": {
             "type": "string",
             "enum": [
                 "active",

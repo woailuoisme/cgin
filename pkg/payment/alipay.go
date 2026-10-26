@@ -15,7 +15,7 @@ import (
 
 	"cgin/internal/config"
 	"cgin/pkg/errs"
-	"cgin/pkg/payment/enums"
+	"cgin/pkg/payment/enum"
 )
 
 // 支付宝交易状态常量，取值来自支付宝开放平台交易状态协议。
@@ -41,7 +41,7 @@ type alipayProvider struct {
 	appID             string
 	notifyURL         string
 	returnURL         string
-	scenes            map[enums.PaymentScene]struct{}
+	scenes            map[enum.PaymentScene]struct{}
 	client            *alipayv3.ClientV3
 	publicCertContent []byte
 }
@@ -57,7 +57,7 @@ func newAlipayProvider(
 	certsDir string,
 	log *zerolog.Logger,
 ) (*alipayProvider, error) {
-	scenes, err := resolveScenes(cfg.Scenes, enums.PaymentChannelAlipay)
+	scenes, err := resolveScenes(cfg.Scenes, enum.PaymentChannelAlipay)
 	if err != nil {
 		return nil, err
 	}
@@ -133,13 +133,13 @@ func requireAlipayCredentials(appKey string, cfg config.AlipayPaymentAppConfig) 
 }
 
 // Channel 返回支付宝渠道。
-func (p *alipayProvider) Channel() enums.PaymentChannel { return enums.PaymentChannelAlipay }
+func (p *alipayProvider) Channel() enum.PaymentChannel { return enum.PaymentChannelAlipay }
 
 // Application 返回该 Provider 绑定的应用标识。
 func (p *alipayProvider) Application() string { return p.appKey }
 
 // Scenes 返回该应用声明可承载的支付场景。
-func (p *alipayProvider) Scenes() []enums.PaymentScene { return sortedScenes(p.scenes) }
+func (p *alipayProvider) Scenes() []enum.PaymentScene { return sortedScenes(p.scenes) }
 
 // HealthCheck 检查客户端与证书是否就绪。
 func (p *alipayProvider) HealthCheck() error {
@@ -167,15 +167,15 @@ func (p *alipayProvider) Create(ctx context.Context, req CreateRequest) (*Instru
 	body := p.createBodyMap(req)
 
 	switch req.Scene {
-	case enums.PaymentSceneAlipayPage:
+	case enum.PaymentSceneAlipayPage:
 		return p.createRedirectInstruction(ctx, req, body, true)
-	case enums.PaymentSceneAlipayWap:
+	case enum.PaymentSceneAlipayWap:
 		return p.createRedirectInstruction(ctx, req, body, false)
-	case enums.PaymentSceneAlipayNative:
+	case enum.PaymentSceneAlipayNative:
 		return p.createPrecreateInstruction(ctx, req, body)
-	case enums.PaymentSceneAlipayApp:
+	case enum.PaymentSceneAlipayApp:
 		return p.createAppInstruction(ctx, req, body)
-	case enums.PaymentSceneAlipayMiniProgram:
+	case enum.PaymentSceneAlipayMiniProgram:
 		return p.createMiniProgramInstruction(ctx, req, body)
 	default:
 		return nil, errs.BadRequest("unsupported alipay payment scene " + req.Scene.String())
@@ -207,7 +207,7 @@ func (p *alipayProvider) createRedirectInstruction(
 
 	return &Instruction{
 		Scene:  req.Scene,
-		Action: enums.PaymentInstructionRedirectURL,
+		Action: enum.PaymentInstructionRedirectURL,
 		Value:  payURL,
 	}, nil
 }
@@ -230,7 +230,7 @@ func (p *alipayProvider) createPrecreateInstruction(
 
 	return &Instruction{
 		Scene:  req.Scene,
-		Action: enums.PaymentInstructionQRCode,
+		Action: enum.PaymentInstructionQRCode,
 		Value:  response.QrCode,
 	}, nil
 }
@@ -253,7 +253,7 @@ func (p *alipayProvider) createAppInstruction(
 
 	return &Instruction{
 		Scene:  req.Scene,
-		Action: enums.PaymentInstructionInvokeParams,
+		Action: enum.PaymentInstructionInvokeParams,
 		Params: map[string]string{"order_str": orderStr},
 	}, nil
 }
@@ -279,7 +279,7 @@ func (p *alipayProvider) createMiniProgramInstruction(
 
 	return &Instruction{
 		Scene:  req.Scene,
-		Action: enums.PaymentInstructionInvokeParams,
+		Action: enum.PaymentInstructionInvokeParams,
 		Params: map[string]string{"trade_no": response.TradeNo},
 	}, nil
 }
@@ -343,7 +343,7 @@ func mapAlipayTradeResponse(response *alipayv3.TradeQueryRsp) (*PaymentResult, e
 		ChannelState:   response.TradeStatus,
 		PaidAmount:     paidAmount,
 	}
-	if result.Status == enums.PaymentStatusSucceeded {
+	if result.Status == enum.PaymentStatusSucceeded {
 		result.PaidAt = optionalChannelTime(response.SendPayDate)
 	}
 
@@ -512,7 +512,7 @@ func (p *alipayProvider) attachPaymentNotification(
 	status := mapAlipayTradeStatus(body.GetString("trade_status"))
 	event := body.GetString("trade_status")
 
-	notification.Kind = enums.PaymentNotificationKindPayment
+	notification.Kind = enum.PaymentNotificationKindPayment
 	notification.Event = event
 	notification.Payment = &PaymentResult{
 		OutTradeNo:     body.GetString("out_trade_no"),
@@ -522,7 +522,7 @@ func (p *alipayProvider) attachPaymentNotification(
 		PaidAmount:     paidAmount,
 		PayerID:        body.GetString("buyer_id"),
 	}
-	if status == enums.PaymentStatusSucceeded {
+	if status == enum.PaymentStatusSucceeded {
 		notification.Payment.PaidAt = optionalChannelTime(body.GetString("gmt_payment"))
 	}
 
@@ -541,13 +541,13 @@ func (p *alipayProvider) attachRefundNotification(
 
 	event := body.GetString("refund_status")
 	status := mapAlipayRefundStatus(event)
-	if status == enums.PaymentRefundStatusUnknown {
+	if status == enum.PaymentRefundStatusUnknown {
 		// 退款通知不带 refund_status 时，出现 refund_fee 即代表退款已完成。
-		status = enums.PaymentRefundStatusSucceeded
+		status = enum.PaymentRefundStatusSucceeded
 		event = alipayRefundStatusSuccess
 	}
 
-	notification.Kind = enums.PaymentNotificationKindRefund
+	notification.Kind = enum.PaymentNotificationKindRefund
 	notification.Event = event
 	notification.Refund = &RefundResult{
 		OutRefundNo:  body.GetString("out_biz_no"),
@@ -602,36 +602,36 @@ func formatAlipayTimeout(expireAt time.Time) string {
 // mapAlipayTradeStatus 把支付宝交易状态映射为本地支付状态。
 // 注意：支付宝在收款完成后发生全额退款同样会返回 TRADE_CLOSED，
 // 该情形下本地必须以退款记录为准，不能据本映射反向推断「未支付」。
-func mapAlipayTradeStatus(status string) enums.PaymentStatus {
+func mapAlipayTradeStatus(status string) enum.PaymentStatus {
 	switch status {
 	case alipayTradeStatusSuccess, alipayTradeStatusFinished:
-		return enums.PaymentStatusSucceeded
+		return enum.PaymentStatusSucceeded
 	case alipayTradeStatusWaitBuyerPay:
-		return enums.PaymentStatusPending
+		return enum.PaymentStatusPending
 	case alipayTradeStatusClosed:
-		return enums.PaymentStatusClosed
+		return enum.PaymentStatusClosed
 	default:
-		return enums.PaymentStatusUnknown
+		return enum.PaymentStatusUnknown
 	}
 }
 
 // mapAlipayFundChange 把支付宝同步退款返回的资金变动标记映射为本地退款状态。
-func mapAlipayFundChange(fundChange string) enums.PaymentRefundStatus {
+func mapAlipayFundChange(fundChange string) enum.PaymentRefundStatus {
 	if fundChange == alipayFundChangeYes {
-		return enums.PaymentRefundStatusSucceeded
+		return enum.PaymentRefundStatusSucceeded
 	}
 
-	return enums.PaymentRefundStatusPending
+	return enum.PaymentRefundStatusPending
 }
 
 // mapAlipayRefundStatus 把支付宝退款查询状态映射为本地退款状态。
-func mapAlipayRefundStatus(status string) enums.PaymentRefundStatus {
+func mapAlipayRefundStatus(status string) enum.PaymentRefundStatus {
 	switch status {
 	case alipayRefundStatusSuccess:
-		return enums.PaymentRefundStatusSucceeded
+		return enum.PaymentRefundStatusSucceeded
 	case "":
-		return enums.PaymentRefundStatusPending
+		return enum.PaymentRefundStatusPending
 	default:
-		return enums.PaymentRefundStatusUnknown
+		return enum.PaymentRefundStatusUnknown
 	}
 }

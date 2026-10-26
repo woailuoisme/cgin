@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -13,11 +14,24 @@ import (
 	"cgin/internal/console/core"
 )
 
-// getHelpOutput 辅助函数：通过 ExecuteContext 捕获包含全量默认标志与附加命令的完整帮助输出。
-func getHelpOutput(t *testing.T, args ...string) string {
+// newRootForHelp 构造根命令，并将帮助色彩开关固定为期望值。
+// 模板样式在渲染时才读取进程级开关，因此必须在 NewRootCommand 之后再次显式设定。
+func newRootForHelp(t *testing.T, color bool) *cobra.Command {
 	t.Helper()
+
+	prev := core.IsColorEnabled()
+	t.Cleanup(func() { core.SetColorEnabled(prev) })
+
 	cmd := console.NewRootCommand()
 	require.NotNil(t, cmd)
+	core.SetColorEnabled(color)
+	return cmd
+}
+
+// getHelpOutput 辅助函数：通过 ExecuteContext 捕获包含全量默认标志与附加命令的完整帮助输出。
+func getHelpOutput(t *testing.T, color bool, args ...string) string {
+	t.Helper()
+	cmd := newRootForHelp(t, color)
 
 	buf := new(bytes.Buffer)
 	cmd.SetOut(buf)
@@ -32,10 +46,7 @@ func getHelpOutput(t *testing.T, args ...string) string {
 func TestColoredHelp_Formatting(t *testing.T) {
 	// 1. 测试禁用颜色时的纯文本输出与列对齐
 	t.Run("plain text mode preserves alignment", func(t *testing.T) {
-		core.SetColorEnabled(false)
-		defer core.ResetColorOverride()
-
-		output := getHelpOutput(t)
+		output := getHelpOutput(t, false)
 		assert.NotContains(t, output, "\x1b[", "禁用色彩时不应包含 ANSI 转义序列")
 		assert.Contains(t, output, "Usage:")
 		assert.Contains(t, output, "cgin [command]")
@@ -57,10 +68,7 @@ func TestColoredHelp_Formatting(t *testing.T) {
 
 	// 2. 测试启用彩色高亮时的 ANSI 转义字符与关键高亮元素
 	t.Run("colored mode renders ANSI styles and preserves alignment", func(t *testing.T) {
-		core.SetColorEnabled(true)
-		defer core.ResetColorOverride()
-
-		output := getHelpOutput(t)
+		output := getHelpOutput(t, true)
 		assert.Contains(t, output, "\x1b[", "启用色彩时必须包含 ANSI 转义序列")
 
 		// 验证小节标题样式（包含加粗暖黄色 ANSI 码）
@@ -74,7 +82,7 @@ func TestColoredHelp_Formatting(t *testing.T) {
 		assert.Contains(t, output, core.StyleHeader("scout"))
 		assert.Contains(t, output, core.StyleHeader("Flags:"))
 
-		rootCmd := console.NewRootCommand()
+		rootCmd := newRootForHelp(t, true)
 		pad := rootCmd.NamePadding()
 
 		// 验证命令名称高亮
@@ -103,7 +111,6 @@ func TestColoredHelp_Formatting(t *testing.T) {
 		assert.Equal(t, rawFlags, plain)
 
 		core.SetColorEnabled(true)
-		defer core.ResetColorOverride()
 		colored := core.StyleFlags(rawFlags)
 		assert.Contains(t, colored, "\x1b[")
 
@@ -129,18 +136,15 @@ func TestColoredHelp_Formatting(t *testing.T) {
 
 	// 4. 验证层级子命令 (如 cgin serve 与 cgin make crud) 帮助信息的高亮与对齐继承
 	t.Run("subcommand help inherits colored template", func(t *testing.T) {
-		core.SetColorEnabled(true)
-		defer core.ResetColorOverride()
-
 		// 验证 serve 子命令
-		serveOutput := getHelpOutput(t, "serve")
+		serveOutput := getHelpOutput(t, true, "serve")
 		assert.Contains(t, serveOutput, core.StyleHeader("Usage:"))
 		assert.Contains(t, serveOutput, core.StyleHeader("Flags:"))
 		assert.Contains(t, serveOutput, core.StyleUseLine("cgin serve [flags]"))
 		assert.Contains(t, serveOutput, "Override APP_PORT")
 
 		// 验证 make:crud 命令
-		crudOutput := getHelpOutput(t, "make:crud")
+		crudOutput := getHelpOutput(t, true, "make:crud")
 		assert.Contains(t, crudOutput, core.StyleHeader("Usage:"))
 		assert.Contains(t, crudOutput, core.StyleHeader("Flags:"))
 		assert.Contains(t, crudOutput, core.StyleUseLine("cgin make:crud [name] [flags]"))

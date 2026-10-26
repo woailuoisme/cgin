@@ -11,11 +11,11 @@ import (
 
 	"cgin/internal/config"
 	"cgin/internal/database/sqlc"
+	"cgin/internal/enum"
+	"cgin/internal/user"
 	"cgin/pkg/authentication"
 	"cgin/pkg/cache"
 	"cgin/pkg/errs"
-	"cgin/shared/enums"
-	"cgin/shared/user"
 )
 
 const testSecret = "0123456789abcdef0123456789abcdef"
@@ -148,8 +148,8 @@ func TestGuardUserAndUserOrFail(t *testing.T) {
 	provider := newMockUserProvider()
 	provider.users["usr_db"] = &sqlc.User{
 		ID:     "usr_db",
-		Role:   enums.RoleUser,
-		Status: enums.StatusActive,
+		Role:   enum.RoleUser,
+		Status: enum.StatusActive,
 		Name:   "DB User",
 	}
 
@@ -171,8 +171,8 @@ func TestGuardUserAndUserOrFail(t *testing.T) {
 	// 预置 WithUser
 	mockUser := &sqlc.User{
 		ID:     "usr_preset",
-		Role:   enums.RoleUser,
-		Status: enums.StatusActive,
+		Role:   enum.RoleUser,
+		Status: enum.StatusActive,
 		Name:   "Preset User",
 	}
 	presetCtx := authentication.WithUser(ctx, mockUser, user.Identity(mockUser))
@@ -205,8 +205,8 @@ func TestGuardLoginAndClaims(t *testing.T) {
 
 	u := &sqlc.User{
 		ID:     "usr_test_login",
-		Role:   enums.RoleUser,
-		Status: enums.StatusActive,
+		Role:   enum.RoleUser,
+		Status: enum.StatusActive,
 	}
 
 	sess, err := guard.Login(context.Background(), u, authentication.WithClaims(map[string]any{
@@ -251,8 +251,8 @@ func TestGuardAttemptAndValidate(t *testing.T) {
 	provider.users["alex@example.com"] = &sqlc.User{
 		ID:     "usr_alex",
 		Email:  "alex@example.com",
-		Role:   enums.RoleUser,
-		Status: enums.StatusActive,
+		Role:   enum.RoleUser,
+		Status: enum.StatusActive,
 	}
 
 	guard := authentication.NewGuard(issuer, provider, user.ClientPolicy{}, user.Identity)
@@ -295,8 +295,8 @@ func TestGuardLoginUsingID(t *testing.T) {
 	provider := newMockUserProvider()
 	provider.users["usr_target"] = &sqlc.User{
 		ID:     "usr_target",
-		Role:   enums.RoleUser,
-		Status: enums.StatusActive,
+		Role:   enum.RoleUser,
+		Status: enum.StatusActive,
 	}
 
 	guard := authentication.NewGuard(issuer, provider, user.ClientPolicy{}, user.Identity)
@@ -318,8 +318,8 @@ func TestGuardPolicyRejection(t *testing.T) {
 
 	normalUser := &sqlc.User{
 		ID:     "usr_normal",
-		Role:   enums.RoleUser, // 非 admin 角色
-		Status: enums.StatusActive,
+		Role:   enum.RoleUser, // 非 admin 角色
+		Status: enum.StatusActive,
 	}
 
 	// 尝试以普通用户身份登录 AdminGuard 应被策略拒绝
@@ -332,8 +332,8 @@ func TestGuardPolicyRejection(t *testing.T) {
 	// 封禁账号应被拒绝
 	bannedAdmin := &sqlc.User{
 		ID:     "usr_banned_admin",
-		Role:   enums.RoleAdmin,
-		Status: enums.StatusBanned,
+		Role:   enum.RoleAdmin,
+		Status: enum.StatusBanned,
 	}
 	_, err = guard.Login(context.Background(), bannedAdmin)
 	require.Error(t, err)
@@ -349,8 +349,8 @@ func TestGuardSetTokenBinding(t *testing.T) {
 
 	u := &sqlc.User{
 		ID:     "usr_clone",
-		Role:   enums.RoleUser,
-		Status: enums.StatusActive,
+		Role:   enum.RoleUser,
+		Status: enum.StatusActive,
 	}
 
 	sess, err := guard.Login(context.Background(), u)
@@ -410,8 +410,8 @@ func TestGuardRevocationEpochAndInvalidateAll(t *testing.T) {
 	provider := newMockUserProvider()
 	provider.users["usr_epoch"] = &sqlc.User{
 		ID:     "usr_epoch",
-		Role:   enums.RoleUser,
-		Status: enums.StatusActive,
+		Role:   enum.RoleUser,
+		Status: enum.StatusActive,
 	}
 
 	guard := authentication.NewGuard(issuer, provider, user.ClientPolicy{}, user.Identity)
@@ -440,8 +440,8 @@ func TestGuardRevocationEpochAndInvalidateAll(t *testing.T) {
 	// 测试 LogoutAll 在已认证上下文中的调用
 	user2 := &sqlc.User{
 		ID:     "usr_epoch2",
-		Role:   enums.RoleUser,
-		Status: enums.StatusActive,
+		Role:   enum.RoleUser,
+		Status: enum.StatusActive,
 	}
 	provider.users["usr_epoch2"] = user2
 	sess2, err := guard.Login(ctx, user2)
@@ -466,20 +466,20 @@ func TestGuardAuthenticateTokenPolicy(t *testing.T) {
 	provider := newMockUserProvider()
 	provider.users["usr_admin"] = &sqlc.User{
 		ID:     "usr_admin",
-		Role:   enums.RoleAdmin,
-		Status: enums.StatusActive,
+		Role:   enum.RoleAdmin,
+		Status: enum.StatusActive,
 		Name:   "Admin Guy",
 	}
 	provider.users["usr_normal"] = &sqlc.User{
 		ID:     "usr_normal",
-		Role:   enums.RoleUser,
-		Status: enums.StatusActive,
+		Role:   enum.RoleUser,
+		Status: enum.StatusActive,
 		Name:   "Normal Guy",
 	}
 	provider.users["usr_banned"] = &sqlc.User{
 		ID:     "usr_banned",
-		Role:   enums.RoleAdmin,
-		Status: enums.StatusBanned,
+		Role:   enum.RoleAdmin,
+		Status: enum.StatusBanned,
 		Name:   "Banned Admin",
 	}
 
@@ -572,7 +572,7 @@ func TestGuardSetUserAndUserFromContext(t *testing.T) {
 	manualCtx := guard.SetUser(ctx, &sqlc.User{
 		ID:     "usr_manual",
 		Role:   "admin",
-		Status: enums.StatusActive,
+		Status: enum.StatusActive,
 	})
 	assert.True(t, guard.Check(manualCtx))
 	assert.True(t, guard.HasUser(manualCtx))
@@ -625,8 +625,8 @@ func TestGuardValidateTimingAndAntiEnumeration(t *testing.T) {
 	provider := newMockUserProvider()
 	provider.users["banned@example.com"] = &sqlc.User{
 		ID:     "usr_banned_enum",
-		Role:   enums.RoleUser,
-		Status: enums.StatusBanned,
+		Role:   enum.RoleUser,
+		Status: enum.StatusBanned,
 	}
 
 	guard := authentication.NewGuard(issuer, provider, user.ClientPolicy{RequireEmailVerification: true}, user.Identity)
@@ -670,8 +670,8 @@ func TestGuardResolveUser(t *testing.T) {
 	provider := newMockUserProvider()
 	provider.users["usr_resolve"] = &sqlc.User{
 		ID:     "usr_resolve",
-		Role:   enums.RoleAdmin,
-		Status: enums.StatusActive,
+		Role:   enum.RoleAdmin,
+		Status: enum.StatusActive,
 	}
 
 	guard := authentication.NewGuard(issuer, provider, user.AdminPolicy{}, user.Identity)

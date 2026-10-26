@@ -20,7 +20,7 @@ pre-commit:
       stage_fixed: true
 
     - name: docs
-      glob: "{cmd/api/**/*.go,internal/dto/**/*.go,internal/handler/**/*.go,internal/routes/**/*.go,pkg/**/*.go,shared/**/*.go}"
+      glob: "{cmd/api/**/*.go,internal/dto/**/*.go,internal/handler/**/*.go,internal/route/**/*.go,pkg/**/*.go,shared/**/*.go}"
       run: just docs
       stage_fixed: true
 

@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"cgin/internal/console/core"
+	"cgin/internal/console/scaffold"
 )
 
 const (
@@ -35,9 +36,9 @@ func NewMakeCRUDOptions(f Factory) *MakeCRUDOptions {
 }
 
 // Complete 从命令行参数与交互式环境中解析并补全配置。
-func (o *MakeCRUDOptions) Complete(_ *cobra.Command, args []string) error {
-	if len(args) > 0 {
-		o.Name = strings.TrimSpace(args[0])
+func (o *MakeCRUDOptions) Complete(args []string) error {
+	if name := firstArg(args); name != "" {
+		o.Name = name
 		return nil
 	}
 
@@ -89,7 +90,7 @@ func (o *MakeCRUDOptions) runDelete() error {
 		}
 	}
 
-	opts := core.GeneratorOptions{
+	opts := scaffold.GeneratorOptions{
 		Name:    o.Name,
 		IsAdmin: !o.Client,
 		Force:   o.Force,
@@ -98,7 +99,7 @@ func (o *MakeCRUDOptions) runDelete() error {
 
 	core.TitleTo(streams.Out, fmt.Sprintf("Destroying CRUD module: %s (Admin=%v, DryRun=%v)", o.Name, opts.IsAdmin, opts.DryRun))
 
-	results, err := core.DestroyCRUD(opts)
+	results, err := scaffold.DestroyCRUD(opts)
 	if err != nil {
 		return err
 	}
@@ -106,13 +107,13 @@ func (o *MakeCRUDOptions) runDelete() error {
 	var deleted, skipped, dryRuns int
 	for _, r := range results {
 		switch r.Action {
-		case core.ActionDeleted:
+		case scaffold.ActionDeleted:
 			deleted++
 			core.WarnTo(streams.Out, "  - %-12s %s", r.Action, r.Path)
-		case core.ActionSkipped:
+		case scaffold.ActionSkipped:
 			skipped++
 			core.InfoTo(streams.Out, "  ~ %-12s %s (%s)", r.Action, r.Path, r.Message)
-		case core.ActionDryRun:
+		case scaffold.ActionDryRun:
 			dryRuns++
 			core.InfoTo(streams.Out, "  ? %-12s %s (%s)", r.Action, r.Path, r.Message)
 		}
@@ -132,7 +133,7 @@ func (o *MakeCRUDOptions) runDelete() error {
 func (o *MakeCRUDOptions) runCreate() error {
 	streams := o.Factory.IOStreams()
 
-	opts := core.GeneratorOptions{
+	opts := scaffold.GeneratorOptions{
 		Name:        o.Name,
 		IsAdmin:     !o.Client,
 		TagName:     o.Tag,
@@ -143,7 +144,7 @@ func (o *MakeCRUDOptions) runCreate() error {
 
 	core.TitleTo(streams.Out, fmt.Sprintf("Scaffolding CRUD module: %s (Admin=%v, DryRun=%v)", o.Name, opts.IsAdmin, opts.DryRun))
 
-	results, err := core.GenerateCRUD(opts)
+	results, err := scaffold.GenerateCRUD(opts)
 	if err != nil {
 		return err
 	}
@@ -151,16 +152,16 @@ func (o *MakeCRUDOptions) runCreate() error {
 	var created, overwritten, skipped, dryRuns int
 	for _, r := range results {
 		switch r.Action {
-		case core.ActionCreated:
+		case scaffold.ActionCreated:
 			created++
 			core.SuccessTo(streams.Out, "  + %-12s %s", r.Action, r.Path)
-		case core.ActionOverwritten:
+		case scaffold.ActionOverwritten:
 			overwritten++
 			core.WarnTo(streams.Out, "  ! %-12s %s", r.Action, r.Path)
-		case core.ActionSkipped:
+		case scaffold.ActionSkipped:
 			skipped++
 			core.InfoTo(streams.Out, "  - %-12s %s (%s)", r.Action, r.Path, r.Message)
-		case core.ActionDryRun:
+		case scaffold.ActionDryRun:
 			dryRuns++
 			core.InfoTo(streams.Out, "  ? %-12s %s (%s)", r.Action, r.Path, r.Message)
 		}
@@ -174,12 +175,15 @@ func (o *MakeCRUDOptions) runCreate() error {
 
 	core.SuccessTo(streams.Out, "Scaffolding finished: %d created, %d overwritten, %d skipped.", created, overwritten, skipped)
 
+	data := scaffold.BuildTemplateData(opts)
+
 	core.InfoTo(streams.Out, "\nNext steps:")
 	core.InfoTo(streams.Out, "  1. Generate the query set first (the module cannot compile before this):")
 	core.InfoTo(streams.Out, "     rtk just sqlc")
-	core.InfoTo(streams.Out, "  2. Register routes in internal/bootstrap/engine.go:")
-	data := core.BuildTemplateData(opts)
-	core.InfoTo(streams.Out, "     %s.%s(v1, %sHandler, mw)", data.RoutesPackage, data.RoutesFunc, data.CamelName)
+	core.InfoTo(streams.Out, "  2. Register the slice in internal/bootstrap/engine.go (three places):")
+	core.InfoTo(streams.Out, "     - routeHandlers:         %s *%s.%sHandler", data.CamelName, data.HandlerPackage, data.PascalName)
+	core.InfoTo(streams.Out, "     - zeroHandlers():        %s: &%s.%sHandler{},", data.CamelName, data.HandlerPackage, data.PascalName)
+	core.InfoTo(streams.Out, "     - routeHandlers.mount(): %s.%s(v1, h.%s, mw)", data.RoutesPackage, data.RoutesFunc, data.CamelName)
 	core.InfoTo(streams.Out, "  3. Verify and format code:")
 	core.InfoTo(streams.Out, "     rtk just check")
 	core.InfoTo(streams.Out, "  4. Regenerate Swagger/OpenAPI documentation:")
@@ -262,11 +266,11 @@ func newMakeCRUDCmd(f Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "make:crud [name]",
 		Short: "Generate a complete CRUD module across layers (or delete with -d)",
-		Long: `Generate or delete a complete production-grade CRUD feature slice following the Layer-First architecture (routes → handler → service → dto).
+		Long: `Generate or delete a complete production-grade CRUD feature slice following the Layer-First architecture (route → handler → service → dto).
 
 Generates / Removes (admin scope lands in each layer's admin/ subdirectory):
   - internal/handler/<module>.go
-  - internal/routes/<module>.go
+  - internal/route/<module>.go
   - internal/service/<module>.go
   - internal/dto/<module>.go
   - database/schemas/<plural>.sql + database/queries/<plural>.sql
@@ -283,12 +287,7 @@ Examples:
   cgin make:crud article -d
   cgin make:crud article --delete --force
   cgin make:crud order -d --dry-run`,
-		Args: func(_ *cobra.Command, args []string) error {
-			if len(args) > 1 {
-				return fmt.Errorf("accepts at most 1 arg(s), received %d", len(args))
-			}
-			return nil
-		},
+		Args: maxArgs(1),
 		RunE: runCommand(opts),
 	}
 

@@ -2,12 +2,11 @@ package core
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 	"strings"
+	"sync"
 
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 )
 
@@ -22,47 +21,33 @@ var (
 )
 
 var (
-	colorOverride *bool
-	flagLineRegex = regexp.MustCompile(`^(\s+)(-[a-zA-Z0-9], --[a-zA-Z0-9_-]+|--[a-zA-Z0-9_-]+|-[a-zA-Z0-9])(?: ([^\s]+))?(\s{2,})(.*)$`)
+	// colorEnabled 是进程级色彩开关，由 SetupColoredHelp 依据注入的 IOStreams 单点设定。
+	colorEnabled bool
+	// templateFuncsOnce 保证 cobra 模板函数全局只注册一次。
+	templateFuncsOnce sync.Once
+	flagLineRegex     = regexp.MustCompile(`^(\s+)(-[a-zA-Z0-9], --[a-zA-Z0-9_-]+|--[a-zA-Z0-9_-]+|-[a-zA-Z0-9])(?: ([^\s]+))?(\s{2,})(.*)$`)
 )
 
-// RegisterTemplateFuncs 把帮助模板用的样式函数注入 cobra。
-//
-// 由根命令构造时显式调用：模板函数属于框架级全局，挂载时机应当可追踪。
-func RegisterTemplateFuncs() {
-	cobra.AddTemplateFunc("styleHeader", StyleHeader)
-	cobra.AddTemplateFunc("styleCmd", StyleCmd)
-	cobra.AddTemplateFunc("styleUseLine", StyleUseLine)
-	cobra.AddTemplateFunc("styleFlags", StyleFlags)
-	cobra.AddTemplateFunc("styleAliases", StyleAliases)
-	cobra.AddTemplateFunc("styleExample", StyleExample)
+// registerTemplateFuncs 幂等注入帮助模板所需的样式函数。
+func registerTemplateFuncs() {
+	templateFuncsOnce.Do(func() {
+		cobra.AddTemplateFunc("styleHeader", StyleHeader)
+		cobra.AddTemplateFunc("styleCmd", StyleCmd)
+		cobra.AddTemplateFunc("styleUseLine", StyleUseLine)
+		cobra.AddTemplateFunc("styleFlags", StyleFlags)
+		cobra.AddTemplateFunc("styleAliases", StyleAliases)
+		cobra.AddTemplateFunc("styleExample", StyleExample)
+	})
 }
 
-// SetColorEnabled 供测试或特殊场景显式覆盖颜色开关。
+// SetColorEnabled 显式设定帮助输出的色彩开关。
 func SetColorEnabled(enabled bool) {
-	colorOverride = &enabled
+	colorEnabled = enabled
 }
 
-// ResetColorOverride 重置颜色覆盖状态。
-func ResetColorOverride() {
-	colorOverride = nil
-}
-
-// IsColorEnabled 检测当前控制台环境是否应启用彩色高亮输出。
+// IsColorEnabled 返回帮助输出是否启用彩色高亮。
 func IsColorEnabled() bool {
-	if colorOverride != nil {
-		return *colorOverride
-	}
-	if os.Getenv("NO_COLOR") != "" {
-		return false
-	}
-	if os.Getenv("TERM") == "dumb" {
-		return false
-	}
-	if os.Getenv("FORCE_COLOR") != "" || os.Getenv("CLICOLOR_FORCE") != "" {
-		return true
-	}
-	return term.IsTerminal(os.Stdout.Fd()) || term.IsTerminal(os.Stderr.Fd())
+	return colorEnabled
 }
 
 // StyleHeader 为命令帮助的各个小节标题添加加粗暖黄高亮。
@@ -206,10 +191,16 @@ Use "{{styleUseLine (printf "%s [command] --help" .CommandPath)}}" for more info
 `
 
 // SetupColoredHelp 为目标命令（通常是根命令）配置色彩丰富且对齐完美的终端帮助模板。
-func SetupColoredHelp(cmd *cobra.Command) {
+// 色彩能力取自注入的 IOStreams；未注入时回退为操作系统标准流探测。
+func SetupColoredHelp(cmd *cobra.Command, streams *IOStreams) {
 	if cmd == nil {
 		return
 	}
-	RegisterTemplateFuncs()
+	registerTemplateFuncs()
+	if streams != nil {
+		SetColorEnabled(streams.ColorEnabled())
+	} else {
+		SetColorEnabled(detectSystemColor())
+	}
 	cmd.SetUsageTemplate(coloredUsageTemplate)
 }

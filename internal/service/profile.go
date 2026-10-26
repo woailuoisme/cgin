@@ -6,7 +6,7 @@ import (
 
 	"github.com/aarondl/opt/omitnull"
 
-	"cgin/shared/user"
+	"cgin/internal/user"
 )
 
 // userProfiles 声明本人档案所需的读写能力，由本包按需定义最小契约。

@@ -43,9 +43,9 @@ sql:
           # 角色与账号状态直接复用领域枚举。
           - column: 'user.role'
             go_type:
-              import: "cgin/shared/enums"
+              import: "cgin/internal/enum"
               type: "Role"
           - column: 'user.status'
             go_type:
-              import: "cgin/shared/enums"
+              import: "cgin/internal/enum"
               type: "Status"

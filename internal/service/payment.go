@@ -11,13 +11,13 @@ import (
 	"github.com/samber/oops"
 
 	"cgin/internal/config"
+	"cgin/internal/event"
 	"cgin/pkg/cache"
 	"cgin/pkg/errs"
 	"cgin/pkg/eventbus"
 	"cgin/pkg/logger"
 	platformPayment "cgin/pkg/payment"
-	"cgin/pkg/payment/enums"
-	"cgin/shared/events"
+	"cgin/pkg/payment/enum"
 )
 
 const (
@@ -119,7 +119,7 @@ func (s *PaymentService) SetCallbackHandler(handler CallbackHandler) {
 // ProcessNotification 统一处理已通过传输层验签解析的支付/退款异步通知。
 func (s *PaymentService) ProcessNotification(
 	ctx context.Context,
-	channel enums.PaymentChannel,
+	channel enum.PaymentChannel,
 	notification *platformPayment.Notification,
 ) (platformPayment.NotificationAck, error) {
 	log := logger.FromContext(ctx)
@@ -172,7 +172,7 @@ func (s *PaymentService) ProcessNotification(
 // 三者总是一起出行（缓存键、日志、错误上下文），因此收进一个类型，
 // 避免每个下游 helper 都摊开三个参数、且任何一处漏传一段就退化成串号。
 type notificationKey struct {
-	channel enums.PaymentChannel
+	channel enum.PaymentChannel
 	kind    string
 	tradeNo string
 }
@@ -218,9 +218,9 @@ func (s *PaymentService) acquireLockOrConsumed(ctx context.Context, key notifica
 }
 
 // dispatchNotification 将通知派发给业务处理器并向事件总线广播领域事件。
-func (s *PaymentService) dispatchNotification(ctx context.Context, channel enums.PaymentChannel, n *platformPayment.Notification) error {
+func (s *PaymentService) dispatchNotification(ctx context.Context, channel enum.PaymentChannel, n *platformPayment.Notification) error {
 	switch n.Kind {
-	case enums.PaymentNotificationKindPayment:
+	case enum.PaymentNotificationKindPayment:
 		if n.Payment == nil {
 			return errs.BadRequest("payment notification payload is missing")
 		}
@@ -228,7 +228,7 @@ func (s *PaymentService) dispatchNotification(ctx context.Context, channel enums
 			return err
 		}
 		if s.publisher != nil {
-			_ = s.publisher.Publish(ctx, events.PaymentSucceededEvent{
+			_ = s.publisher.Publish(ctx, event.PaymentSucceededEvent{
 				Channel:   channel,
 				Payment:   n.Payment,
 				Timestamp: time.Now(),
@@ -236,7 +236,7 @@ func (s *PaymentService) dispatchNotification(ctx context.Context, channel enums
 		}
 		return nil
 
-	case enums.PaymentNotificationKindRefund:
+	case enum.PaymentNotificationKindRefund:
 		if n.Refund == nil {
 			return errs.BadRequest("refund notification payload is missing")
 		}
@@ -244,7 +244,7 @@ func (s *PaymentService) dispatchNotification(ctx context.Context, channel enums
 			return err
 		}
 		if s.publisher != nil {
-			_ = s.publisher.Publish(ctx, events.PaymentRefundedEvent{
+			_ = s.publisher.Publish(ctx, event.PaymentRefundedEvent{
 				Channel:   channel,
 				Refund:    n.Refund,
 				Timestamp: time.Now(),

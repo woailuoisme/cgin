@@ -45,7 +45,7 @@ type WechatPaymentAppConfig struct {
 	PlatformPublicKeyID string `env:"WECHAT_PAY_PLATFORM_PUBLIC_KEY_ID" json:"platform_public_key_id"`
 	// NotifyURL 该应用的支付与退款结果通知地址。
 	NotifyURL string `env:"WECHAT_PAY_NOTIFY_URL" json:"notify_url"`
-	// Scenes 该应用可承载的支付场景，取值见 enums.PaymentScene。
+	// Scenes 该应用可承载的支付场景，取值见 enum.PaymentScene。
 	Scenes []string `env:"WECHAT_PAY_SCENES" json:"scenes"`
 }
 
@@ -73,7 +73,7 @@ type AlipayPaymentAppConfig struct {
 	NotifyURL string `env:"ALIPAY_NOTIFY_URL" json:"notify_url"`
 	// ReturnURL 同步回跳地址，仅电脑网站与手机网站支付需要。
 	ReturnURL string `env:"ALIPAY_RETURN_URL" json:"return_url"`
-	// Scenes 该应用可承载的支付场景，取值见 enums.PaymentScene。
+	// Scenes 该应用可承载的支付场景，取值见 enum.PaymentScene。
 	Scenes []string `env:"ALIPAY_SCENES" json:"scenes"`
 }
 

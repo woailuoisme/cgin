@@ -12,9 +12,9 @@ import (
 
 	"cgin/internal/config"
 	"cgin/internal/middleware/global"
+	appuser "cgin/internal/user"
 	"cgin/pkg/errs"
 	"cgin/pkg/i18n"
-	shareduser "cgin/shared/user"
 )
 
 // TestValidationMessageTranslation 验证以语言包键表达的字段级校验文案，
@@ -40,7 +40,7 @@ func TestValidationMessageTranslation(t *testing.T) {
 			r := gin.New()
 			r.Use(m.ErrorHandler())
 			r.PATCH("/profile", func(c *gin.Context) {
-				_ = c.Error(shareduser.FieldCannotBeNull("name"))
+				_ = c.Error(appuser.FieldCannotBeNull("name"))
 			})
 
 			req := httptest.NewRequest(http.MethodPatch, "/profile", nil)

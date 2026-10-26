@@ -9,9 +9,9 @@ import (
 
 	"cgin/internal/database/sqlc"
 	admindto "cgin/internal/dto/admin"
+	appuser "cgin/internal/user"
 	"cgin/pkg/authentication"
 	"cgin/pkg/errs"
-	shareduser "cgin/shared/user"
 )
 
 // passwordChanger 声明管理员改密所需的本地凭据能力（接口由消费方定义）。
@@ -49,7 +49,7 @@ func (s *AuthService) SignInEmail(ctx context.Context, body admindto.SignInEmail
 		Password: body.Password,
 	})
 	if err != nil {
-		if errors.Is(err, shareduser.ErrRoleRestricted) {
+		if errors.Is(err, appuser.ErrRoleRestricted) {
 			return admindto.SessionResource{}, errs.InvalidCredentials()
 		}
 		return admindto.SessionResource{}, err
@@ -65,7 +65,7 @@ func (s *AuthService) GetSession(ctx context.Context, userID string) (admindto.G
 		return admindto.GetSessionResource{}, err
 	}
 
-	return admindto.GetSessionResource{User: shareduser.ProjectProfile(user)}, nil
+	return admindto.GetSessionResource{User: appuser.ProjectProfile(user)}, nil
 }
 
 // Refresh 刷新管理员双令牌，实现令牌轮换。
@@ -94,7 +94,7 @@ func toSessionResource(sess authentication.Session, user *sqlc.User) admindto.Se
 		Token:        sess.Token,
 		RefreshToken: sess.RefreshToken,
 		ExpiresIn:    sess.ExpiresIn,
-		User:         shareduser.ProjectProfile(user),
+		User:         appuser.ProjectProfile(user),
 	}
 }
 
@@ -106,7 +106,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID string, body ad
 	}
 
 	if err := s.passwords.ChangePassword(ctx, userID, body.CurrentPassword, body.NewPassword); err != nil {
-		if errors.Is(err, shareduser.ErrNoCredential) {
+		if errors.Is(err, appuser.ErrNoCredential) {
 			return errs.PasswordMismatch()
 		}
 		return err

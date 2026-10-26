@@ -87,7 +87,7 @@ func (d *InvoiceDocument) UseDefaultFooter() bool {
 
 // Build 编排渲染发票主体。
 //
-// 所有展示文案都从 messages/<语言>/invoice.toml 取，模板里不留硬编码文案：
+// 所有展示文案都从 message/<语言>/invoice.toml 取，模板里不留硬编码文案：
 // 该约束是 AGENTS.md 4.5 的硬性要求，也让同一份模板能直接出中英两种凭据。
 func (d *InvoiceDocument) Build(ctx context.Context, b *pdf.Builder) error {
 	translator := d.Translator

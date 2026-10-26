@@ -10,7 +10,7 @@ import (
 	"cgin/pkg/errs"
 	"cgin/pkg/logger"
 	platformPayment "cgin/pkg/payment"
-	"cgin/pkg/payment/enums"
+	"cgin/pkg/payment/enum"
 )
 
 // PaymentHandler 承接支付渠道的 Webhook 异步通知与客户端同步跳转。
@@ -47,7 +47,7 @@ func (h *PaymentHandler) HandleNotification(c *gin.Context) {
 		return
 	}
 
-	channel := enums.PaymentChannel(pathParams.Channel)
+	channel := enum.PaymentChannel(pathParams.Channel)
 	if !channel.IsValid() {
 		// 报文里不拼接调用方原始输入，渠道值只进结构化日志。
 		logger.FromContext(c.Request.Context()).Warn().
@@ -106,7 +106,7 @@ func (h *PaymentHandler) HandleAlipayReturn(c *gin.Context) {
 	}
 
 	// 对 URL Query 参数进行支付宝公钥验签
-	notification, err := h.gateway.ParseNotification(ctx, enums.PaymentChannelAlipay, "", c.Request)
+	notification, err := h.gateway.ParseNotification(ctx, enum.PaymentChannelAlipay, "", c.Request)
 	if err != nil {
 		log.Warn().Err(err).Msg("alipay return verification failed, redirecting to order failure page")
 		c.Redirect(http.StatusFound, h.svc.FailureRedirectURL())

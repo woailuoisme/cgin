@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/config"
+	"cgin/internal/notification/store"
 	"cgin/pkg/cache"
 	"cgin/pkg/notification"
 	"cgin/pkg/notification/async"
@@ -21,7 +22,6 @@ import (
 	"cgin/pkg/notification/channel/sms"
 	"cgin/pkg/notification/contract"
 	"cgin/pkg/queue"
-	"cgin/shared/notification/database"
 )
 
 // mockNotifiable 模拟实现 Notifiable 契约的测试用户实体。
@@ -135,10 +135,10 @@ func TestChannelFormatting(t *testing.T) {
 	notif := &mockNotification{content: "系统升级维护提醒"}
 
 	// 1. Database 渠道格式化
-	dbCh := database.NewChannel(nil)
+	dbCh := store.NewChannel(nil)
 	dbPayload, err := dbCh.Format(notif, user)
 	require.NoError(t, err)
-	dbMsg, ok := dbPayload.(*database.Message)
+	dbMsg, ok := dbPayload.(*store.Message)
 	require.True(t, ok)
 	assert.Equal(t, "系统升级维护提醒", dbMsg.Data["message"])
 

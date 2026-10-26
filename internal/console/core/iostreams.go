@@ -34,8 +34,28 @@ func SystemIOStreams() *IOStreams {
 		stdinIsTTY:   stdinTTY,
 		stdoutIsTTY:  stdoutTTY,
 		stderrIsTTY:  stderrTTY,
-		colorEnabled: stdoutTTY && os.Getenv("NO_COLOR") == "",
+		colorEnabled: detectColor(stdoutTTY, stderrTTY),
 	}
+}
+
+// detectColor 综合环境变量与终端能力判定是否启用彩色输出。
+// 这是全系统唯一的色彩探测实现，其余位置只读取判定结果。
+func detectColor(stdoutTTY, stderrTTY bool) bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	if os.Getenv("TERM") == "dumb" {
+		return false
+	}
+	if os.Getenv("FORCE_COLOR") != "" || os.Getenv("CLICOLOR_FORCE") != "" {
+		return true
+	}
+	return stdoutTTY || stderrTTY
+}
+
+// detectSystemColor 以操作系统标准流探测色彩能力。
+func detectSystemColor() bool {
+	return detectColor(term.IsTerminal(os.Stdout.Fd()), term.IsTerminal(os.Stderr.Fd()))
 }
 
 // TestIOStreams 创建完全基于内存缓冲区的测试用 IOStreams，便于捕获和断言命令输出。

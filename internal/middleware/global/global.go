@@ -6,9 +6,8 @@
 //   - ErrorHandler: 集中捕获 c.Errors，多语言翻译并输出统一 JSON 错误信封
 //   - Recovery: 未捕获 Panic 恢复与 500 兜底
 //   - Timeout: 请求生命周期超时控制 (504 Gateway Timeout)
-//   - SecurityHeaders: 浏览器安全标头注入 (nosniff, DENY, HSTS 等)
 //   - BodyLimit: 请求体大小限制 (非上传 1MiB，上传 32MiB)
-//   - CacheBody: 请求体流多道缓存 (gin.BodyBytesKey)
+//   - EnforceJSONContentType: 变更请求 application/json 类型安全强校验
 //   - Idempotency: HTTP 幂等性控制 (Idempotency-Key)
 //   - CORS: 跨域资源共享策略与预检处理
 package global

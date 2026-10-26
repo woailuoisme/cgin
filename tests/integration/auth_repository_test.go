@@ -14,7 +14,7 @@ import (
 
 	"cgin/internal/database"
 	"cgin/internal/database/sqlc"
-	"cgin/shared/enums"
+	"cgin/internal/enum"
 )
 
 // testHash 是占位口令哈希，仓储层不校验 argon2id 本身。
@@ -52,7 +52,7 @@ func createUser(t *testing.T, db *database.DB, email, role, status, passwordHash
 		if _, err := q.CreateAccount(ctx, sqlc.CreateAccountParams{
 			UserID:     row.ID,
 			AccountID:  row.ID,
-			ProviderID: string(enums.ProviderCredential),
+			ProviderID: string(enum.ProviderCredential),
 			Password:   &passwordHash,
 		}); err != nil {
 			return err
@@ -71,7 +71,7 @@ func TestRepositoryUserLifecycle(t *testing.T) {
 	ctx := t.Context()
 	email := uniqueEmail()
 
-	user := createUser(t, db, email, string(enums.RoleUser), string(enums.StatusActive), testHash)
+	user := createUser(t, db, email, string(enum.RoleUser), string(enum.StatusActive), testHash)
 
 	// 主键必须是 PostgreSQL 18 生成的 UUIDv7（第 15 个字符为版本号 7）。
 	require.Len(t, user.ID, 36)
@@ -93,7 +93,7 @@ func TestRepositoryUserLifecycle(t *testing.T) {
 	t.Run("凭据账号可取回", func(t *testing.T) {
 		account, err := db.Queries(ctx).GetCredentialAccount(ctx, sqlc.GetCredentialAccountParams{
 			UserID:     user.ID,
-			ProviderID: string(enums.ProviderCredential),
+			ProviderID: string(enum.ProviderCredential),
 		})
 		require.NoError(t, err)
 		require.NotNil(t, account.Password)
@@ -109,8 +109,8 @@ func TestRepositoryUserLifecycle(t *testing.T) {
 		_, err := db.Queries(ctx).CreateUser(ctx, sqlc.CreateUserParams{
 			Name:   "Dup",
 			Email:  email,
-			Role:   string(enums.RoleUser),
-			Status: string(enums.StatusActive),
+			Role:   string(enum.RoleUser),
+			Status: string(enum.StatusActive),
 		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "idx_user_email")
@@ -120,7 +120,7 @@ func TestRepositoryUserLifecycle(t *testing.T) {
 		newHash := testHash + "x"
 		affected, err := db.Queries(ctx).UpdateAccountPassword(ctx, sqlc.UpdateAccountPasswordParams{
 			UserID:     user.ID,
-			ProviderID: string(enums.ProviderCredential),
+			ProviderID: string(enum.ProviderCredential),
 			Password:   &newHash,
 		})
 		require.NoError(t, err)
@@ -129,7 +129,7 @@ func TestRepositoryUserLifecycle(t *testing.T) {
 		missing := testHash
 		affected, err = db.Queries(ctx).UpdateAccountPassword(ctx, sqlc.UpdateAccountPasswordParams{
 			UserID:     "u_missing",
-			ProviderID: string(enums.ProviderCredential),
+			ProviderID: string(enum.ProviderCredential),
 			Password:   &missing,
 		})
 		require.NoError(t, err)
@@ -137,7 +137,7 @@ func TestRepositoryUserLifecycle(t *testing.T) {
 	})
 
 	t.Run("记录登录与邮箱验证", func(t *testing.T) {
-		method := string(enums.ProviderCredential)
+		method := string(enum.ProviderCredential)
 		require.NoError(t, db.Queries(ctx).RecordUserLogin(ctx, sqlc.RecordUserLoginParams{
 			ID:     user.ID,
 			Method: &method,
@@ -218,7 +218,7 @@ func TestSoftDeleteFreesEmail(t *testing.T) {
 	ctx := t.Context()
 	email := uniqueEmail()
 
-	first := createUser(t, db, email, string(enums.RoleUser), string(enums.StatusActive), testHash)
+	first := createUser(t, db, email, string(enum.RoleUser), string(enum.StatusActive), testHash)
 
 	affected, err := db.Queries(ctx).SoftDeleteUser(ctx, sqlc.SoftDeleteUserParams{ID: first.ID})
 	require.NoError(t, err)
@@ -229,7 +229,7 @@ func TestSoftDeleteFreesEmail(t *testing.T) {
 	require.ErrorIs(t, err, pgx.ErrNoRows, "软删用户不应出现在业务查询里")
 
 	// 且同一邮箱可以重新注册，这正是部分唯一索引的设计意图。
-	second := createUser(t, db, email, string(enums.RoleUser), string(enums.StatusActive), testHash)
+	second := createUser(t, db, email, string(enum.RoleUser), string(enum.StatusActive), testHash)
 	assert.NotEqual(t, first.ID, second.ID)
 }
 
@@ -243,7 +243,7 @@ func TestSchemaEnforcesRoleAndStatusChecks(t *testing.T) {
 			Name:   "Bad Role",
 			Email:  uniqueEmail(),
 			Role:   "editor",
-			Status: string(enums.StatusActive),
+			Status: string(enum.StatusActive),
 		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "ck_user_role")
@@ -253,7 +253,7 @@ func TestSchemaEnforcesRoleAndStatusChecks(t *testing.T) {
 		_, err := db.Queries(ctx).CreateUser(ctx, sqlc.CreateUserParams{
 			Name:   "Bad Status",
 			Email:  uniqueEmail(),
-			Role:   string(enums.RoleUser),
+			Role:   string(enum.RoleUser),
 			Status: "sleeping",
 		})
 		require.Error(t, err)

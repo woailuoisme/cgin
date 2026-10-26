@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/console"
-	"cgin/internal/console/core"
+	"cgin/internal/console/scaffold"
 )
 
 // TestNamingUtilities 测试命名转换与单复数处理。
@@ -73,12 +73,12 @@ func TestNamingUtilities(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			assert.Equal(t, tt.wantSnake, core.ToSnakeCase(tt.input))
-			assert.Equal(t, tt.wantPascal, core.ToPascalCase(tt.input))
-			assert.Equal(t, tt.wantCamel, core.ToCamelCase(tt.input))
-			assert.Equal(t, tt.wantKebab, core.ToKebabCase(tt.input))
-			assert.Equal(t, tt.wantPlural, core.Pluralize(core.ToSnakeCase(tt.input)))
-			assert.Equal(t, tt.wantSingular, core.Singularize(tt.wantPlural))
+			assert.Equal(t, tt.wantSnake, scaffold.ToSnakeCase(tt.input))
+			assert.Equal(t, tt.wantPascal, scaffold.ToPascalCase(tt.input))
+			assert.Equal(t, tt.wantCamel, scaffold.ToCamelCase(tt.input))
+			assert.Equal(t, tt.wantKebab, scaffold.ToKebabCase(tt.input))
+			assert.Equal(t, tt.wantPlural, scaffold.Pluralize(scaffold.ToSnakeCase(tt.input)))
+			assert.Equal(t, tt.wantSingular, scaffold.Singularize(tt.wantPlural))
 		})
 	}
 }
@@ -87,7 +87,7 @@ func TestNamingUtilities(t *testing.T) {
 func TestGenerateCRUD_Execution(t *testing.T) {
 	tempDir := t.TempDir()
 
-	opts := core.GeneratorOptions{
+	opts := scaffold.GeneratorOptions{
 		Name:        "article",
 		IsAdmin:     true,
 		TagName:     "文章管理",
@@ -96,12 +96,12 @@ func TestGenerateCRUD_Execution(t *testing.T) {
 	}
 
 	// 1. 初次生成
-	results, err := core.GenerateCRUD(opts)
+	results, err := scaffold.GenerateCRUD(opts)
 	require.NoError(t, err)
 	require.Len(t, results, 6)
 
 	for _, r := range results {
-		assert.Equal(t, core.ActionCreated, r.Action)
+		assert.Equal(t, scaffold.ActionCreated, r.Action)
 		fullPath := filepath.Join(tempDir, r.Path)
 		info, statErr := os.Stat(fullPath)
 		require.NoError(t, statErr)
@@ -136,10 +136,11 @@ func TestGenerateCRUD_Execution(t *testing.T) {
 	assert.Contains(t, string(handlerContent), "response.Paginated(c, items, meta)")
 	assert.Contains(t, string(handlerContent), "@Tags         文章管理")
 
-	routesPath := filepath.Join(tempDir, "internal", "routes", "admin", "article.go")
+	routesPath := filepath.Join(tempDir, "internal", "route", "admin", "article.go")
 	routesContent, err := os.ReadFile(routesPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(routesContent), "RegisterAdminArticlesRoutes")
+	assert.Contains(t, string(routesContent), "package adminroute")
 	assert.Contains(t, string(routesContent), `mw.Can(authorization.Resource("articles")`)
 
 	queriesPath := filepath.Join(tempDir, "database", "queries", "articles.sql")
@@ -154,29 +155,29 @@ func TestGenerateCRUD_Execution(t *testing.T) {
 	assert.Contains(t, string(schemaContent), "CREATE TABLE IF NOT EXISTS articles")
 
 	// 3. 不带 force 再次生成，应当被全部跳过
-	results2, err := core.GenerateCRUD(opts)
+	results2, err := scaffold.GenerateCRUD(opts)
 	require.NoError(t, err)
 	require.Len(t, results2, 6)
 	for _, r := range results2 {
-		assert.Equal(t, core.ActionSkipped, r.Action)
+		assert.Equal(t, scaffold.ActionSkipped, r.Action)
 	}
 
 	// 4. 携带 force 标志再次生成，应当覆盖
 	opts.Force = true
-	results3, err := core.GenerateCRUD(opts)
+	results3, err := scaffold.GenerateCRUD(opts)
 	require.NoError(t, err)
 	require.Len(t, results3, 6)
 	for _, r := range results3 {
-		assert.Equal(t, core.ActionOverwritten, r.Action)
+		assert.Equal(t, scaffold.ActionOverwritten, r.Action)
 	}
 
 	// 5. Dry-run 模拟运行不影响文件
 	opts.DryRun = true
-	results4, err := core.GenerateCRUD(opts)
+	results4, err := scaffold.GenerateCRUD(opts)
 	require.NoError(t, err)
 	require.Len(t, results4, 6)
 	for _, r := range results4 {
-		assert.Equal(t, core.ActionDryRun, r.Action)
+		assert.Equal(t, scaffold.ActionDryRun, r.Action)
 	}
 }
 
@@ -202,7 +203,7 @@ func TestMakeCommand_CLIExecution(t *testing.T) {
 func TestDestroyCRUD_Execution(t *testing.T) {
 	tempDir := t.TempDir()
 
-	opts := core.GeneratorOptions{
+	opts := scaffold.GeneratorOptions{
 		Name:        "article",
 		IsAdmin:     true,
 		TagName:     "文章管理",
@@ -211,17 +212,17 @@ func TestDestroyCRUD_Execution(t *testing.T) {
 	}
 
 	// 1. 先生成文件
-	results, err := core.GenerateCRUD(opts)
+	results, err := scaffold.GenerateCRUD(opts)
 	require.NoError(t, err)
 	require.Len(t, results, 6)
 
 	// 2. Dry-run 回退删除
 	opts.DryRun = true
-	destroyDryRun, err := core.DestroyCRUD(opts)
+	destroyDryRun, err := scaffold.DestroyCRUD(opts)
 	require.NoError(t, err)
 	require.Len(t, destroyDryRun, 6)
 	for _, r := range destroyDryRun {
-		assert.Equal(t, core.ActionDryRun, r.Action)
+		assert.Equal(t, scaffold.ActionDryRun, r.Action)
 	}
 
 	// 验证文件依然存在
@@ -231,11 +232,11 @@ func TestDestroyCRUD_Execution(t *testing.T) {
 
 	// 3. 真实回退删除
 	opts.DryRun = false
-	destroyResults, err := core.DestroyCRUD(opts)
+	destroyResults, err := scaffold.DestroyCRUD(opts)
 	require.NoError(t, err)
 	require.Len(t, destroyResults, 6)
 	for _, r := range destroyResults {
-		assert.Equal(t, core.ActionDeleted, r.Action)
+		assert.Equal(t, scaffold.ActionDeleted, r.Action)
 	}
 
 	// 验证生成的文件已被物理删除
@@ -251,11 +252,11 @@ func TestDestroyCRUD_Execution(t *testing.T) {
 	assert.True(t, os.IsNotExist(statErr), "Module file parent directory should be removed: "+featureDir)
 
 	// 4. 重复执行回退删除，应安全跳过（ActionSkipped）
-	destroyAgain, err := core.DestroyCRUD(opts)
+	destroyAgain, err := scaffold.DestroyCRUD(opts)
 	require.NoError(t, err)
 	require.Len(t, destroyAgain, 6)
 	for _, r := range destroyAgain {
-		assert.Equal(t, core.ActionSkipped, r.Action)
+		assert.Equal(t, scaffold.ActionSkipped, r.Action)
 	}
 }
 

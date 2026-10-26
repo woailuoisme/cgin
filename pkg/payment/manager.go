@@ -18,7 +18,7 @@ import (
 	"cgin/internal/config"
 	"cgin/pkg/errs"
 	"cgin/pkg/logger"
-	"cgin/pkg/payment/enums"
+	"cgin/pkg/payment/enum"
 )
 
 // DriverFactory 定义支付渠道驱动的构造工厂函数契约。
@@ -43,11 +43,11 @@ func alipayFactory(application string, rawCfg any, isProd bool, certsDir string,
 }
 
 // GetDriverFactory 获取渠道驱动工厂（内置渠道静态分发，不支持运行期注册）。
-func GetDriverFactory(channel enums.PaymentChannel) (DriverFactory, bool) {
+func GetDriverFactory(channel enum.PaymentChannel) (DriverFactory, bool) {
 	switch channel {
-	case enums.PaymentChannelWechat:
+	case enum.PaymentChannelWechat:
 		return wechatFactory, true
-	case enums.PaymentChannelAlipay:
+	case enum.PaymentChannelAlipay:
 		return alipayFactory, true
 	default:
 		return nil, false
@@ -110,7 +110,7 @@ func (m *Manager) loadWechat(cfg *config.Config, log *zerolog.Logger) error {
 		return err
 	}
 
-	factory, ok := GetDriverFactory(enums.PaymentChannelWechat)
+	factory, ok := GetDriverFactory(enum.PaymentChannelWechat)
 	if !ok {
 		return oops.Code(errs.CodePaymentDriverNotFound).Errorf("payment driver factory not found for wechat")
 	}
@@ -136,7 +136,7 @@ func (m *Manager) loadAlipay(cfg *config.Config, isProd bool, log *zerolog.Logge
 		return err
 	}
 
-	factory, ok := GetDriverFactory(enums.PaymentChannelAlipay)
+	factory, ok := GetDriverFactory(enum.PaymentChannelAlipay)
 	if !ok {
 		return oops.Code(errs.CodePaymentDriverNotFound).Errorf("payment driver factory not found for alipay")
 	}
@@ -157,7 +157,7 @@ func (m *Manager) loadAlipay(cfg *config.Config, isProd bool, log *zerolog.Logge
 // registerFakeProviders 在显式开启且非生产环境时注册 Fake 渠道。
 // 这样本地开发与端到端演练无需真实商户号即可跑通收银台链路，且该能力永远不会进入生产环境。
 func (m *Manager) registerFakeProviders(log *zerolog.Logger) {
-	for _, channel := range enums.PaymentChannelValues() {
+	for _, channel := range enum.PaymentChannelValues() {
 		provider := NewFakeProvider(channel, FakeApplicationKey)
 		if err := m.register(provider); err != nil {
 			log.Warn().
@@ -234,7 +234,7 @@ func (m *Manager) Enabled() bool {
 }
 
 // capability 取出 provider 的指定能力；该渠道应用未实现时返回统一的「能力不支持」错误。
-func capability[T any](provider Provider, channel enums.PaymentChannel) (T, error) {
+func capability[T any](provider Provider, channel enum.PaymentChannel) (T, error) {
 	impl, ok := any(provider).(T)
 	if ok {
 		return impl, nil
@@ -272,7 +272,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*Instruction, 
 // Query 主动查询支付状态。若未显式指定 application，则自动使用对应渠道的默认应用。
 func (m *Manager) Query(
 	ctx context.Context,
-	channel enums.PaymentChannel,
+	channel enum.PaymentChannel,
 	req QueryRequest,
 	application ...string,
 ) (*PaymentResult, error) {
@@ -292,7 +292,7 @@ func (m *Manager) Query(
 // Close 关闭一笔未支付的收款。若未显式指定 application，则自动使用对应渠道的默认应用。
 func (m *Manager) Close(
 	ctx context.Context,
-	channel enums.PaymentChannel,
+	channel enum.PaymentChannel,
 	req CloseRequest,
 	application ...string,
 ) error {
@@ -312,7 +312,7 @@ func (m *Manager) Close(
 // Refund 发起全额或部分退款。若未显式指定 application，则自动使用对应渠道的默认应用。
 func (m *Manager) Refund(
 	ctx context.Context,
-	channel enums.PaymentChannel,
+	channel enum.PaymentChannel,
 	req RefundRequest,
 	application ...string,
 ) (*RefundResult, error) {
@@ -332,7 +332,7 @@ func (m *Manager) Refund(
 // QueryRefund 主动查询退款状态。若未显式指定 application，则自动使用对应渠道的默认应用。
 func (m *Manager) QueryRefund(
 	ctx context.Context,
-	channel enums.PaymentChannel,
+	channel enum.PaymentChannel,
 	req QueryRefundRequest,
 	application ...string,
 ) (*RefundResult, error) {
@@ -352,7 +352,7 @@ func (m *Manager) QueryRefund(
 // ParseNotification 聚合解析并验签渠道异步通知。
 func (m *Manager) ParseNotification(
 	_ context.Context,
-	channel enums.PaymentChannel,
+	channel enum.PaymentChannel,
 	application string,
 	req *http.Request,
 ) (*Notification, error) {
@@ -370,7 +370,7 @@ func (m *Manager) ParseNotification(
 }
 
 // resolveAppProvider 按渠道和可选应用标识解析 Provider。
-func (m *Manager) resolveAppProvider(channel enums.PaymentChannel, application ...string) (Provider, error) {
+func (m *Manager) resolveAppProvider(channel enum.PaymentChannel, application ...string) (Provider, error) {
 	if m == nil || !m.enabled {
 		return nil, errs.ServiceUnavailable("payment gateway is not enabled")
 	}
@@ -395,7 +395,7 @@ func (m *Manager) resolveAppProvider(channel enums.PaymentChannel, application .
 }
 
 // For 按「渠道 + 应用标识」解析 Provider。
-func (m *Manager) For(channel enums.PaymentChannel, application string) (Provider, error) {
+func (m *Manager) For(channel enum.PaymentChannel, application string) (Provider, error) {
 	if m == nil {
 		return nil, errs.ServiceUnavailable("payment manager is not initialized")
 	}
@@ -421,7 +421,7 @@ func (m *Manager) For(channel enums.PaymentChannel, application string) (Provide
 }
 
 // ForScene 按「渠道 + 支付场景」解析 Provider。
-func (m *Manager) ForScene(channel enums.PaymentChannel, scene enums.PaymentScene) (Provider, error) {
+func (m *Manager) ForScene(channel enum.PaymentChannel, scene enum.PaymentScene) (Provider, error) {
 	if m == nil {
 		return nil, errs.ServiceUnavailable("payment manager is not initialized")
 	}
@@ -450,7 +450,7 @@ func (m *Manager) ForScene(channel enums.PaymentChannel, scene enums.PaymentScen
 }
 
 // Applications 返回指定渠道下已注册的应用标识。
-func (m *Manager) Applications(channel enums.PaymentChannel) []string {
+func (m *Manager) Applications(channel enum.PaymentChannel) []string {
 	if m == nil {
 		return nil
 	}
@@ -489,12 +489,12 @@ func (m *Manager) HealthCheck() error {
 }
 
 // providerKey 拼接 Provider 的注册键。
-func providerKey(channel enums.PaymentChannel, application string) string {
+func providerKey(channel enum.PaymentChannel, application string) string {
 	return channel.String() + "/" + application
 }
 
 // sceneOwnerKey 拼接场景归属键。
-func sceneOwnerKey(channel enums.PaymentChannel, scene enums.PaymentScene) string {
+func sceneOwnerKey(channel enum.PaymentChannel, scene enum.PaymentScene) string {
 	return channel.String() + "/" + scene.String()
 }
 

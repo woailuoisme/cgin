@@ -20,9 +20,10 @@ type HuhPrompter struct {
 }
 
 // NewHuhPrompter 构造终端表单交互实现。
+// 未注入探测函数时一律视为不可交互：终端能力只能由 IOStreams 单点判定。
 func NewHuhPrompter(canPrompt func() bool) *HuhPrompter {
 	if canPrompt == nil {
-		canPrompt = IsInteractive
+		canPrompt = func() bool { return false }
 	}
 	return &HuhPrompter{canPrompt: canPrompt}
 }

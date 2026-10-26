@@ -16,14 +16,14 @@ import (
 
 	"cgin/internal/config"
 	"cgin/internal/database/sqlc"
+	"cgin/internal/enum"
 	"cgin/internal/middleware"
 	"cgin/internal/middleware/global"
+	"cgin/internal/user"
 	"cgin/pkg/authentication"
 	"cgin/pkg/authorization"
 	"cgin/pkg/cache"
 	"cgin/pkg/errs"
-	"cgin/shared/enums"
-	"cgin/shared/user"
 )
 
 type memAuthBlacklistStore struct {
@@ -187,8 +187,8 @@ func TestAuth_DefaultGuardSuccess(t *testing.T) {
 
 	repo.users["usr_client_1"] = &sqlc.User{
 		ID:     "usr_client_1",
-		Role:   enums.RoleUser,
-		Status: enums.StatusActive,
+		Role:   enum.RoleUser,
+		Status: enum.StatusActive,
 		Name:   "Client User",
 	}
 
@@ -223,7 +223,7 @@ func TestAuth_DefaultGuardSuccess(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Equal(t, "usr_client_1", capturedID.UserID)
-		assert.Equal(t, string(enums.RoleUser), capturedID.Role)
+		assert.Equal(t, string(enum.RoleUser), capturedID.Role)
 	}
 }
 
@@ -233,13 +233,13 @@ func TestAuth_NamedAdminGuard(t *testing.T) {
 
 	repo.users["usr_normal"] = &sqlc.User{
 		ID:     "usr_normal",
-		Role:   enums.RoleUser,
-		Status: enums.StatusActive,
+		Role:   enum.RoleUser,
+		Status: enum.StatusActive,
 	}
 	repo.users["usr_admin"] = &sqlc.User{
 		ID:     "usr_admin",
-		Role:   enums.RoleAdmin,
-		Status: enums.StatusActive,
+		Role:   enum.RoleAdmin,
+		Status: enum.StatusActive,
 	}
 
 	clientSess, err := clientGuard.Login(context.Background(), repo.users["usr_normal"])
@@ -280,8 +280,8 @@ func TestAuth_RevocationEpoch(t *testing.T) {
 
 	repo.users["usr_revoked"] = &sqlc.User{
 		ID:     "usr_revoked",
-		Role:   enums.RoleUser,
-		Status: enums.StatusActive,
+		Role:   enum.RoleUser,
+		Status: enum.StatusActive,
 	}
 
 	sess, err := clientGuard.Login(context.Background(), repo.users["usr_revoked"])
@@ -394,7 +394,7 @@ func TestCan_RoleBasedAccess(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/users", nil)
 	ctx := authentication.With(req.Context(), authentication.Identity{
 		UserID: "usr_user_1",
-		Role:   string(enums.RoleUser),
+		Role:   string(enum.RoleUser),
 	})
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
@@ -409,7 +409,7 @@ func TestCan_RoleBasedAccess(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/users", nil)
 	ctx = authentication.With(req.Context(), authentication.Identity{
 		UserID: "usr_admin_1",
-		Role:   string(enums.RoleAdmin),
+		Role:   string(enum.RoleAdmin),
 	})
 	req = req.WithContext(ctx)
 	w = httptest.NewRecorder()
@@ -425,8 +425,8 @@ func TestAuth_MultiGuardFallback(t *testing.T) {
 	// 注册普通用户
 	repo.users["usr_user_1"] = &sqlc.User{
 		ID:     "usr_user_1",
-		Status: enums.StatusActive,
-		Role:   enums.RoleUser,
+		Status: enum.StatusActive,
+		Role:   enum.RoleUser,
 	}
 
 	clientSess, err := clientGuard.Login(context.Background(), repo.users["usr_user_1"])
@@ -469,7 +469,7 @@ func TestCan_Permission(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/users", nil)
 	ctx := authentication.With(req.Context(), authentication.Identity{
 		UserID: "usr_admin_1",
-		Role:   string(enums.RoleAdmin),
+		Role:   string(enum.RoleAdmin),
 	})
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()

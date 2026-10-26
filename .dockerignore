@@ -33,7 +33,7 @@ justfile
 lefthook.yml
 docker-compose*.yml
 Dockerfile*
-scripts
+script
 
 # ------------------------------------------------------------------------------
 # SQL 事实源与迁移资产 (SQL Sources & Migrations)

@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/term"
 )
 
 // 通用 CLI 选项常量。
@@ -22,11 +21,6 @@ var (
 	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 )
-
-// IsInteractive 返回当前标准输入和输出是否均为可交互终端。
-func IsInteractive() bool {
-	return term.IsTerminal(os.Stdin.Fd()) && term.IsTerminal(os.Stdout.Fd())
-}
 
 // TitleTo 渲染并打印一行标题至指定输出流。
 func TitleTo(w io.Writer, text string) {

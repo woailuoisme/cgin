@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"cgin/internal/console/core"
-	"cgin/internal/service"
+	"cgin/internal/job"
 	"cgin/pkg/cache"
 	"cgin/pkg/mailer"
 	"cgin/pkg/queue"
@@ -22,6 +22,8 @@ import (
 
 // QueueWorkOptions 封装 queue:work 命令的参数与依赖容器 (SRP & DIP)。
 type QueueWorkOptions struct {
+	noopComplete
+
 	QueueArg    string
 	Concurrency int
 	Factory     Factory
@@ -33,11 +35,6 @@ func NewQueueWorkOptions(f Factory) *QueueWorkOptions {
 		QueueArg: queue.DefaultQueueName,
 		Factory:  f,
 	}
-}
-
-// Complete 从命令行上下文解析并补全配置。
-func (o *QueueWorkOptions) Complete(_ *cobra.Command, _ []string) error {
-	return nil
 }
 
 // Validate 校验 Worker 启动参数。
@@ -65,7 +62,7 @@ func (o *QueueWorkOptions) Run(ctx context.Context) error {
 	defer func() { _ = mailerClient.Close() }()
 
 	reg := queue.DefaultRegistry()
-	service.RegisterJobs(reg, mailerClient)
+	job.RegisterJobs(reg, mailerClient)
 
 	var locker queue.Locker
 	if cacheLocker, err := cache.NewRedisLocker(cfg.Cache); err == nil {
@@ -109,7 +106,7 @@ func newQueueWorkCmd(f Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "queue:work",
 		Short: "Start processing jobs on the queue as a worker daemon",
-		Args:  cobra.NoArgs,
+		Args:  maxArgs(0),
 		RunE:  runCommand(opts),
 	}
 
@@ -137,7 +134,7 @@ func NewQueueFailedOptions(f Factory) *QueueFailedOptions {
 }
 
 // Complete 从命令行上下文解析并补全配置。
-func (o *QueueFailedOptions) Complete(_ *cobra.Command, _ []string) error {
+func (o *QueueFailedOptions) Complete(_ []string) error {
 	o.Queue = strings.TrimSpace(o.Queue)
 	return nil
 }
@@ -208,7 +205,7 @@ func newQueueFailedCmd(f Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "queue:failed",
 		Short: "List all failed queue jobs",
-		Args:  cobra.NoArgs,
+		Args:  maxArgs(0),
 		RunE:  runCommand(opts),
 	}
 
@@ -231,9 +228,9 @@ func NewQueueRetryOptions(f Factory) *QueueRetryOptions {
 }
 
 // Complete 从命令行上下文解析并补全配置。
-func (o *QueueRetryOptions) Complete(_ *cobra.Command, args []string) error {
-	if len(args) > 0 {
-		o.Target = strings.TrimSpace(args[0])
+func (o *QueueRetryOptions) Complete(args []string) error {
+	if target := firstArg(args); target != "" {
+		o.Target = target
 	}
 	return nil
 }
@@ -284,18 +281,15 @@ func newQueueRetryCmd(f Factory) *cobra.Command {
 	return &cobra.Command{
 		Use:   "queue:retry <id|all>",
 		Short: "Retry a failed queue job by ID or 'all'",
-		Args: func(_ *cobra.Command, args []string) error {
-			if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
-				return &ValidationError{Field: "target", Message: "please provide a job ID or 'all'"}
-			}
-			return nil
-		},
-		RunE: runCommand(opts),
+		Args:  maxArgs(1),
+		RunE:  runCommand(opts),
 	}
 }
 
 // QueueFlushOptions 封装 queue:flush 命令的参数与依赖容器 (SRP & DIP)。
 type QueueFlushOptions struct {
+	noopValidate
+
 	Queue   string
 	Force   bool
 	Factory Factory
@@ -307,13 +301,8 @@ func NewQueueFlushOptions(f Factory) *QueueFlushOptions {
 }
 
 // Complete 从命令行上下文解析并补全配置。
-func (o *QueueFlushOptions) Complete(_ *cobra.Command, _ []string) error {
+func (o *QueueFlushOptions) Complete(_ []string) error {
 	o.Queue = strings.TrimSpace(o.Queue)
-	return nil
-}
-
-// Validate 校验清空命令选项合法性。
-func (o *QueueFlushOptions) Validate() error {
 	return nil
 }
 
@@ -373,7 +362,7 @@ func newQueueFlushCmd(f Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "queue:flush",
 		Short: "Flush all failed queue jobs",
-		Args:  cobra.NoArgs,
+		Args:  maxArgs(0),
 		RunE:  runCommand(opts),
 	}
 

@@ -20,6 +20,8 @@ var jwtSecretRegexp = regexp.MustCompile(`(?m)^JWT_SECRET=(.*)$`)
 
 // JWTSecretOptions 封装 jwt:secret 命令的参数与依赖容器 (SRP & DIP)。
 type JWTSecretOptions struct {
+	noopComplete
+
 	Show    bool
 	Force   bool
 	EnvPath string
@@ -32,11 +34,6 @@ func NewJWTSecretOptions(f Factory) *JWTSecretOptions {
 		EnvPath: ".env",
 		Factory: f,
 	}
-}
-
-// Complete 从命令行上下文解析并补全配置。
-func (o *JWTSecretOptions) Complete(_ *cobra.Command, _ []string) error {
-	return nil
 }
 
 // Validate 校验命令选项合法性。
@@ -123,7 +120,7 @@ func newJWTSecretCmd(f Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "jwt:secret",
 		Short: "Set the JWT secret key in .env file",
-		Args:  cobra.NoArgs,
+		Args:  maxArgs(0),
 		RunE:  runCommand(opts),
 	}
 

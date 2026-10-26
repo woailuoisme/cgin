@@ -12,6 +12,8 @@ import (
 
 // ServeOptions 持有 HTTP 服务启动命令的配置与依赖容器 (SRP & DIP)。
 type ServeOptions struct {
+	noopComplete
+
 	Port    int
 	Factory Factory
 }
@@ -19,11 +21,6 @@ type ServeOptions struct {
 // NewServeOptions 构造 ServeOptions 实例。
 func NewServeOptions(f Factory) *ServeOptions {
 	return &ServeOptions{Factory: f}
-}
-
-// Complete 从命令行上下文解析补全选项。
-func (o *ServeOptions) Complete(_ *cobra.Command, _ []string) error {
-	return nil
 }
 
 // Validate 校验启动参数合法性。
@@ -55,7 +52,7 @@ func newServeCmd(f Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the HTTP server",
-		Args:  cobra.NoArgs,
+		Args:  maxArgs(0),
 		RunE:  runCommand(opts),
 	}
 

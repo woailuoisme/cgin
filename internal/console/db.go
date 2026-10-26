@@ -16,6 +16,8 @@ import (
 
 // DBMigrateOptions 封装 db:migrate 命令的参数与依赖容器 (SRP & DIP)。
 type DBMigrateOptions struct {
+	noopComplete
+
 	Env     string
 	Factory Factory
 }
@@ -26,11 +28,6 @@ func NewDBMigrateOptions(f Factory) *DBMigrateOptions {
 		Env:     "app",
 		Factory: f,
 	}
-}
-
-// Complete 从命令行上下文解析并补全配置。
-func (o *DBMigrateOptions) Complete(_ *cobra.Command, _ []string) error {
-	return nil
 }
 
 // Validate 校验迁移命令参数。
@@ -53,7 +50,7 @@ func newDBMigrateCmd(f Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "db:migrate",
 		Short: "Apply database migrations via Atlas (atlas migrate apply)",
-		Args:  cobra.NoArgs,
+		Args:  maxArgs(0),
 		RunE:  runCommand(opts),
 	}
 
@@ -64,6 +61,8 @@ func newDBMigrateCmd(f Factory) *cobra.Command {
 
 // DBSeedOptions 封装 db:seed 命令的参数与依赖容器 (SRP & DIP)。
 type DBSeedOptions struct {
+	noopComplete
+
 	ClassName string
 	Factory   Factory
 }
@@ -74,14 +73,6 @@ func NewDBSeedOptions(f Factory) *DBSeedOptions {
 		ClassName: "DatabaseSeeder",
 		Factory:   f,
 	}
-}
-
-// Complete 从命令行上下文解析并补全配置。
-func (o *DBSeedOptions) Complete(_ *cobra.Command, _ []string) error {
-	if o.ClassName == "" {
-		o.ClassName = "DatabaseSeeder"
-	}
-	return nil
 }
 
 // Validate 校验指定的 Seeder 类名是否合法存在。
@@ -126,7 +117,7 @@ func newDBSeedCmd(f Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "db:seed",
 		Short: "Seed database with records (default: DatabaseSeeder)",
-		Args:  cobra.NoArgs,
+		Args:  maxArgs(0),
 		RunE:  runCommand(opts),
 	}
 
@@ -140,6 +131,9 @@ func newDBSeedCmd(f Factory) *cobra.Command {
 
 // DBFreshOptions 封装 db:fresh 命令的参数与依赖容器 (SRP & DIP)。
 type DBFreshOptions struct {
+	noopComplete
+	noopValidate
+
 	Force   bool
 	Factory Factory
 }
@@ -147,16 +141,6 @@ type DBFreshOptions struct {
 // NewDBFreshOptions 构造 DBFreshOptions 实例。
 func NewDBFreshOptions(f Factory) *DBFreshOptions {
 	return &DBFreshOptions{Factory: f}
-}
-
-// Complete 从命令行上下文解析并补全配置。
-func (o *DBFreshOptions) Complete(_ *cobra.Command, _ []string) error {
-	return nil
-}
-
-// Validate 校验重置命令选项合法性。
-func (o *DBFreshOptions) Validate() error {
-	return nil
 }
 
 // Run 清空数据库后重放迁移并写入种子数据。
@@ -216,7 +200,7 @@ func newDBFreshCmd(f Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "db:fresh",
 		Short: "Drop all tables, re-run migrations, and seed database (destructive)",
-		Args:  cobra.NoArgs,
+		Args:  maxArgs(0),
 		RunE:  runCommand(opts),
 	}
 

@@ -4,7 +4,7 @@
 package admindto
 
 import (
-	"cgin/shared/user"
+	"cgin/internal/user"
 )
 
 // Profile 是共享内核档案视图的类型别名，避免 swag 跨包解析失效。

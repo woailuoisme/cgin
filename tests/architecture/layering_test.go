@@ -30,35 +30,45 @@ type layerRule struct {
 	reason string
 }
 
-// TestLayerDependenciesFlowDownward 校验 routes → handler → service → dto 的单向依赖，以及 pkg 的纯净性。
+// TestLayerDependenciesFlowDownward 校验 route → handler → service → dto 的单向依赖，以及 pkg 的纯净性。
 func TestLayerDependenciesFlowDownward(t *testing.T) {
 	t.Parallel()
 
 	rules := []layerRule{
 		{
 			dir:     "pkg",
-			forbids: []string{"cgin/shared", "cgin/internal/database", "cgin/internal/dto", "cgin/internal/handler", "cgin/internal/service", "cgin/internal/routes", "cgin/internal/middleware", "cgin/internal/bootstrap", "cgin/internal/console"},
+			forbids: []string{"cgin/shared", "cgin/internal/database", "cgin/internal/dto", "cgin/internal/handler", "cgin/internal/service", "cgin/internal/route", "cgin/internal/middleware", "cgin/internal/bootstrap", "cgin/internal/console"},
 			reason:  "pkg 是纯基础设施层，严禁反向依赖 internal 业务层或 shared 业务内核（仅 cgin/internal/config 例外）",
 		},
 		{
 			dir:     "internal/dto",
-			forbids: []string{"cgin/internal/handler", "cgin/internal/service", "cgin/internal/routes", "cgin/internal/middleware"},
-			reason:  "dto 是传输契约层，只能被上层引用，严禁反向依赖 handler/service/routes/middleware",
+			forbids: []string{"cgin/internal/handler", "cgin/internal/service", "cgin/internal/route", "cgin/internal/middleware"},
+			reason:  "dto 是传输契约层，只能被上层引用，严禁反向依赖 handler/service/route/middleware",
 		},
 		{
 			dir:     "internal/service",
-			forbids: []string{"cgin/internal/handler", "cgin/internal/routes"},
-			reason:  "service 是用例层，严禁反向依赖 handler 与 routes",
+			forbids: []string{"cgin/internal/handler", "cgin/internal/route"},
+			reason:  "service 是用例层，严禁反向依赖 handler 与 route",
 		},
 		{
 			dir:     "internal/handler",
-			forbids: []string{"cgin/internal/routes"},
-			reason:  "handler 是传输适配层，路由注册必须留在 internal/routes",
+			forbids: []string{"cgin/internal/route"},
+			reason:  "handler 是传输适配层，路由注册必须留在 internal/route",
+		},
+		{
+			dir:     "internal/user",
+			forbids: []string{"cgin/internal/dto", "cgin/internal/handler", "cgin/internal/service", "cgin/internal/route", "cgin/internal/middleware", "cgin/internal/bootstrap", "cgin/internal/console"},
+			reason:  "user 是用户视图与仓储内核，被 dto/service/export 引用，严禁反向依赖传输层、用例层或装配层",
+		},
+		{
+			dir:     "internal/media",
+			forbids: []string{"cgin/internal/dto", "cgin/internal/handler", "cgin/internal/service", "cgin/internal/route", "cgin/internal/middleware", "cgin/internal/bootstrap", "cgin/internal/console"},
+			reason:  "media 是媒体处理内核，仅由装配层注入，严禁反向依赖传输层、用例层或装配层",
 		},
 		{
 			dir:     "shared",
-			forbids: []string{"cgin/internal/dto", "cgin/internal/handler", "cgin/internal/service", "cgin/internal/routes", "cgin/internal/middleware", "cgin/internal/bootstrap", "cgin/internal/console"},
-			reason:  "shared 是跨领域共享内核，严禁反向依赖 internal 传输层、用例层或装配层（dto/handler/service/routes/middleware/bootstrap/console）",
+			forbids: []string{"cgin/internal"},
+			reason:  "shared 已收敛为纯静态资产层（仅 apidocs），严禁依赖 internal 任何包；业务内核一律沉入 internal",
 		},
 	}
 

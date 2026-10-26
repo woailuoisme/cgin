@@ -10,10 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/database/sqlc"
+	"cgin/internal/enum"
+	appuser "cgin/internal/user"
 	"cgin/pkg/errs"
 	"cgin/pkg/hasher"
-	"cgin/shared/enums"
-	shareduser "cgin/shared/user"
 )
 
 // TestRegisterCreatesUserAndCredential 覆盖注册深模块的事务写入、归一化与默认值。
@@ -21,13 +21,13 @@ func TestRegisterCreatesUserAndCredential(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
 	h := hasher.New()
-	service := shareduser.MustNewService(db, h)
-	provider := shareduser.MustNewProvider(db, h)
+	service := appuser.MustNewService(db, h)
+	provider := appuser.MustNewProvider(db, h)
 
 	email := strings.ToUpper(uniqueEmail())
 	username := strings.ToUpper(uniqueUsername())
 
-	created, err := service.Register(ctx, shareduser.RegisterParams{
+	created, err := service.Register(ctx, appuser.RegisterParams{
 		Name:     "  Integration Tester  ",
 		Email:    email,
 		Username: &username,
@@ -38,8 +38,8 @@ func TestRegisterCreatesUserAndCredential(t *testing.T) {
 
 	assert.Equal(t, strings.ToLower(email), created.Email)
 	assert.Equal(t, "Integration Tester", created.Name)
-	assert.Equal(t, enums.RoleUser, created.Role)
-	assert.Equal(t, enums.StatusActive, created.Status)
+	assert.Equal(t, enum.RoleUser, created.Role)
+	assert.Equal(t, enum.StatusActive, created.Status)
 	require.NotNil(t, created.Username)
 	assert.Equal(t, strings.ToLower(username), *created.Username)
 	require.NotNil(t, created.DisplayUsername)
@@ -50,7 +50,7 @@ func TestRegisterCreatesUserAndCredential(t *testing.T) {
 	assert.True(t, matched)
 
 	// 重复邮箱必须由唯一索引兜底并翻译为业务错误。
-	_, err = service.Register(ctx, shareduser.RegisterParams{
+	_, err = service.Register(ctx, appuser.RegisterParams{
 		Name:     "Duplicate",
 		Email:    email,
 		Password: "Password123!",
@@ -66,10 +66,10 @@ func TestCredentialLifecycle(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
 	h := hasher.New()
-	service := shareduser.MustNewService(db, h)
-	provider := shareduser.MustNewProvider(db, h)
+	service := appuser.MustNewService(db, h)
+	provider := appuser.MustNewProvider(db, h)
 
-	created, err := service.Register(ctx, shareduser.RegisterParams{
+	created, err := service.Register(ctx, appuser.RegisterParams{
 		Name:     "Credential Tester",
 		Email:    uniqueEmail(),
 		Password: "Password123!",
@@ -123,13 +123,13 @@ func TestCredentialMissing(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
 	h := hasher.New()
-	provider := shareduser.MustNewProvider(db, h)
+	provider := appuser.MustNewProvider(db, h)
 
 	row, err := db.Queries(ctx).CreateUser(ctx, sqlc.CreateUserParams{
 		Name:   "No Credential",
 		Email:  uniqueEmail(),
-		Role:   string(enums.RoleUser),
-		Status: string(enums.StatusActive),
+		Role:   string(enum.RoleUser),
+		Status: string(enum.StatusActive),
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { cleanupUser(db, row.ID, "") })
@@ -139,8 +139,8 @@ func TestCredentialMissing(t *testing.T) {
 	assert.False(t, matched, "凭据缺失不应泄漏账号状态")
 
 	err = provider.ChangePassword(ctx, row.ID, "Password123!", "NewPassword456!")
-	require.ErrorIs(t, err, shareduser.ErrNoCredential)
+	require.ErrorIs(t, err, appuser.ErrNoCredential)
 
 	err = provider.ResetPassword(ctx, row.ID, "NewPassword456!")
-	require.ErrorIs(t, err, shareduser.ErrNoCredential)
+	require.ErrorIs(t, err, appuser.ErrNoCredential)
 }

@@ -7,62 +7,61 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gin-gonic/gin/binding"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"cgin/internal/middleware/global"
 )
 
-type testPayload struct {
-	Message string `json:"message"`
-}
-
-// TestCacheBodyMultiPassBinding 验证 CacheBody 中间件与 ShouldBindBodyWith 对多道绑定的支持。
-func TestCacheBodyMultiPassBinding(t *testing.T) {
+func TestEnforceJSONContentType(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	m := global.New(global.Deps{})
 
 	router := gin.New()
-	router.Use(m.CacheBody())
-
-	var firstRead, secondRead testPayload
-	var bodyKeyBytes []byte
-
-	router.POST("/multi-pass", func(c *gin.Context) {
-		// 第一次绑定：通过 ShouldBindBodyWith
-		err := c.ShouldBindBodyWith(&firstRead, binding.JSON)
-		if err != nil {
-			c.AbortWithStatus(http.StatusBadRequest)
-			return
-		}
-
-		// 第二次绑定：通过普通 ShouldBindJSON 验证流已被回写可复用
-		err = c.ShouldBindJSON(&secondRead)
-		if err != nil {
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-
-		// 验证 gin.BodyBytesKey 上下文缓存
-		if cb, ok := c.Get(gin.BodyBytesKey); ok {
-			if bytesVal, ok := cb.([]byte); ok {
-				bodyKeyBytes = bytesVal
-			}
-		}
-
+	router.Use(m.ErrorHandler(), m.EnforceJSONContentType())
+	router.POST("/test", func(c *gin.Context) {
 		c.Status(http.StatusOK)
 	})
 
-	body := []byte(`{"message":"hello gin"}`)
-	req := httptest.NewRequest(http.MethodPost, "/multi-pass", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
+	t.Run("Valid JSON passes", func(t *testing.T) {
+		body := []byte(`{"key":"val"}`)
+		req := httptest.NewRequest(http.MethodPost, "/test", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
 
-	router.ServeHTTP(w, req)
+	t.Run("Valid JSON with charset passes", func(t *testing.T) {
+		body := []byte(`{"key":"val"}`)
+		req := httptest.NewRequest(http.MethodPost, "/test", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
 
-	require.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "hello gin", firstRead.Message)
-	assert.Equal(t, "hello gin", secondRead.Message)
-	assert.Equal(t, body, bodyKeyBytes)
+	t.Run("Empty body passes", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/test", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("Multipart form passes", func(t *testing.T) {
+		body := []byte(`dummy form data`)
+		req := httptest.NewRequest(http.MethodPost, "/test", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "multipart/form-data; boundary=something")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("Invalid text/plain fails", func(t *testing.T) {
+		body := []byte(`plain text`)
+		req := httptest.NewRequest(http.MethodPost, "/test", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "text/plain")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
 }

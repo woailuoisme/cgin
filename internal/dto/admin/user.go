@@ -8,10 +8,10 @@ import (
 
 	"cgin/internal/database"
 	"cgin/internal/database/sqlc"
+	"cgin/internal/enum"
+	"cgin/internal/user"
 	"cgin/pkg/response"
 	"cgin/pkg/validator"
-	"cgin/shared/enums"
-	"cgin/shared/user"
 )
 
 // ValidationOptions 返回用户管理模块贡献给校验器的自定义类型解包函数。
@@ -40,10 +40,10 @@ func NormalisePagination(page, pageSize int) (int, int) {
 }
 
 // Role 是权限角色枚举的本地类型别名，规避 swag 跨包解析缺陷。
-type Role = enums.Role
+type Role = enum.Role
 
 // Status 是账号状态枚举的本地类型别名，规避 swag 跨包解析缺陷。
-type Status = enums.Status
+type Status = enum.Status
 
 // --- 路径参数 PathParams ---
 
@@ -115,7 +115,7 @@ func (r UpdateUserBody) Validate() error {
 	return nil
 }
 
-// adminFieldSet 将请求中的档案与管理受控字段投影为共享内核管理字段集。
+// AdminFieldSet 将请求中的档案与管理受控字段投影为用户内核的管理字段集。
 func (r UpdateUserBody) AdminFieldSet() user.AdminFieldSet {
 	return user.AdminFieldSet{
 		Name:            r.Name,
@@ -154,8 +154,8 @@ type ListUsersQueryParams struct {
 func (r ListUsersQueryParams) ToFilter() user.ListFilter {
 	return user.NewListFilter(
 		r.Search,
-		enums.Status(strings.TrimSpace(string(r.Status))),
-		enums.Role(strings.TrimSpace(string(r.Role))),
+		enum.Status(strings.TrimSpace(string(r.Status))),
+		enum.Role(strings.TrimSpace(string(r.Role))),
 		r.Sort,
 	)
 }

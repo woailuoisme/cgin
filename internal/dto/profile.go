@@ -5,10 +5,10 @@ import (
 
 	"github.com/aarondl/opt/omitnull"
 
-	"cgin/shared/user"
+	"cgin/internal/user"
 )
 
-// ProfileResource 为共享内核用户档案视图的类型别名（供 Swagger 注解直接引用）。
+// ProfileResource 为用户内核档案视图的类型别名（供 Swagger 注解直接引用）。
 type ProfileResource = user.Profile
 
 // UploadAvatarBody 接收 multipart/form-data 格式的用户头像上传表单载荷。
@@ -39,5 +39,5 @@ func (b UpdateProfileBody) Validate() error {
 	return nil
 }
 
-// fieldSet 将请求转换为共享内核档案字段集。
+// FieldSet 将请求体转换为用户内核的档案字段集。
 func (b UpdateProfileBody) FieldSet() user.FieldSet { return user.FieldSet(b) }
