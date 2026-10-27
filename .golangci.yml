@@ -60,7 +60,7 @@ linters:
           - gosec
           - noctx
           - bodyclose
-        path: ^tests/
+        path: ^test/
       - linters:
           - bodyclose
         path: ^pkg/resilience/

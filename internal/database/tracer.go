@@ -204,7 +204,7 @@ func isInternalDatabaseFrame(file string) bool {
 // formatCaller 将完整文件路径格式化为便于结构化检索的精简定位表示。
 func formatCaller(file string, line int) string {
 	f := filepath.ToSlash(file)
-	for _, root := range []string{"internal/", "pkg/", "shared/", "tests/", "cmd/"} {
+	for _, root := range []string{"internal/", "pkg/", "shared/", "test/", "cmd/"} {
 		if _, rest, found := strings.Cut(f, root); found {
 			return fmt.Sprintf("%s%s:%d", root, rest, line)
 		}

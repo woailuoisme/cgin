@@ -112,6 +112,7 @@ func NewRootCommandWithFactory(f Factory) *cobra.Command {
 
 	// Artisan 风格命令：名字里的冒号前缀即分组，分组随命令自动派生，无需另行维护清单。
 	commands := []*cobra.Command{
+		newAppInitCmd(f),
 		newServeCmd(f),
 		newDBMigrateCmd(f),
 		newDBSeedCmd(f),

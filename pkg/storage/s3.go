@@ -51,13 +51,13 @@ type s3Disk struct {
 // 阶段拦截，这里的检查是防止绕过配置层直接调用的兜底。
 func NewS3Disk(cfg config.S3StorageConfig) (Disk, error) {
 	if strings.TrimSpace(cfg.Endpoint) == "" {
-		return nil, errors.New("storage: AWS_ENDPOINT cannot be empty")
+		return nil, errors.New("storage: S3_ENDPOINT cannot be empty")
 	}
 	if strings.TrimSpace(cfg.Bucket) == "" {
-		return nil, errors.New("storage: AWS_BUCKET cannot be empty")
+		return nil, errors.New("storage: S3_BUCKET cannot be empty")
 	}
 	if strings.TrimSpace(cfg.AccessKeyID) == "" || strings.TrimSpace(cfg.SecretAccessKey) == "" {
-		return nil, errors.New("storage: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY cannot be empty")
+		return nil, errors.New("storage: S3_ACCESS_KEY and S3_SECRET_KEY cannot be empty")
 	}
 
 	region := cmp.Or(cfg.Region, defaultS3Region)

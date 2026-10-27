@@ -60,6 +60,9 @@ func Default() *Config {
 			Name: "cgin",
 			Env:  "local",
 		},
+		CORS: CORSConfig{
+			AllowedOrigins: []string{"*"},
+		},
 	}
 }
 

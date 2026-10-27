@@ -16,7 +16,7 @@ tmp_dir = "tmp"
   # 排除非运行态与生成物目录（database/ 只放 SQL 资产，不参与编译）
   exclude_dir = [
     "bin", "tmp", "vendor", "node_modules", "coverage",
-    "tests", "apidocs", "docs", "database",
+    "test", "apidocs", "docs", "database",
     ".git", ".code-review-graph", ".codegraph",
   ]
   exclude_regex = ["_test\\.go$"]

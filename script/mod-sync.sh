@@ -49,7 +49,7 @@ if [ -z "$target_module" ]; then
 fi
 
 # 3. 自动嗅探现有 Go 源码中使用的旧模块名
-current_import_mod=$(rg -o --no-filename -m 1 '"([^"]+)/internal/[^"]+"' -r '$1' cmd/ internal/ pkg/ shared/ tests/ 2>/dev/null | head -n 1 || true)
+current_import_mod=$(rg -o --no-filename -m 1 '"([^"]+)/internal/[^"]+"' -r '$1' cmd/ internal/ pkg/ shared/ test/ 2>/dev/null | head -n 1 || true)
 
 if [ -z "$current_import_mod" ]; then
 	current_import_mod="$target_module"

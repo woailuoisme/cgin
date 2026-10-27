@@ -40,6 +40,7 @@
 | | `just run [ARGS]` | 直接运行 API 服务（如 `just run --port 3400`）。 |
 | | `just work [ARGS]` | 直接运行 Worker 服务（如 `just work -q high:3,default:1`）。 |
 | | `just cli [ARGS]` | 运行 CLI 控制台命令（如 `just cli route:list` 或 `just cli make:crud blog`，支持别名 `just artisan`）。 |
+| | `just init [ARGS]` | 一键全流程环境初始化（.env、双密钥、Postgres 数据库创建、Atlas 迁移、初始播种与 S3 桶检测）。 |
 | | `just build` | 编译可执行文件至 `bin/cgin`，自动注入 version/commit/date 元数据。 |
 | **静态检查与格式化** | `just fmt` | 代码自动格式化并就地改写文件（基于 `golangci-lint fmt`）。 |
 | | `just fmt-check` | 仅检查格式是否规范，不改写文件。 |
@@ -133,14 +134,12 @@ pkg/                            # 可复用的横切基础设施与跨切片基�
 └── wechat/                     # 微信公众号/小程序接口适配
 shared/                         # 纯静态资产层（仅嵌入式 OpenAPI 规范；业务内核全部沉入 internal）
 └── apidocs/                    # 嵌入式 OpenAPI 规范与文档契约
-tests/                          # 外部测试包（测试代码与业务逻辑彻底解耦，镜像同层目录）
+test/                           # 外部测试包（测试代码与业务逻辑彻底解耦，镜像同层目录）
 ├── architecture/               # 分层依赖红线守卫（layering_test.go）
-├── feature/                    # 按业务切片组织的黑盒用例（admin · client · payment · realtime · system）
-├── internal/                   # 镜像 internal/ 各层的单元测试（enum · index · media · notification · user）
-├── platform/                   # 镜像 pkg/ 各原子组件的单元测试
-├── shared/                     # 镜像 shared/ 静态资产的单元测试（apidocs）
-├── middleware/ · config/ · console/ · database/   # 对应层的专项测试
 ├── integration/                # 真实外部依赖的集成测试（声明 //go:build integration）
+├── internal/                   # 镜像 internal/ 各层用例（bootstrap · config · console · database · dto · enum · export · index · job · listener · media · middleware · notification · realtime · route · service · user）
+├── pkg/                        # 镜像 pkg/ 各原子基础设施组件的单元测试
+├── shared/                     # 镜像 shared/ 静态资产的单元测试（apidocs）
 └── testutil/                   # 公共测试夹具与辅助函数
 ```
 
@@ -345,7 +344,7 @@ tests/                          # 外部测试包（测试代码与业务逻辑�
 2. **管理端文档 (`/docs/admin`)**：
    - 宿主页挂载在 `/docs/admin`，规范接口为 `/docs/admin/openapi.json`（对应静态文件 `shared/apidocs/admin_swagger.json`）。
    - 根信息在 `cmd/api/admin_doc.go` 中声明（Title 为 `cgin Admin API`）。
-   - **严格收录范围**：仅收录管理端 API（如 `internal/route/admin`、`internal/handler/admin`），收敛手段同为 Tag 白名单（`用户管理,管理员认证`）。新增端点必须写 `@Tags`，否则会同时从两套文档消失——该约束由 `tests/shared/apidocs` 的注解覆盖测试守门。
+   - **严格收录范围**：仅收录管理端 API（如 `internal/route/admin`、`internal/handler/admin`），收敛手段同为 Tag 白名单（`用户管理,管理员认证`）。新增端点必须写 `@Tags`，否则会同时从两套文档消失——该约束由 `test/shared/apidocs` 的注解覆盖测试守门。
    - **解除旧约束**：取消原 ADR-0005 中“管理端不添加 swag 注解”的旧约束，管理端 Handler 与 DTO 必须全量规范书写 Swag 注解。
 3. **环境与访问控制**：
    - 两份文档统一受 `ENABLE_DOCS` 配置项控制，生产环境未开启时均返回 404。
@@ -437,12 +436,12 @@ tests/                          # 外部测试包（测试代码与业务逻辑�
 ## 7. 外部黑盒测试架构与三级质量门禁 (Testing & Quality Gates)
 
 ### 7.1 测试组织架构
-- **外部黑盒包**：所有的测试代码统一存放在根目录 [tests/](file:///Users/seaside/Projects/backend/go/gin-sqlc/tests/) 下，采用 `package xxx_test` 命名（如 `package auth_test`）。严禁在 `internal/` 目录内散落 `*_test.go` 文件，强制 Agent 从公共调用方视角对 API 进行黑盒校验。
+- **外部黑盒包**：所有的测试代码统一存放在根目录 [test/](file:///Users/seaside/Projects/backend/go/gin-sqlc/test/) 下，采用 `package xxx_test` 命名（如 `package auth_test`）。严禁在 `internal/` 目录内散落 `*_test.go` 文件，强制 Agent 从公共调用方视角对 API 进行黑盒校验。
 - **构建标签隔离**：
   - 单元测试（Mock / 内存）：无需任何构建标签，执行速度极快。
   - 集成测试（集成真实 Postgres / Valkey / Mailpit）：测试文件首行必须声明 `//go:build integration` 构建标签，仅在运行 `just test-int` 时激活。
 - **断言规范**：使用 `github.com/stretchr/testify`，关键前置条件与不可恢复判断使用 `require`（快速失败），普通字段与属性校验使用 `assert`。
-- **架构契约测试**：[tests/architecture/](file:///Users/seaside/Projects/backend/go/gin-sqlc/tests/architecture/) 用 `go/parser` 扫描各层导入，强制 `route → handler → service → dto` 单向依赖与 `pkg/` 纯净性。分层扁平化后同层模块共享一个包，编译器无法拦截反向 import，这条测试就是该红线的执行者——新增跨层调用前先确认它不会变红。
+- **架构契约测试**：[test/architecture/](file:///Users/seaside/Projects/backend/go/gin-sqlc/test/architecture/) 用 `go/parser` 扫描各层导入，强制 `route → handler → service → dto` 单向依赖与 `pkg/` 纯净性。分层扁平化后同层模块共享一个包，编译器无法拦截反向 import，这条测试就是该红线的执行者——新增跨层调用前先确认它不会变红。
 
 ### 7.2 交付前三级质量门禁 (Quality Gates)
 

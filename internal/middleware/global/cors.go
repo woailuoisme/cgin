@@ -23,12 +23,17 @@ func (m *Middleware) CORS() gin.HandlerFunc {
 		MaxAge: 12 * time.Hour,
 	}
 
-	if slices.Contains(m.cors.AllowedOrigins, "*") {
+	switch {
+	case slices.Contains(m.cors.AllowedOrigins, "*"):
 		cfg.AllowAllOrigins = true
 		cfg.AllowCredentials = false // 遵循 W3C 规范：通配符禁止回显允许凭证
-	} else {
+	case len(m.cors.AllowedOrigins) > 0:
 		cfg.AllowOrigins = m.cors.AllowedOrigins
 		cfg.AllowCredentials = true
+	default:
+		return func(c *gin.Context) {
+			c.Next()
+		}
 	}
 
 	return cors.New(cfg)

@@ -2,6 +2,7 @@ package console
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -64,6 +65,8 @@ type DBSeedOptions struct {
 	noopComplete
 
 	ClassName string
+	Fresh     bool
+	Force     bool
 	Factory   Factory
 }
 
@@ -89,9 +92,41 @@ func (o *DBSeedOptions) Validate() error {
 
 // Run 调度运行数据播种。
 func (o *DBSeedOptions) Run(ctx context.Context) error {
+	streams := o.Factory.IOStreams()
+
+	if o.Fresh && !o.Force {
+		appName := "cgin"
+		if cfg, err := o.Factory.Config(); err == nil && cfg != nil && cfg.App.Name != "" {
+			appName = cfg.App.Name
+		} else if err != nil {
+			return err
+		}
+
+		confirmed, err := o.Factory.Prompter().Confirm(
+			"Are you sure you want to fresh the database before seeding?",
+			fmt.Sprintf("All table data in %s will be permanently deleted.", appName),
+			"Yes, wipe all data",
+		)
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			core.WarnTo(streams.Out, "Database seed operation cancelled.")
+			return core.ErrCanceled
+		}
+	}
+
 	db, err := o.Factory.DB(ctx)
 	if err != nil {
 		return err
+	}
+
+	if o.Fresh {
+		core.TitleTo(streams.Out, "Wiping all table data...")
+		if err := truncateAllTables(ctx, db); err != nil {
+			return err
+		}
+		core.SuccessTo(streams.Out, "All table data cleared successfully.")
 	}
 
 	targetSeeder, ok := seeders.Get(o.ClassName)
@@ -100,7 +135,6 @@ func (o *DBSeedOptions) Run(ctx context.Context) error {
 		return fmt.Errorf("seeder [%s] not found (available: %v)", o.ClassName, available)
 	}
 
-	streams := o.Factory.IOStreams()
 	core.TitleTo(streams.Out, fmt.Sprintf("Seeding [%s]...", o.ClassName))
 	if err := runSeederWithProgress(ctx, streams, db, targetSeeder); err != nil {
 		return err
@@ -110,7 +144,48 @@ func (o *DBSeedOptions) Run(ctx context.Context) error {
 	return nil
 }
 
-// newDBSeedCmd 调度运行数据播种器（支持通过 --class 指定单个 Seeder，缺省为 DatabaseSeeder）。
+// truncateAllTables 清空 public Schema 下所有业务数据表并重置自增序列。
+func truncateAllTables(ctx context.Context, db *database.DB) error {
+	if db == nil || db.Pool() == nil {
+		return errors.New("database connection pool is uninitialized")
+	}
+
+	rows, err := db.Pool().Query(ctx, `
+		SELECT quote_ident('public') || '.' || quote_ident(tablename) 
+		FROM pg_tables 
+		WHERE schemaname = 'public' 
+		  AND tablename NOT LIKE 'atlas_%'
+		ORDER BY tablename
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to list tables for truncation: %w", err)
+	}
+	defer rows.Close()
+
+	var tables []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return fmt.Errorf("failed to scan table name: %w", err)
+		}
+		tables = append(tables, name)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("failed to iterate table names: %w", err)
+	}
+
+	if len(tables) == 0 {
+		return nil
+	}
+
+	truncateSQL := fmt.Sprintf("TRUNCATE TABLE %s RESTART IDENTITY CASCADE", strings.Join(tables, ", "))
+	if _, err := db.Pool().Exec(ctx, truncateSQL); err != nil {
+		return fmt.Errorf("failed to truncate tables: %w", err)
+	}
+	return nil
+}
+
+// newDBSeedCmd 调度运行数据播种器（支持通过 --class 指定单个 Seeder，缺省为 DatabaseSeeder；支持 --fresh 清空表数据）。
 func newDBSeedCmd(f Factory) *cobra.Command {
 	opts := NewDBSeedOptions(f)
 
@@ -122,6 +197,8 @@ func newDBSeedCmd(f Factory) *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&opts.ClassName, "class", "c", "DatabaseSeeder", "The class name of the seeder to run")
+	cmd.Flags().BoolVar(&opts.Fresh, "fresh", false, "Wipe all table data before seeding")
+	cmd.Flags().BoolVarP(&opts.Force, core.FlagForce, "f", false, core.UsageForceFlag)
 	_ = cmd.RegisterFlagCompletionFunc("class", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return seeders.List(), cobra.ShellCompDirectiveNoFileComp
 	})

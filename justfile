@@ -36,6 +36,10 @@ cli *ARGS:
 
 alias artisan := cli
 
+# 初始化应用环境（.env、双密钥、数据库、迁移、数据播种与 S3 桶）
+init *ARGS:
+    go run ./cmd/api app:init {{ARGS}}
+
 # 释放端口（默认 APP_PORT）
 free-port port="":
     @port="{{port}}"; port="${port:-${APP_PORT:-3300}}"; pids=$(lsof -ti tcp:$port -sTCP:LISTEN || true); if [ -z "$pids" ]; then echo "端口 $port 空闲"; else echo "端口 $port 被占用（PID $(echo $pids)），结束它"; kill $pids 2>/dev/null || true; sleep 1; kill -9 $(lsof -ti tcp:$port -sTCP:LISTEN 2>/dev/null || true) 2>/dev/null || true; echo "端口 $port 已释放"; fi
@@ -62,7 +66,7 @@ test:
 
 # 集成测试（需外部服务，-tags=integration）
 test-int:
-    go test -tags=integration -count=1 ./tests/integration/...
+    go test -tags=integration -count=1 ./test/integration/...
 
 # 单元 + 集成测试
 test-all: test test-int
@@ -121,9 +125,9 @@ migrate-diff name:
 migrate-hash:
     atlas migrate hash --dir file://database/migrations
 
-# 幂等注入首个管理员
-seed:
-    go run ./cmd/api db:seed
+# 幂等注入首个管理员或运行种子数据
+seed *ARGS:
+    go run ./cmd/api db:seed {{ARGS}}
 
 # 重建数据库并重新播种（需确认）
 fresh:
