@@ -21,7 +21,6 @@ func setRequiredEnv(t *testing.T) {
 	t.Setenv("DB_URL", "postgres://app:secret@127.0.0.1:5432/cgin?sslmode=disable")
 	t.Setenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 	t.Setenv("JWT_SECRET", strings.Repeat("s", 32))
-	t.Setenv("SESSION_SECRET", strings.Repeat("k", 32))
 }
 
 // unsetEnv 真正摘掉这些变量，用例结束后还原。

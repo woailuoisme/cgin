@@ -27,7 +27,6 @@ require (
 	github.com/gin-contrib/graceful v1.2.3
 	github.com/gin-contrib/i18n v1.3.2
 	github.com/gin-contrib/requestid v1.0.8
-	github.com/gin-contrib/sessions v1.1.2
 	github.com/gin-contrib/timeout v1.2.3
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-pay/gopay v1.5.123
@@ -41,7 +40,7 @@ require (
 	github.com/lionsoul2014/ip2region/binding/golang v0.0.0-20261025050407-70d862dbc7ee
 	github.com/meilisearch/meilisearch-go v0.36.3
 	github.com/minio/minio-go/v7 v7.4.1
-	github.com/nicksnyder/go-i18n/v2 v2.6.1
+	github.com/nicksnyder/go-i18n/v2 v2.7.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/redis/rueidis v1.0.79
 	github.com/resend/resend-go/v4 v4.9.1
@@ -116,9 +115,6 @@ require (
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/gomodule/redigo v1.9.3 // indirect
-	github.com/gorilla/context v1.1.2 // indirect
-	github.com/gorilla/securecookie v1.1.2 // indirect
-	github.com/gorilla/sessions v1.4.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/hhrutter/tiff v1.0.7 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

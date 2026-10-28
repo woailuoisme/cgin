@@ -20,11 +20,6 @@ import (
 	"cgin/internal/database/seeders"
 )
 
-var (
-	// sessionSecretRegexp 匹配 .env 中已存在的 SESSION_SECRET 配置行。
-	sessionSecretRegexp = regexp.MustCompile(`(?m)^SESSION_SECRET=(.*)$`)
-)
-
 // AppInitOptions 封装 app:init 命令的参数与依赖容器。
 type AppInitOptions struct {
 	noopComplete
@@ -61,7 +56,7 @@ func (o *AppInitOptions) Run(ctx context.Context) error {
 	streams := o.Factory.IOStreams()
 	core.TitleTo(streams.Out, "Initializing cgin application environment...")
 
-	// 1. 初始化 .env 与 JWT/Session 双密钥
+	// 1. 初始化 .env 与 JWT 签名密钥
 	envMap, err := o.initEnv(streams)
 	if err != nil {
 		return err
@@ -92,7 +87,7 @@ func (o *AppInitOptions) Run(ctx context.Context) error {
 	return nil
 }
 
-// initEnv 确保 .env 存在并补齐或刷新 JWT_SECRET / SESSION_SECRET。
+// initEnv 确保 .env 存在并补齐或刷新 JWT_SECRET。
 func (o *AppInitOptions) initEnv(streams *core.IOStreams) (map[string]string, error) {
 	core.TitleTo(streams.Out, "Step 1/5: Checking .env and security secrets...")
 
@@ -106,47 +101,24 @@ func (o *AppInitOptions) initEnv(streams *core.IOStreams) (map[string]string, er
 	}
 	content := string(contentBytes)
 
-	// 更新或填充 JWT_SECRET / SESSION_SECRET
-	var (
-		jwtSecret, sessionSecret string
-		hasUpdates               bool
-	)
-	secretSpecs := []struct {
-		name string
-		re   *regexp.Regexp
-		dest *string
-	}{
-		{"JWT_SECRET", jwtSecretRegexp, &jwtSecret},
-		{"SESSION_SECRET", sessionSecretRegexp, &sessionSecret},
+	// 更新或填充 JWT_SECRET
+	content, jwtSecret, updated, err := ensureSecretInContent(content, jwtSecretRegexp, "JWT_SECRET", o.Force)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate JWT_SECRET: %w", err)
 	}
 
-	for _, spec := range secretSpecs {
-		var updated bool
-		content, *spec.dest, updated, err = ensureSecretInContent(content, spec.re, spec.name, o.Force)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate %s: %w", spec.name, err)
-		}
-		if updated {
-			core.SuccessTo(streams.Out, "Set %s in %s", spec.name, o.EnvPath)
-			hasUpdates = true
-		} else {
-			core.InfoTo(streams.Out, "%s is already configured (preserved)", spec.name)
-		}
-	}
-
-	if hasUpdates {
+	if updated {
+		core.SuccessTo(streams.Out, "Set JWT_SECRET in %s", o.EnvPath)
 		if err := os.WriteFile(o.EnvPath, []byte(content), 0o600); err != nil {
 			return nil, fmt.Errorf("failed to write %s: %w", o.EnvPath, err)
 		}
+	} else {
+		core.InfoTo(streams.Out, "JWT_SECRET is already configured (preserved)")
 	}
 
 	envMap := parseEnvContent(content)
-	// 注入刚生成的密钥到 envMap
 	if jwtSecret != "" {
 		envMap["JWT_SECRET"] = jwtSecret
-	}
-	if sessionSecret != "" {
-		envMap["SESSION_SECRET"] = sessionSecret
 	}
 
 	// 重新装载并在 Injector 中同步最新配置
@@ -319,7 +291,7 @@ func newAppInitCmd(f Factory) *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.EnvPath, "env", ".env", "Path to target .env file")
 	cmd.Flags().StringVar(&opts.EnvExamplePath, "env-example", ".env.example", "Path to template .env.example file")
-	cmd.Flags().BoolVarP(&opts.Force, core.FlagForce, "f", false, "Force overwrite existing JWT_SECRET and SESSION_SECRET in .env")
+	cmd.Flags().BoolVarP(&opts.Force, core.FlagForce, "f", false, "Force overwrite existing JWT_SECRET in .env")
 	cmd.Flags().BoolVar(&opts.SkipDB, "skip-db", false, "Skip PostgreSQL database creation")
 	cmd.Flags().BoolVar(&opts.SkipMigrate, "skip-migrate", false, "Skip running database migrations via Atlas")
 	cmd.Flags().BoolVar(&opts.SkipSeed, "skip-seed", false, "Skip running initial database seeder")

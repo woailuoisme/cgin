@@ -81,7 +81,6 @@ func buildEngine(
 
 		// 协议安全
 		globalMW.CORS(),
-		globalMW.Session(),
 		globalMW.I18n(),
 
 		// 异常治理

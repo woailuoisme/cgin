@@ -18,7 +18,6 @@ func TestNewInjector_RegistrationAndClone(t *testing.T) {
 	t.Setenv("DB_URL", "postgres://app:secret@127.0.0.1:5432/cgin?sslmode=disable")
 	t.Setenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 	t.Setenv("JWT_SECRET", "12345678901234567890123456789012")
-	t.Setenv("SESSION_SECRET", "12345678901234567890123456789012")
 
 	injector := bootstrap.NewInjector()
 	require.NotNil(t, injector)
@@ -80,7 +79,6 @@ func TestNewInjector_GeoIPService(t *testing.T) {
 	t.Setenv("DB_URL", "postgres://app:secret@127.0.0.1:5432/cgin?sslmode=disable")
 	t.Setenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 	t.Setenv("JWT_SECRET", "12345678901234567890123456789012")
-	t.Setenv("SESSION_SECRET", "12345678901234567890123456789012")
 
 	injector := bootstrap.NewInjector()
 	svc, err := do.Invoke[geoip.Service](injector)

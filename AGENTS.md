@@ -10,7 +10,7 @@
 
 - **运行时与语言规范**：[Go 1.27+](file:///Users/seaside/Projects/backend/go/gin-sqlc/go.mod) 现代标准，开启严格并发安全与类型安全。
 - **Web 引擎**：[Gin](file:///Users/seaside/Projects/backend/go/gin-sqlc/internal/bootstrap/engine.go) (`github.com/gin-gonic/gin`)，统一错误恢复、链路追踪、CORS 与限流中间件。
-- **中间件生态**：传输层全面采用 [gin-contrib](https://github.com/gin-contrib) 官方中间件 —— `cors` / `sessions` / `authz` / `cache` / `requestid` / `timeout` / `logger` / `i18n` / `graceful`；官方未覆盖的能力（错误信封、幂等、限流、请求体配额、探针降噪、资源级鉴权）由 `internal/middleware` 自建，归属见 §3.1 对照表。
+- **中间件生态**：传输层全面采用 [gin-contrib](https://github.com/gin-contrib) 官方中间件 —— `cors` / `authz` / `cache` / `requestid` / `timeout` / `logger` / `i18n` / `graceful`；官方未覆盖的能力（错误信封、幂等、限流、请求体配额、探针降噪、资源级鉴权）由 `internal/middleware` 自建，归属见 §3.1 对照表。
 - **数据访问**：[sqlc 1.31.1](file:///Users/seaside/Projects/backend/go/gin-sqlc/sqlc.yaml) 离线生成类型安全查询集（`pgx/v5`，输出 `internal/database/sqlc`）+ [pgxpool 原生连接池](file:///Users/seaside/Projects/backend/go/gin-sqlc/internal/database/client.go)，底层运行 PostgreSQL 18。
 - **数据库迁移 (Migrations)**：[Atlas CLI](file:///Users/seaside/Projects/backend/go/gin-sqlc/atlas.hcl)，采用声明式 Schema 驱动的版本化 SQL 迁移。
 - **缓存体系**：[Valkey (Redis 兼容)](file:///Users/seaside/Projects/backend/go/gin-sqlc/pkg/cache/cache.go) + 高性能驱动 (`redis/rueidis`)。
@@ -150,7 +150,6 @@ test/                           # 外部测试包（测试代码与业务逻辑�
 | 能力 | 实现归属 | 代码位置 |
 | :--- | :--- | :--- |
 | 跨域预检 | 官方 `gin-contrib/cors` | `internal/middleware/global/cors.go` |
-| 会话 Cookie | 官方 `gin-contrib/sessions` | `internal/middleware/global/session.go` |
 | 路径级 Casbin 鉴权 | 官方 `gin-contrib/authz` | `internal/middleware/auth.go` `Authz()` |
 | 文档响应缓存 | 官方 `gin-contrib/cache` | `internal/bootstrap/docs.go` |
 | 请求标识 | 官方 `gin-contrib/requestid` | `internal/middleware/global/observability.go` `RequestID()` |
@@ -165,8 +164,6 @@ test/                           # 外部测试包（测试代码与业务逻辑�
 | **分级滑动窗口限流** | 自建（官方无对应物） | `internal/middleware/throttle.go` |
 | **探针路由降噪** | 自建（官方 skipper 无该语义） | `internal/middleware/global/observability.go` |
 | **资源+动作级鉴权** | 自建（官方 authz 只支持 URL+Method） | `internal/middleware/auth.go` `Can()` |
-
-> 会话密钥由 `SESSION_SECRET` 提供：生产环境必填（≥32 字符）缺失即启动失败；非生产缺失时生成一次性随机密钥并打 Warn，详见 `.env.example`。
 
 ### 🚨 架构分层绝对红线
 
