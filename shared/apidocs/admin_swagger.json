@@ -581,6 +581,12 @@
                 "role"
             ],
             "properties": {
+                "avatarPath": {
+                    "description": "用户头像在对象存储中的相对路径",
+                    "type": "string",
+                    "maxLength": 2048,
+                    "example": "uploads/avatar/20261031/uuid.webp"
+                },
                 "email": {
                     "description": "用户电子邮箱",
                     "type": "string",
@@ -591,12 +597,6 @@
                     "description": "邮箱是否已完成验证",
                     "type": "boolean",
                     "example": true
-                },
-                "image": {
-                    "description": "用户头像 URL",
-                    "type": "string",
-                    "maxLength": 2048,
-                    "example": "https://example.com/avatar.png"
                 },
                 "name": {
                     "description": "用户展示昵称",
@@ -650,6 +650,11 @@
         "admindto.Profile": {
             "type": "object",
             "properties": {
+                "avatarPath": {
+                    "description": "用户头像在对象存储中的相对路径",
+                    "type": "string",
+                    "example": "avatars/20261031/uuid.webp"
+                },
                 "createdAt": {
                     "description": "账号创建时间 (ISO 8601 UTC)",
                     "type": "string",
@@ -674,11 +679,6 @@
                     "description": "用户唯一标识",
                     "type": "string",
                     "example": "usr_01J9X4N8Y0ABCD"
-                },
-                "image": {
-                    "description": "用户头像 URL",
-                    "type": "string",
-                    "example": "https://example.com/avatar.png"
                 },
                 "name": {
                     "description": "用户展示昵称",
@@ -835,6 +835,13 @@
         "admindto.UpdateUserBody": {
             "type": "object",
             "properties": {
+                "avatarPath": {
+                    "description": "用户头像在对象存储中的相对路径",
+                    "type": "string",
+                    "maxLength": 2048,
+                    "x-nullable": true,
+                    "example": "uploads/avatar/20261031/uuid.webp"
+                },
                 "banExpires": {
                     "description": "封禁到期时间 (ISO 8601 UTC)",
                     "type": "string",
@@ -867,13 +874,6 @@
                     "type": "boolean",
                     "x-nullable": true,
                     "example": true
-                },
-                "image": {
-                    "description": "用户头像 URL",
-                    "type": "string",
-                    "maxLength": 2048,
-                    "x-nullable": true,
-                    "example": "https://example.com/avatar.png"
                 },
                 "name": {
                     "description": "用户展示昵称",
@@ -943,6 +943,14 @@
         "admindto.UserResource": {
             "type": "object",
             "properties": {
+                "avatar": {
+                    "description": "用户头像多规格衍生访问地址",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/media.ImageVariants"
+                        }
+                    ]
+                },
                 "banExpires": {
                     "description": "封禁到期时间 (ISO 8601 UTC)",
                     "type": "string",
@@ -982,11 +990,6 @@
                     "description": "用户唯一标识",
                     "type": "string",
                     "example": "usr_01J9X4N8Y0ABCD"
-                },
-                "image": {
-                    "description": "用户头像 URL",
-                    "type": "string",
-                    "example": "https://example.com/avatar.png"
                 },
                 "lastLoginAt": {
                     "description": "最后登录时间 (ISO 8601 UTC)",
@@ -1079,6 +1082,26 @@
                 "StatusSuspended",
                 "StatusBanned"
             ]
+        },
+        "media.ImageVariants": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "description": "存储端相对路径（Key）",
+                    "type": "string",
+                    "example": "uploads/avatars/20261031/uuid.png"
+                },
+                "thumb_url": {
+                    "description": "签名后微缩图访问 URL",
+                    "type": "string",
+                    "example": "https://img.example.com/sig2/rs:fill:64:64:1/g:fp:0:0/...@webp"
+                },
+                "url": {
+                    "description": "签名后标准尺寸访问 URL",
+                    "type": "string",
+                    "example": "https://img.example.com/sig1/rs:fill:256:256:1/g:fp:0:0/...@webp"
+                }
+            }
         },
         "response.Meta": {
             "type": "object",

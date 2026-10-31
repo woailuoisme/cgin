@@ -181,17 +181,15 @@ func WithSharpen(sigma float64) ProcessOption {
 	}
 }
 
-// Client 定义现代化 imgproxy 客户端与图像元数据处理契约。
-type Client interface {
+// imageDriver 定义内部 imgproxy 驱动契约。
+type imageDriver interface {
 	URL(sourceURI string, opts ...ProcessOption) (string, error)
 	Inspect(input []byte) (*ImageMeta, error)
-	ResolveSourceURI(path string) string
 	Ping(ctx context.Context) error
 	Driver() string
-	Enabled() bool
 }
 
-// client 结构体实现 Client 接口。
+// client 结构体实现 imageDriver 接口。
 type client struct {
 	baseURL     string
 	internalURL string
@@ -203,13 +201,8 @@ type client struct {
 	httpClient  *resty.Client
 }
 
-// NewImageClient 创建并初始化基于 imgproxy 的图像服务客户端。
-func NewImageClient(cfg config.ImgproxyConfig) Client {
-	return NewWithStorage(cfg, config.StorageConfig{})
-}
-
-// NewWithStorage 创建带存储配置的 imgproxy 图像服务客户端，用于按存储配置推导资源 URI。
-func NewWithStorage(imgCfg config.ImgproxyConfig, storageCfg config.StorageConfig) Client {
+// newImageDriver 创建带存储配置的 imgproxy 图像服务驱动，用于按存储配置推导资源 URI。
+func newImageDriver(imgCfg config.ImgproxyConfig, storageCfg config.StorageConfig) imageDriver {
 	mergedCfg := mergeImgproxyConfig(imgCfg)
 	baseURL, keyHex, saltHex := mergedCfg.ResolveCredentials()
 	keyBytes, _ := hex.DecodeString(keyHex)
@@ -251,15 +244,15 @@ func mergeImgproxyConfig(cfg config.ImgproxyConfig) config.ImgproxyConfig {
 }
 
 // URL 根据函数式选项构建已签名的 imgproxy 处理 URL。
-func (s *client) URL(sourceURI string, opts ...ProcessOption) (string, error) {
+func (c *client) URL(sourceURI string, opts ...ProcessOption) (string, error) {
 	if strings.TrimSpace(sourceURI) == "" {
 		return "", errs.BadRequest("source uri cannot be empty")
 	}
 
-	resolvedURI := s.ResolveSourceURI(sourceURI)
+	resolvedURI := c.resolveSourceURI(sourceURI)
 	cfg := &ProcessConfig{
-		Format:  NormalizeFormat(s.config.DefaultFormat),
-		Quality: s.config.DefaultQuality,
+		Format:  NormalizeFormat(c.config.DefaultFormat),
+		Quality: c.config.DefaultQuality,
 	}
 
 	for _, opt := range opts {
@@ -268,11 +261,11 @@ func (s *client) URL(sourceURI string, opts ...ProcessOption) (string, error) {
 		}
 	}
 
-	return s.generateURL(resolvedURI, cfg)
+	return c.generateURL(resolvedURI, cfg)
 }
 
 // Inspect 纯 Go 标准库轻量解析图像宽高与格式（零 CGO）。
-func (s *client) Inspect(input []byte) (*ImageMeta, error) {
+func (c *client) Inspect(input []byte) (*ImageMeta, error) {
 	if len(input) == 0 {
 		return nil, errs.BadRequest("image input bytes cannot be empty")
 	}
@@ -290,8 +283,8 @@ func (s *client) Inspect(input []byte) (*ImageMeta, error) {
 	}, nil
 }
 
-// ResolveSourceURI 根据底层存储驱动自适应补全 URI（如 local:// 或 s3://）。
-func (s *client) ResolveSourceURI(sourcePath string) string {
+// resolveSourceURI 根据底层存储驱动自适应补全 URI（如 local:// 或 s3://）。
+func (c *client) resolveSourceURI(sourcePath string) string {
 	cleanPath := strings.TrimSpace(sourcePath)
 	if cleanPath == "" {
 		return ""
@@ -302,10 +295,10 @@ func (s *client) ResolveSourceURI(sourcePath string) string {
 	}
 
 	trimmed := strings.TrimPrefix(cleanPath, "/")
-	driver := strings.ToLower(strings.TrimSpace(s.storageCfg.Driver))
+	driver := strings.ToLower(strings.TrimSpace(c.storageCfg.Driver))
 
 	if driver == config.StorageDriverS3 {
-		return lo.Ternary(s.storageCfg.S3.Bucket != "", fmt.Sprintf("s3://%s/%s", s.storageCfg.S3.Bucket, trimmed), "s3://"+trimmed)
+		return lo.Ternary(c.storageCfg.S3.Bucket != "", fmt.Sprintf("s3://%s/%s", c.storageCfg.S3.Bucket, trimmed), "s3://"+trimmed)
 	}
 
 	return "local://" + trimmed
@@ -313,13 +306,13 @@ func (s *client) ResolveSourceURI(sourcePath string) string {
 
 // checkHealth 检查 imgproxy 服务的连通性与健康状态。
 // 使用内部探测地址：容器内可用服务名，而对外签名 URL 仍使用 BaseURL。
-func (s *client) checkHealth(ctx context.Context) error {
-	if s.internalURL == "" {
+func (c *client) checkHealth(ctx context.Context) error {
+	if c.internalURL == "" {
 		return errors.New("imgproxy internal url is not configured")
 	}
 
-	healthURL := s.internalURL + "/health"
-	resp, err := s.httpClient.R().SetContext(ctx).Get(healthURL)
+	healthURL := c.internalURL + "/health"
+	resp, err := c.httpClient.R().SetContext(ctx).Get(healthURL)
 	if err != nil {
 		return fmt.Errorf("imgproxy unreachable: %w", err)
 	}
@@ -336,22 +329,17 @@ func (s *client) checkHealth(ctx context.Context) error {
 }
 
 // Ping 执行 imgproxy 连通性探测（满足 ready.Pinger 契约）。
-func (s *client) Ping(ctx context.Context) error {
-	return s.checkHealth(ctx)
+func (c *client) Ping(ctx context.Context) error {
+	return c.checkHealth(ctx)
 }
 
 // Driver 返回当前图像服务驱动名称。
-func (s *client) Driver() string {
+func (c *client) Driver() string {
 	return "imgproxy"
 }
 
-// Enabled 报告当前图像服务是否启用。
-func (s *client) Enabled() bool {
-	return s.config.IsEnabled()
-}
-
 // generateURL 内部组装处理参数并生成最终签名或非签名 URL。
-func (s *client) generateURL(sourceURI string, cfg *ProcessConfig) (string, error) {
+func (c *client) generateURL(sourceURI string, cfg *ProcessConfig) (string, error) {
 	options := buildOptions(cfg)
 	encodedSource := base64.RawURLEncoding.EncodeToString([]byte(sourceURI))
 
@@ -360,16 +348,16 @@ func (s *client) generateURL(sourceURI string, cfg *ProcessConfig) (string, erro
 	options = append(options, encodedSource+ext)
 	pathWithoutSignature := "/" + path.Join(options...)
 
-	if s.insecure {
-		return fmt.Sprintf("%s/insecure%s", s.baseURL, pathWithoutSignature), nil
+	if c.insecure {
+		return fmt.Sprintf("%s/insecure%s", c.baseURL, pathWithoutSignature), nil
 	}
 
-	mac := hmac.New(sha256.New, s.key)
-	mac.Write(s.salt)
+	mac := hmac.New(sha256.New, c.key)
+	mac.Write(c.salt)
 	mac.Write([]byte(pathWithoutSignature))
 	signature := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 
-	return fmt.Sprintf("%s/%s%s", s.baseURL, signature, pathWithoutSignature), nil
+	return fmt.Sprintf("%s/%s%s", c.baseURL, signature, pathWithoutSignature), nil
 }
 
 // buildOptions 将处理参数转化为 imgproxy 选项序列。

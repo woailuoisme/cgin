@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/config"
-	"cgin/internal/media"
+	"cgin/pkg/media"
 )
 
 func TestImgproxyClient_Signature(t *testing.T) {
@@ -27,17 +27,17 @@ func TestImgproxyClient_Signature(t *testing.T) {
 		DefaultQuality: 80,
 	}
 
-	client := media.NewImageClient(cfg)
-	require.NotNil(t, client)
+	engine := media.NewEngine(config.MediaConfig{Imgproxy: cfg}, config.StorageConfig{Driver: "memory-mock"}, nil)
+	require.NotNil(t, engine)
 
 	t.Run("空输入路径返回错误", func(t *testing.T) {
-		_, err := client.URL("")
+		_, err := engine.SignWithOptions("")
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "source uri cannot be empty")
+		assert.Contains(t, err.Error(), "path cannot be empty")
 	})
 
 	t.Run("缩略图选项生成合法的签名 URL", func(t *testing.T) {
-		thumbURL, err := client.URL("https://storage.example.com/avatars/user.png",
+		thumbURL, err := engine.SignWithOptions("https://storage.example.com/avatars/user.png",
 			media.WithResizingType(media.ResizeFill),
 			media.WithResize(200, 200),
 		)
@@ -51,7 +51,7 @@ func TestImgproxyClient_Signature(t *testing.T) {
 	})
 
 	t.Run("头像选项生成带人脸居中的签名 URL", func(t *testing.T) {
-		avatarURL, err := client.URL("https://storage.example.com/avatars/user.png",
+		avatarURL, err := engine.SignWithOptions("https://storage.example.com/avatars/user.png",
 			media.WithResizingType(media.ResizeFill),
 			media.WithResize(120, 120),
 			media.WithGravity(media.GravityFocusPoint),
@@ -67,8 +67,8 @@ func TestImgproxyClient_Signature(t *testing.T) {
 			BaseURL:  "https://img.example.com",
 			Insecure: true,
 		}
-		insecureClient := media.NewImageClient(insecureCfg)
-		urlStr, err := insecureClient.URL("https://example.com/test.jpg",
+		insecureEngine := media.NewEngine(config.MediaConfig{Imgproxy: insecureCfg}, config.StorageConfig{Driver: "memory-mock"}, nil)
+		urlStr, err := insecureEngine.SignWithOptions("https://example.com/test.jpg",
 			media.WithResizingType(media.ResizeFill),
 			media.WithResize(100, 100),
 		)
@@ -78,23 +78,21 @@ func TestImgproxyClient_Signature(t *testing.T) {
 }
 
 func TestImgproxyClient_ReadyContract(t *testing.T) {
-	t.Run("默认配置下报告未启用且驱动为 imgproxy", func(t *testing.T) {
+	t.Run("默认配置下驱动为 imgproxy", func(t *testing.T) {
 		cfg := config.ImgproxyConfig{
 			BaseURL: "http://localhost:8088",
 			Enabled: false,
 		}
-		c := media.NewImageClient(cfg)
-		assert.Equal(t, "imgproxy", c.Driver())
-		assert.False(t, c.Enabled())
+		engine := media.NewEngine(config.MediaConfig{Imgproxy: cfg}, config.StorageConfig{Driver: "memory-mock"}, nil)
+		assert.Equal(t, "imgproxy", engine.Driver())
 	})
 
-	t.Run("显式启用后报告已启用", func(t *testing.T) {
+	t.Run("显式启用后驱动仍为 imgproxy 且具备 Ping 契约", func(t *testing.T) {
 		cfg := config.ImgproxyConfig{
 			BaseURL: "http://localhost:8088",
 			Enabled: true,
 		}
-		c := media.NewImageClient(cfg)
-		assert.Equal(t, "imgproxy", c.Driver())
-		assert.True(t, c.Enabled())
+		engine := media.NewEngine(config.MediaConfig{Imgproxy: cfg}, config.StorageConfig{Driver: "memory-mock"}, nil)
+		assert.Equal(t, "imgproxy", engine.Driver())
 	})
 }

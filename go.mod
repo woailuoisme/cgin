@@ -4,14 +4,14 @@ go 1.27.3
 
 require (
 	charm.land/bubbles/v2 v2.2.1
-	charm.land/bubbletea/v2 v2.1.0
+	charm.land/bubbletea/v2 v2.1.1
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/ThreeDotsLabs/watermill v1.5.3
 	github.com/aarondl/opt v0.0.0-20250607033636-982744e1bd65
 	github.com/adhocore/gronx v1.20.5
 	github.com/alexliesenfeld/health v0.8.1
-	github.com/brianvoe/gofakeit/v7 v7.18.0
+	github.com/brianvoe/gofakeit/v7 v7.18.1
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/casbin/casbin/v2 v2.135.0
 	github.com/centrifugal/gocent/v3 v3.4.0
@@ -20,14 +20,13 @@ require (
 	github.com/dustin/go-humanize v1.1.0
 	github.com/exaring/otelpgx v0.13.0
 	github.com/failsafe-go/failsafe-go v0.9.8
-	github.com/gabriel-vasile/mimetype v1.4.16
-	github.com/gin-contrib/authz v1.0.9
-	github.com/gin-contrib/cache v1.4.6
-	github.com/gin-contrib/cors v1.7.9
-	github.com/gin-contrib/graceful v1.2.3
-	github.com/gin-contrib/i18n v1.3.2
-	github.com/gin-contrib/requestid v1.0.8
-	github.com/gin-contrib/timeout v1.2.3
+	github.com/gin-contrib/authz v1.0.10
+	github.com/gin-contrib/cache v1.4.7
+	github.com/gin-contrib/cors v1.7.10
+	github.com/gin-contrib/graceful v1.2.4
+	github.com/gin-contrib/i18n v1.3.3
+	github.com/gin-contrib/requestid v1.0.9
+	github.com/gin-contrib/timeout v1.2.4
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-pay/gopay v1.5.123
 	github.com/go-playground/validator/v10 v10.30.5
@@ -35,15 +34,15 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/hibiken/asynq v0.26.0
-	github.com/jackc/pgx/v5 v5.11.0
+	github.com/jackc/pgx/v5 v5.12.0
 	github.com/johnfercher/maroto/v2 v2.4.4
-	github.com/lionsoul2014/ip2region/binding/golang v0.0.0-20261025050407-70d862dbc7ee
+	github.com/lionsoul2014/ip2region/binding/golang v0.0.0-20261028042204-6a276cc7c4f9
 	github.com/meilisearch/meilisearch-go v0.36.3
 	github.com/minio/minio-go/v7 v7.4.1
 	github.com/nicksnyder/go-i18n/v2 v2.7.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/redis/rueidis v1.0.79
-	github.com/resend/resend-go/v4 v4.9.1
+	github.com/resend/resend-go/v4 v4.11.0
 	github.com/rs/zerolog v1.35.1
 	github.com/samber/do/v2 v2.1.0
 	github.com/samber/hot v0.13.1
@@ -100,6 +99,7 @@ require (
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudwego/base64x v0.1.7 // indirect
+	github.com/gabriel-vasile/mimetype v1.4.16 // indirect
 	github.com/gin-contrib/sse v1.1.1 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -121,7 +121,7 @@ require (
 	github.com/influxdata/tdigest v0.0.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/jackc/puddle/v2 v2.2.3 // indirect
 	github.com/johnfercher/go-tree v1.1.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.19.2 // indirect

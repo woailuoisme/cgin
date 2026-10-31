@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
-	"mime/multipart"
+	"strings"
 
 	"github.com/aarondl/opt/omitnull"
+	"github.com/samber/oops"
 
 	"cgin/internal/user"
+	"cgin/pkg/errs"
 )
 
 // userProfiles 声明本人档案所需的读写能力，由本包按需定义最小契约。
@@ -15,40 +17,30 @@ type userProfiles interface {
 	UpdateProfile(ctx context.Context, userID string, fields user.FieldSet, scope user.Scope) (user.Profile, error)
 }
 
-// avatarStore 声明头像原子替换能力。
-//
-// link 会在头像事务内被调用，用于把生成的 URL 回写到宿主模型；
-// 返回错误即让整笔事务回滚。
-type avatarStore interface {
-	ChangeAvatar(
-		ctx context.Context,
-		userID string,
-		file *multipart.FileHeader,
-		link func(ctx context.Context, url string) error,
-	) (string, error)
+// mediaStorage 声明底层对象存储存在性与删除契约。
+type mediaStorage interface {
+	Exists(ctx context.Context, path string) (bool, error)
+	Delete(ctx context.Context, path string) error
 }
 
 // ProfileDeps 声明本人档案服务的外部依赖。
 type ProfileDeps struct {
 	Users   userProfiles
-	Avatars avatarStore
+	Storage mediaStorage
 }
 
 // ProfileService 承载本人档案用例：读取、局部更新与头像替换。
 type ProfileService struct {
 	users   userProfiles
-	avatars avatarStore
+	storage mediaStorage
 }
 
-// MustNewProfileService 构造档案服务；Users 与 Avatars 均为装配方必须提供的硬依赖。
+// MustNewProfileService 构造档案服务；Users 为装配方必须提供的硬依赖。
 func MustNewProfileService(deps ProfileDeps) *ProfileService {
 	if deps.Users == nil {
 		panic("profile: service requires a non-nil Users")
 	}
-	if deps.Avatars == nil {
-		panic("profile: service requires a non-nil Avatars")
-	}
-	return &ProfileService{users: deps.Users, avatars: deps.Avatars}
+	return &ProfileService{users: deps.Users, storage: deps.Storage}
 }
 
 // Get 读取本人档案。
@@ -58,29 +50,57 @@ func (s *ProfileService) Get(ctx context.Context, userID string) (user.Profile, 
 
 // Update 局部更新本人档案；作用域固定为客户端自助，受控列由共享内核剔除。
 func (s *ProfileService) Update(ctx context.Context, userID string, fields user.FieldSet) (user.Profile, error) {
+	if fields.AvatarPath.IsValue() {
+		avatarPath := strings.TrimSpace(fields.AvatarPath.MustGet())
+		if avatarPath != "" {
+			if err := s.verifyAvatar(ctx, avatarPath); err != nil {
+				return user.Profile{}, err
+			}
+		}
+	}
+
 	return s.users.UpdateProfile(ctx, userID, fields, user.ScopeClient)
 }
 
-// UploadAvatar 原子替换本人头像。
-//
-// 媒体记录、物理文件与 user.image 的写入收敛在一次事务里：任一步失败都会回滚，
-// 不会留下指向已被删除文件的档案，也不会留下无人引用的媒体记录。
-func (s *ProfileService) UploadAvatar(ctx context.Context, userID string, file *multipart.FileHeader) (user.Profile, error) {
-	var updated user.Profile
+// UpdateAvatar 保存直传成功后的新头像，并在旧头像存在时清理旧文件。
+func (s *ProfileService) UpdateAvatar(ctx context.Context, userID string, avatarPath string) (user.Profile, error) {
+	cleanPath := strings.TrimSpace(avatarPath)
+	if cleanPath == "" {
+		return user.Profile{}, errs.BadRequest("avatar path cannot be empty")
+	}
 
-	_, err := s.avatars.ChangeAvatar(ctx, userID, file, func(txCtx context.Context, url string) error {
-		profile, err := s.users.UpdateProfile(txCtx, userID, user.FieldSet{
-			Image: omitnull.From(url),
-		}, user.ScopeClient)
-		if err != nil {
-			return err
-		}
-		updated = profile
-		return nil
-	})
+	if err := s.verifyAvatar(ctx, cleanPath); err != nil {
+		return user.Profile{}, err
+	}
+
+	// 记录旧头像用于事后清理
+	oldProfile, _ := s.users.GetProfile(ctx, userID)
+
+	updated, err := s.users.UpdateProfile(ctx, userID, user.FieldSet{
+		AvatarPath: omitnull.From(cleanPath),
+	}, user.ScopeClient)
 	if err != nil {
 		return user.Profile{}, err
 	}
 
+	// 同步清理旧头像，避免孤儿文件堆积
+	if s.storage != nil && oldProfile.AvatarPath != nil && *oldProfile.AvatarPath != "" && *oldProfile.AvatarPath != cleanPath {
+		_ = s.storage.Delete(ctx, *oldProfile.AvatarPath)
+	}
+
 	return updated, nil
+}
+
+func (s *ProfileService) verifyAvatar(ctx context.Context, avatarPath string) error {
+	if s.storage == nil {
+		return nil
+	}
+	exists, err := s.storage.Exists(ctx, avatarPath)
+	if err != nil {
+		return oops.Code(errs.CodeStorageFailed).In("profile.verifyAvatar").Wrap(err)
+	}
+	if !exists {
+		return errs.BadRequest("uploaded avatar does not exist in storage")
+	}
+	return nil
 }

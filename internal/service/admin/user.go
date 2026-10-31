@@ -76,7 +76,7 @@ func (s *UserService) CreateUser(ctx context.Context, req admindto.CreateUserBod
 		Name:          req.Name,
 		Email:         req.Email,
 		Username:      req.Username,
-		Image:         req.Image,
+		AvatarPath:    req.AvatarPath,
 		Role:          req.Role,
 		Status:        enum.StatusActive,
 		EmailVerified: req.EmailVerified,

@@ -172,7 +172,7 @@ test/                           # 外部测试包（测试代码与业务逻辑�
    - **路由注册必须收敛在 `internal/route/` 单包**：`handler` 包内严禁再出现路由注册代码；
    - `dto` 层是全系统唯一允许被 `handler` 与 `service` 共同引用的传输契约层，**严禁**在 `dto` 中 import `handler`、`service` 或 `route`；
    - 每层目录**不建模块文件夹**：一个模块一个文件直接落在层根（`internal/<layer>/<module>.go`）；管理端专属内容统一收纳进各层的 `admin/` 子目录（`internal/<layer>/admin/<module>.go`），并共用 `admindto` / `adminhandler` / `adminservice` / `adminroute` 包名。
-2. **跨 Feature 数据共享统一沉淀至 `internal/` 内核**：跨切片复用的用户视图、字段约束、角色策略与基础 Repository 已收敛在 [internal/user/](file:///Users/seaside/Projects/backend/go/gin-sqlc/internal/user/)，媒体处理内核已收敛在 [internal/media/](file:///Users/seaside/Projects/backend/go/gin-sqlc/internal/media/)。`shared/` 仅保留嵌入式 OpenAPI 静态资产（`apidocs/`），**严禁承接任何业务代码**。新增跨包复用的数据投影必须先入内核再被引用，严禁在下游各自复制。
+2. **跨 Feature 数据共享统一沉淀至 `internal/` 内核**：跨切片复用的用户视图、字段约束、角色策略与基础 Repository 已收敛在 [internal/user/](file:///Users/seaside/Projects/backend/go/gin-sqlc/internal/user/)，独立媒体处理基础设施已收敛在 [pkg/media/](file:///Users/seaside/Projects/backend/go/gin-sqlc/pkg/media/)。`shared/` 仅保留嵌入式 OpenAPI 静态资产（`apidocs/`），**严禁承接任何业务代码**。新增跨包复用的数据投影必须先入内核再被引用，严禁在下游各自复制。
 3. **分层职责绝对隔离**：
    - **Handler**：只负责 HTTP 参数解析绑定、入参校验调度、调用 Service、组装 `response.OK`。**严禁在 Handler 中编写核心业务逻辑或直接操作 ORM/SQL**。
    - **Service**：承载纯业务规则与事务协调，输入输出均为强类型 DTO/Model。通过返回 `samber/oops` 结构化错误传递失败原因。
@@ -218,20 +218,24 @@ test/                           # 外部测试包（测试代码与业务逻辑�
 在开发、重构或审查本仓库代码时，必须严格遵守并自动应用来自 `samber/cc-skills-golang` 的核心标准与 Go 1.27+ 现代语言规范：
 
 ### 4.1 代码风格与惯用模式
+
 - **规范遵循**：严格遵循 Effective Go 规范，函数短小精炼、控制流扁平、卫语句（Guard Clauses）优先。
 - **命名规范**：遵循 Go 惯用 CamelCase 驼峰命名，接收者命名简短且语义明确（如 `s *Service`），避免无意义的 `this`/`self`。
 - **现代特性**：充分运用现代 Go 特性（`for range` 整数/函数迭代、`slices`/`maps`/`cmp` 标准库包、测试中的 `t.Context()` 等）。
 
 ### 4.2 结构化错误处理与函数式转换
+
 - **结构化错误**：全面使用 `samber/oops` 进行业务错误包装，显式附带业务错误码（如 `oops.Code(errs.CodeUserNotFound).Wrap(err)`），方便最外层错误中间件统一拦截与状态码映射。
 - **切片与 Map 转换**：优先使用 `samber/lo` 提供的函数式工具（`lo.Map`, `lo.Filter`, `lo.KeyBy`, `lo.Ternary`, `lo.Uniq` 等），严禁书写冗长的命令式 `for` 循环遍历拼装代码。
 - **容量预分配**：所有切片转换与 Map 构建必须预分配空间（如 `make([]T, 0, len(source))`），优化热路径内存分配。
 
 ### 4.3 并发安全与 Context 传递
+
 - **严格 Context 贯穿**：所有涉 I/O 操作（数据库查询、缓存存取、网络调用、存储读写）的方法签名**第一个参数必须显式传递 `ctx context.Context`**。
 - **生命周期受控**：禁止在请求链路中裸起无法追踪生命周期的 Goroutine；如需后台处理，必须使用带有超时和取消机制的独立派生 Context 或安全 Worker 池，且必须具备 Panic 恢复守卫。
 
 ### 4.4 结构化日志纪律与 fmt 输出禁令 (Structured Logging & No fmt.Print)
+
 - **绝对严禁 `fmt.Print*` 输出**：核心运行时代码与业务逻辑层（`internal/` 目录除 `internal/console/` 外）**严禁使用 `fmt.Print`、`fmt.Println`、`fmt.Printf` 或传统标准库 `log` 输出运行日志**。
 - **全链路结构化日志**：所有服务运行事件、告警、安全审计与排错记录必须统一通过 `cgin/pkg/logger` 输出，优先使用 `logger.FromContext(ctx)` 确保请求级 `request_id` 全链路串联。
 - **合法例外场景**：
@@ -240,6 +244,7 @@ test/                           # 外部测试包（测试代码与业务逻辑�
 - **静态门禁拦截**：`.golangci.yml` 启用 `forbidigo` 规则，对业务代码中的 `fmt.Print*` 实行自动化拦截阻断。
 
 ### 4.5 注释精简中文与代码字符串全英文约束 (Chinese Comments & English Code Literals)
+
 - **注释保留精简中文**：所有包注释、结构体/类型文档注释、函数/方法文档注释、行内逻辑说明**统一强制保留精炼、地道的简体中文**，严禁书写英文注释，严禁中英文机械混杂。
 - **代码中所有字符串字面量、操作名、结构化日志与底层错误统一为标准英文（绝对红线）**：
   - 代码中的所有字符串字面量、底层驱动与库操作名（如 `"write local object"`、`"open upload file"`、`"read s3 object"` 等）、Go 哨兵错误以及 `errors.New` / `fmt.Errorf` 错误信息**必须全部统一使用标准英文**。**绝对严禁在代码中出现中文字符串字面量、中文操作名或中文内部错误**。
@@ -258,6 +263,7 @@ test/                           # 外部测试包（测试代码与业务逻辑�
 | **终端用户错误提示** | 统一 i18n 资源 | `message/zh-CN/*.toml`, `message/en/*.toml` | 在业务代码中直接硬编码中文提示 |
 
 ### 4.6 时间、容量与数据格式化红线规范 (Time, Capacity & Formatting Discipline)
+
 - **数据库生成类型与 DTO 原生时间红线（绝对红线）**：sqlc 生成结构体与对外传输对象 DTO（`dto.go`）**必须严格使用 Go 原生 `time.Time`**（由 `sqlc.yaml` 的 `timestamptz` override 统一保证）。严禁在数据库映射与对外契约中引入 `carbon.Carbon` / `carbon.DateTime` 等第三方包装类型，彻底确保 pgx/PostgreSQL `timestamptz` 原生驱动与 OpenAPI RFC 3339 序列化的极致性能、类型安全与契约稳定。
 - **业务时间推导统一 Carbon**：在业务逻辑层（Service）、计划任务（Worker）、CLI 命令与报表导出（Excel）中，凡涉及复杂时间计算（如有效期加减、封禁时间推导、自然日跨度）、相对时间展示（`DiffForHumans`）以及非标日期字符串解析时，**统一使用 `github.com/golang-module/carbon/v2`**（全局时区与 Locale 自动与 `.env` 中 `APP_TIMEZONE` 和 `APP_LOCALE` 同步）。
 - **容量与数字人性化统一 Humanize**：在 CLI 报表输出、运维日志、存储元数据与监控统计中，文件/对象字节容量展示（`humanize.Bytes` / `humanize.IBytes`）、大数字千分位分割（`humanize.Comma`）**统一使用 `github.com/dustin/go-humanize`**，严禁手动编写冗余的除法换算或格式化逻辑。
@@ -289,6 +295,7 @@ test/                           # 外部测试包（测试代码与业务逻辑�
    - 服务构造器统一返回具体的结构体指针（如 `*Service`），避免过早抽象导致调用方受制于肥接口；接口由具体的消费方（Caller）在依赖处按需就地定义最小接口契约。
 
 ### 4.8 全链路追踪标识与类型前缀 UUIDv7 规范 (Type-Prefixed UUIDv7 Specification)
+
 - **Stripe 风格前缀紧凑 UUIDv7 标准**：全链路请求追踪 ID（`request_id`）统一采用工业界标准的**类型前缀紧凑型 UUIDv7**（形如 `req_<32hex>`，例如 `req_01a0f7382105731198af306440d05dca`）。
 - **核心结构优势**：
   1. **实体类型上下文 (`req_`)**：提供即时的业务语义上下文，在跨服务 APM、微服务分布式链路追踪与日志检索中可瞬间识别资源属性，杜绝跨字段误用；
@@ -300,6 +307,7 @@ test/                           # 外部测试包（测试代码与业务逻辑�
 系统在面临外部依赖（PostgreSQL 18 与 Valkey/Redis）异常与抖动时，遵循严格的云原生分级容灾与治理规范：
 
 #### 1. 双探针职责彻底解耦（避免惊群重启雪崩）
+
 - **致命反模式阻断**：行业里最致命的反模式是“数据库挂了，让整个服务死掉重启”。在微服务多副本场景下，这会导致集群内几百个 Pod 同时反复重启，造成数据库刚缓过来又被瞬间冲垮（引发灾难性的惊群雪崩）。
 - **存活探针 [handler.go#L36](file:///Users/seaside/Projects/backend/go/gin-sqlc/internal/handler/system/handler.go#L36-L39) (`GET /livez`)**：
   - 只要 Go 进程自身没发生死锁或僵死，**永远返回 200**。Kubernetes 确认进程存活，绝不会盲目杀死重启容器。
@@ -309,11 +317,13 @@ test/                           # 外部测试包（测试代码与业务逻辑�
   - **Redis 缓存 (`ComponentCache`, Critical = false)**：Redis 属于非致命加速层，如果宕机，`/readyz` 返回 `200 degraded`，系统识别为降级状态，依旧允许接流。
 
 #### 2. 全生命周期闭环保障
+
 - **启动期**：配置错、DB 连不上 $\to$ 快速失败退出（Fail-Fast），绝不带病上线。在 [internal/bootstrap/wire.go](file:///Users/seaside/Projects/backend/go/gin-sqlc/internal/bootstrap/wire.go#L62-L66) 执行 `sqlDB.PingContext(ctx)` 失败即通过 `teardown` 逆序释放资源并以非零退出码（`os.Exit(1)`）退出。
 - **运行期网络抖动**：长连接池自适应重试重连，业务请求转为 500 结构化错误，进程长青。底层 `pgx/v5` 与 `rueidis` 连接池内置保活与自动重连，网络恢复后无需人工干预即可自动恢复流量处理。
 - **运行期外部服务宕机**：`/readyz` 秒级将流量自动排空摘除，杜绝雪崩扩散；恢复后秒级自动回切。
 
 #### 3. 高频探针日志健康静默纪律 (Probe Health Silence)
+
 - 为避免本地开发与生产容器探针高频轮询（每 2~3 秒一次）导致控制台与集中式日志系统被正常心跳日志刷屏，中间件 [internal/middleware/global/observability.go](file:///Users/seaside/Projects/backend/go/gin-sqlc/internal/middleware/global/observability.go#L64-L67) **在 `status < 400` 时对 `/livez` 与 `/readyz` 实行完全静默，不记录访问日志**。
 - 一旦探针出现任何异常（`status >= 400` 或 `>= 500`），强制保留 `Warn` 或 `Error` 级别结构化日志与堆栈，确保 APM 告警与应急排障无死角。
 
@@ -324,6 +334,7 @@ test/                           # 外部测试包（测试代码与业务逻辑�
 所有对外暴露的 REST 接口必须严格遵循根目录 [api.md](file:///Users/seaside/Projects/backend/go/gin-sqlc/api.md) 契约：
 
 ### 5.1 路径与响应规范
+
 - **路径语义**：遵循 Better-Auth 端点命名风格（如 `POST /v1/auth/sign-in/email`, `GET /v1/users/me`），资源路径使用小写复数名词。
 - **成功响应**：
   - 单一资源/操作响应：直接返回该业务对象本身，不额外包裹无意义的 `data` 信封（由 `response.OK(c, resource)` 处理）。
@@ -399,6 +410,7 @@ test/                           # 外部测试包（测试代码与业务逻辑�
    ```
 
 ### 5.4 Swagger 已知坑点与类型规避 (Known Swagger Pitfalls)
+
 - **注解格式扁平化**：保持扁平化 OpenAPI/Swagger 注解规范，**严禁使用 `oneOf` 冗余包装**。
 - ⚠️ **`swag` 跨包类型解析缺陷与别名避坑**：
   - **现象**：`swag` 在解析跨包结构体引用（如跨包直接声明 `{object} user.Profile`）时存在编译器缺陷，极易偶发报 `cannot find type definition` 导致 `just docs` 失败。
@@ -422,6 +434,7 @@ test/                           # 外部测试包（测试代码与业务逻辑�
 ```
 
 ### 数据库操作硬性准则：
+
 1. **唯一事实源**：[database/schemas/](file:///Users/seaside/Projects/backend/go/gin-sqlc/database/schemas) 是数据库最终预期形态的声明式事实源。新增或修改表结构时，**必须先在此目录中补充完整的 PostgreSQL DDL**。
 2. **严禁裸写 DDL**：绝对禁止直接连接数据库手动跑未版本化的 DDL，绝对禁止 Agent 手写虚构的 migration 文件。所有迁移必须运行 `just migrate-diff <feature_name>` 由 Atlas 自动差量比对生成。
 3. **哈希完整性**：若发生合并不慎改动了 `database/migrations/` 文件，必须执行 `just migrate-hash` 重建完整性校验链。
@@ -433,6 +446,7 @@ test/                           # 外部测试包（测试代码与业务逻辑�
 ## 7. 外部黑盒测试架构与三级质量门禁 (Testing & Quality Gates)
 
 ### 7.1 测试组织架构
+
 - **外部黑盒包**：所有的测试代码统一存放在根目录 [test/](file:///Users/seaside/Projects/backend/go/gin-sqlc/test/) 下，采用 `package xxx_test` 命名（如 `package auth_test`）。严禁在 `internal/` 目录内散落 `*_test.go` 文件，强制 Agent 从公共调用方视角对 API 进行黑盒校验。
 - **构建标签隔离**：
   - 单元测试（Mock / 内存）：无需任何构建标签，执行速度极快。

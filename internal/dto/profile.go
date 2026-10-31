@@ -1,8 +1,6 @@
 package dto
 
 import (
-	"mime/multipart"
-
 	"github.com/aarondl/opt/omitnull"
 
 	"cgin/internal/user"
@@ -11,18 +9,18 @@ import (
 // ProfileResource 为用户内核档案视图的类型别名（供 Swagger 注解直接引用）。
 type ProfileResource = user.Profile
 
-// UploadAvatarBody 接收 multipart/form-data 格式的用户头像上传表单载荷。
-type UploadAvatarBody struct {
-	// 头像图片文件（最大 2MB，支持 JPEG/PNG/WebP）
-	Avatar *multipart.FileHeader `form:"avatar" json:"avatar" validate:"required,file,image,mimes=jpg jpeg png webp,maxsize=2M"`
+// UpdateAvatarBody 接收客户端直传 S3 成功后的头像路径载荷。
+type UpdateAvatarBody struct {
+	// 头像文件在对象存储中的相对路径（Key）
+	AvatarPath string `json:"avatar_path" validate:"required,min=1,max=512" example:"uploads/avatars/20261031/uuid.png"`
 }
 
 // UpdateProfileBody 是 PATCH /v1/users/me 的局部更新请求体。
 type UpdateProfileBody struct {
 	// 用户展示昵称
 	Name omitnull.Val[string] `json:"name" validate:"omitempty,min=1,max=120" swaggertype:"string" extensions:"x-nullable" example:"Alex Mercer"`
-	// 用户头像 URL
-	Image omitnull.Val[string] `json:"image" validate:"omitempty,max=2048" swaggertype:"string" extensions:"x-nullable" example:"https://example.com/avatar.png"`
+	// 用户头像在对象存储中的相对路径（Key）
+	AvatarPath omitnull.Val[string] `json:"avatar_path" validate:"omitempty,max=512" swaggertype:"string" extensions:"x-nullable" example:"uploads/avatars/20261031/uuid.png"`
 	// 唯一登录用户名 (3-30位)
 	Username omitnull.Val[string] `json:"username" validate:"omitempty,min=3,max=30,usernameslug,notreserved" swaggertype:"string" extensions:"x-nullable" example:"alexmercer"`
 	// 用户显示名称
@@ -40,4 +38,12 @@ func (b UpdateProfileBody) Validate() error {
 }
 
 // FieldSet 将请求体转换为用户内核的档案字段集。
-func (b UpdateProfileBody) FieldSet() user.FieldSet { return user.FieldSet(b) }
+func (b UpdateProfileBody) FieldSet() user.FieldSet {
+	return user.FieldSet{
+		Name:            b.Name,
+		AvatarPath:      b.AvatarPath,
+		Username:        b.Username,
+		DisplayUsername: b.DisplayUsername,
+		PhoneNumber:     b.PhoneNumber,
+	}
+}

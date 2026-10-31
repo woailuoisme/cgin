@@ -18,8 +18,8 @@ type SignUpEmailBody struct {
 	Name string `json:"name" example:"Alex Mercer" validate:"required,min=1,max=120"`
 	// 登录用户名 (3-30位小写字母数字及下划线，不可使用系统保留字)
 	Username *string `json:"username" example:"alexmercer" validate:"omitempty,min=3,max=30,usernameslug,notreserved"`
-	// 用户头像 URL
-	Image *string `json:"image" example:"https://example.com/avatar.png" validate:"omitempty,max=2048"`
+	// 用户头像在对象存储中的相对路径
+	AvatarPath *string `json:"avatarPath" example:"uploads/avatar/20261031/uuid.webp" validate:"omitempty,max=2048"`
 }
 
 // SignInEmailBody 是 POST /v1/auth/sign-in/email 的请求体。

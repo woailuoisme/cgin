@@ -42,6 +42,7 @@ flowchart LR
   - CLI 终端：`rtk ast-grep run --pattern '$OBJ.Call($$$ARGS)' --lang go <search-path>`
 
 ### Step 2: 规则设计与改写模板 (Authoring)
+
 - **轻量单行改写**：直接设计 `--pattern` 与 `--rewrite` 表达模板。
 - **系统级/关系型改写**：编写 YAML 规则（可保存在 `scratch/rule.yml` 等临时路径）。若使用关系型匹配（`inside` / `has`），**必须显式指定 `stopBy: end`** 以深度遍历子树：
   ```yaml

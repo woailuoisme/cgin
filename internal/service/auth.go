@@ -120,11 +120,11 @@ func MustNewAuthService(deps AuthDeps) *AuthService {
 // SignUpEmail 注册邮箱密码账号，并按 Q15 的约定直接完成登录。
 func (s *AuthService) SignUpEmail(ctx context.Context, req dto.SignUpEmailBody) (dto.SessionResource, error) {
 	created, err := s.users.Register(ctx, appuser.RegisterParams{
-		Name:     req.Name,
-		Email:    req.Email,
-		Username: req.Username,
-		Image:    req.Image,
-		Password: req.Password,
+		Name:       req.Name,
+		Email:      req.Email,
+		Username:   req.Username,
+		AvatarPath: req.AvatarPath,
+		Password:   req.Password,
 	})
 	if err != nil {
 		return dto.SessionResource{}, err

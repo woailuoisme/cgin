@@ -16,7 +16,7 @@ type RegisterParams struct {
 	Name          string
 	Email         string
 	Username      *string
-	Image         *string
+	AvatarPath    *string
 	Role          enum.Role
 	Status        enum.Status
 	EmailVerified bool
@@ -41,7 +41,7 @@ func (s *Service) Register(ctx context.Context, params RegisterParams) (*sqlc.Us
 		Name:          strings.TrimSpace(params.Name),
 		Email:         NormaliseEmail(params.Email),
 		EmailVerified: params.EmailVerified,
-		Image:         params.Image,
+		AvatarPath:    params.AvatarPath,
 		Role:          string(defaultRole(params.Role)),
 		Status:        string(defaultStatus(params.Status)),
 	}

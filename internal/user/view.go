@@ -20,8 +20,8 @@ type Profile struct {
 	Email string `json:"email" example:"alex@example.com"`
 	// 邮箱是否已验证
 	EmailVerified bool `json:"emailVerified" example:"true"`
-	// 用户头像 URL
-	Image *string `json:"image" example:"https://example.com/avatar.png"`
+	// 用户头像在对象存储中的相对路径
+	AvatarPath *string `json:"avatarPath" example:"avatars/20261031/uuid.webp"`
 	// 用户权限角色 (user: 普通用户, admin: 系统管理员)
 	Role enum.Role `json:"role" example:"user" enums:"user,admin"`
 	// 唯一登录用户名
@@ -48,7 +48,7 @@ func ProjectProfile(entity *sqlc.User) Profile {
 		Name:            entity.Name,
 		Email:           entity.Email,
 		EmailVerified:   entity.EmailVerified,
-		Image:           entity.Image,
+		AvatarPath:      entity.AvatarPath,
 		Role:            entity.Role,
 		Username:        entity.Username,
 		DisplayUsername: entity.DisplayUsername,

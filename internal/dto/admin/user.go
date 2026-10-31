@@ -5,11 +5,13 @@ import (
 	"time"
 
 	"github.com/aarondl/opt/omitnull"
+	"github.com/samber/lo"
 
 	"cgin/internal/database"
 	"cgin/internal/database/sqlc"
 	"cgin/internal/enum"
 	"cgin/internal/user"
+	"cgin/pkg/media"
 	"cgin/pkg/response"
 	"cgin/pkg/validator"
 )
@@ -65,8 +67,8 @@ type CreateUserBody struct {
 	Name string `json:"name" example:"Alex Mercer" validate:"required,min=1,max=120"`
 	// 唯一登录用户名 (3-30位)
 	Username *string `json:"username" example:"alexmercer" validate:"omitempty,min=3,max=30,usernameslug,notreserved"`
-	// 用户头像 URL
-	Image *string `json:"image" example:"https://example.com/avatar.png" validate:"omitempty,max=2048"`
+	// 用户头像在对象存储中的相对路径
+	AvatarPath *string `json:"avatarPath" example:"uploads/avatar/20261031/uuid.webp" validate:"omitempty,max=2048"`
 	// 用户权限角色 (user: 普通用户, admin: 系统管理员)
 	Role Role `json:"role" example:"user" enums:"user,admin" validate:"required,oneof=user admin"`
 	// 邮箱是否已完成验证
@@ -77,8 +79,8 @@ type CreateUserBody struct {
 type UpdateUserBody struct {
 	// 用户展示昵称
 	Name omitnull.Val[string] `json:"name" validate:"omitempty,min=1,max=120" swaggertype:"string" extensions:"x-nullable" example:"Alex Mercer"`
-	// 用户头像 URL
-	Image omitnull.Val[string] `json:"image" validate:"omitempty,max=2048" swaggertype:"string" extensions:"x-nullable" example:"https://example.com/avatar.png"`
+	// 用户头像在对象存储中的相对路径
+	AvatarPath omitnull.Val[string] `json:"avatarPath" validate:"omitempty,max=2048" swaggertype:"string" extensions:"x-nullable" example:"uploads/avatar/20261031/uuid.webp"`
 	// 唯一登录用户名 (3-30位)
 	Username omitnull.Val[string] `json:"username" validate:"omitempty,min=3,max=30,usernameslug,notreserved" swaggertype:"string" extensions:"x-nullable" example:"alexmercer"`
 	// 用户显示名称
@@ -119,7 +121,7 @@ func (r UpdateUserBody) Validate() error {
 func (r UpdateUserBody) AdminFieldSet() user.AdminFieldSet {
 	return user.AdminFieldSet{
 		Name:            r.Name,
-		Image:           r.Image,
+		AvatarPath:      r.AvatarPath,
 		Username:        r.Username,
 		DisplayUsername: r.DisplayUsername,
 		PhoneNumber:     r.PhoneNumber,
@@ -174,8 +176,8 @@ type UserResource struct {
 	Email string `json:"email" example:"alex@example.com"`
 	// 邮箱是否已验证
 	EmailVerified bool `json:"emailVerified" example:"true"`
-	// 用户头像 URL
-	Image *string `json:"image" example:"https://example.com/avatar.png"`
+	// 用户头像多规格衍生访问地址
+	Avatar *media.ImageVariants `json:"avatar"`
 	// 用户权限角色 (user: 普通用户, admin: 系统管理员)
 	Role Role `json:"role" example:"user" enums:"user,admin"`
 	// 唯一登录用户名
@@ -218,7 +220,7 @@ func ToUserResource(entity *sqlc.User) UserResource {
 		Name:            profile.Name,
 		Email:           profile.Email,
 		EmailVerified:   profile.EmailVerified,
-		Image:           profile.Image,
+		Avatar:          media.BuildImageVariants(lo.FromPtr(profile.AvatarPath)),
 		Role:            profile.Role,
 		Username:        profile.Username,
 		DisplayUsername: profile.DisplayUsername,

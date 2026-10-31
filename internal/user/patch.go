@@ -13,7 +13,7 @@ import (
 // FieldSet 是客户端与后台管理共用的可更新档案字段集合。
 type FieldSet struct {
 	Name            omitnull.Val[string]
-	Image           omitnull.Val[string]
+	AvatarPath      omitnull.Val[string]
 	Username        omitnull.Val[string]
 	DisplayUsername omitnull.Val[string]
 	PhoneNumber     omitnull.Val[string]
@@ -25,7 +25,7 @@ type FieldSet struct {
 // 这件事取决于另一个类型的演化。
 type AdminFieldSet struct {
 	Name            omitnull.Val[string]
-	Image           omitnull.Val[string]
+	AvatarPath      omitnull.Val[string]
 	Username        omitnull.Val[string]
 	DisplayUsername omitnull.Val[string]
 	PhoneNumber     omitnull.Val[string]
@@ -40,8 +40,8 @@ type AdminFieldSet struct {
 // Patch 把三态字段归一为单条 UPDATE 所需的显式设置/清空意图。
 type Patch struct {
 	Name             *string
-	Image            *string
-	ClearImage       bool
+	AvatarPath       *string
+	ClearAvatarPath  bool
 	Username         *string
 	ClearUsername    bool
 	DisplayUsername  *string
@@ -60,7 +60,7 @@ type Patch struct {
 
 // Empty 报告补丁是否不含任何待写入字段。
 func (p Patch) Empty() bool {
-	return p.Name == nil && p.Image == nil && !p.ClearImage &&
+	return p.Name == nil && p.AvatarPath == nil && !p.ClearAvatarPath &&
 		p.Username == nil && !p.ClearUsername &&
 		p.DisplayUsername == nil && !p.ClearDisplayName &&
 		p.PhoneNumber == nil && !p.ClearPhone &&
@@ -81,7 +81,7 @@ func PatchFromFieldSet(fields FieldSet) (Patch, error) {
 		patch.Name = &name
 	}
 
-	patch.Image, patch.ClearImage = textField(fields.Image)
+	patch.AvatarPath, patch.ClearAvatarPath = textField(fields.AvatarPath)
 	patch.PhoneNumber, patch.ClearPhone = textField(fields.PhoneNumber)
 	patch.DisplayUsername, patch.ClearDisplayName = textField(fields.DisplayUsername)
 
@@ -102,7 +102,7 @@ func PatchFromFieldSet(fields FieldSet) (Patch, error) {
 func PatchFromAdminFieldSet(fields AdminFieldSet) (Patch, error) {
 	patch, err := PatchFromFieldSet(FieldSet{
 		Name:            fields.Name,
-		Image:           fields.Image,
+		AvatarPath:      fields.AvatarPath,
 		Username:        fields.Username,
 		DisplayUsername: fields.DisplayUsername,
 		PhoneNumber:     fields.PhoneNumber,
@@ -166,8 +166,8 @@ func (p Patch) Params(id string) sqlc.UpdateUserParams {
 	params := sqlc.UpdateUserParams{
 		ID:               id,
 		Name:             p.Name,
-		Image:            p.Image,
-		ClearImage:       p.ClearImage,
+		AvatarPath:       p.AvatarPath,
+		ClearAvatarPath:  p.ClearAvatarPath,
 		Username:         p.Username,
 		ClearUsername:    p.ClearUsername,
 		DisplayUsername:  p.DisplayUsername,

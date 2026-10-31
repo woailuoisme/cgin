@@ -24,6 +24,7 @@ description: 核心 MCP 工具链（context7, exa, tavily, codegraph, ast-grep�
 ## 2. 工具调用契约与最佳实践
 
 ### 2.1 `codegraph` (本地代码拓扑与影响分析)
+
 - **调用工具**: `codegraph_explore`
 - **核心契约**:
   1. **必须显式传参 `projectPath`**: 传入当前工作区根目录的绝对路径。
@@ -31,6 +32,7 @@ description: 核心 MCP 工具链（context7, exa, tavily, codegraph, ast-grep�
   3. **高密度查询**: `query` 既支持自然语言问题（如 `"how does transaction middleware propagate context in auth service"`），也支持核心符号组合（如 `"AuthService Login database.GetDB"`）。通常 1~2 次调用即可完成拓扑探查。
 
 ### 2.2 `context7` (第三方依赖官方文档)
+
 - **调用工具**: `resolve-library-id` ➜ `query-docs`
 - **核心契约**:
   1. **两阶段标准流**: 必须先调用 `resolve-library-id`（提供 `libraryName` + `query`）获取标准 ID，再通过 `query-docs` 检索具体主题。
@@ -38,18 +40,21 @@ description: 核心 MCP 工具链（context7, exa, tavily, codegraph, ast-grep�
   3. **频次限制**: 每个任务内调用 `query-docs` 严禁超过 3 次；未找到时结合 `exa` 或 `tavily` 补充。
 
 ### 2.3 `exa` (深度技术语义搜索与抓取)
+
 - **调用工具**: `web_search_exa`、`web_fetch_exa`
 - **核心契约**:
   1. **描述理想页面**: `web_search_exa` 的 `query` 应为语义化描述（如 `"idiomatic service layer pattern with fiber and sqlc in Go"`），而非孤立关键字。
   2. **深度提取**: 当摘要信息不足以支撑架构决策时，挑选高价值 URL 调用 `web_fetch_exa` 提取干净 Markdown 正文。
 
 ### 2.4 `tavily` (实时时效性搜索与 Issue 排查)
+
 - **调用工具**: `tavily-search`、`tavily-extract`
 - **核心契约**:
   1. **实时与精确排查**: 用于排查最新版本的 Bug、Breaking Changes、CVE 漏洞或 GitHub 讨论。
   2. **按需配置深度**: 深度研判使用 `search_depth: "advanced"` 并可限定权威域名（如 `include_domains: ["github.com"]`）；提取指定页面正文使用 `tavily-extract`。
 
 ### 2.5 `ast-grep` (AST 结构分析与精准重构)
+
 - **调用工具**: `dump_syntax_tree`、`find_code`、`find_code_by_rule`、`test_match_code_rule`
 - **核心契约**:
   1. **MCP + CLI 闭环协作**: 在智能体回合内使用 MCP 工具转储 CST、检索模式、测试 YAML 规则；测试无误后通过终端 CLI（`rtk ast-grep run/scan --update-all`）批量应用。

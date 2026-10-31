@@ -51,11 +51,11 @@ func TestPatchFromFieldSet(t *testing.T) {
 
 	t.Run("显式null触发清空", func(t *testing.T) {
 		patch, err := user.PatchFromFieldSet(user.FieldSet{
-			Image:    omitnull.FromPtr[string](nil),
-			Username: omitnull.FromPtr[string](nil),
+			AvatarPath: omitnull.FromPtr[string](nil),
+			Username:   omitnull.FromPtr[string](nil),
 		})
 		require.NoError(t, err)
-		assert.True(t, patch.ClearImage)
+		assert.True(t, patch.ClearAvatarPath)
 		assert.True(t, patch.ClearUsername)
 		assert.True(t, patch.ClearDisplayName)
 	})

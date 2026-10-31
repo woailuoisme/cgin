@@ -12,7 +12,7 @@ CREATE TABLE "user" (
   name text NOT NULL, -- 用户显示名称
   email text NOT NULL, -- 电子邮箱地址，活跃记录内大小写不敏感唯一
   email_verified boolean NOT NULL DEFAULT false, -- 邮箱验证状态标识
-  image text NULL, -- 用户头像图片访问地址
+  avatar_path text NULL, -- 用户头像在对象存储中的相对路径（Key）
   role text NOT NULL DEFAULT 'user', -- 系统角色标识（user, admin）；新增角色需同时迁移与改策略矩阵
   status text NOT NULL DEFAULT 'active', -- 账号状态标识（active: 正常, inactive: 未激活, banned: 已封禁）
   banned boolean NOT NULL DEFAULT false, -- 账号是否被封禁标识

@@ -26,28 +26,6 @@ type Account struct {
 	UpdatedAt             time.Time
 }
 
-type Medium struct {
-	ID                   int64
-	UUID                 string
-	ModelType            string
-	ModelID              string
-	CollectionName       string
-	Disk                 string
-	Name                 string
-	FileName             string
-	MIMEType             string
-	ConversionsDisk      *string
-	Size                 int64
-	ConversionStatus     string
-	OrderColumn          *int32
-	Manipulations        map[string]any
-	CustomProperties     map[string]any
-	GeneratedConversions map[string]any
-	ResponsiveImages     map[string]any
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
-}
-
 type Notification struct {
 	ID             string
 	NotifiableType string
@@ -65,7 +43,7 @@ type User struct {
 	Name                string
 	Email               string
 	EmailVerified       bool
-	Image               *string
+	AvatarPath          *string
 	Role                enum.Role
 	Status              enum.Status
 	Banned              bool

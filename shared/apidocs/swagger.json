@@ -422,6 +422,58 @@
                 "x-order": 8
             }
         },
+        "/media/presign": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "客户端上传文件前调用此接口获取带有效期的 S3 预签名直传 URL 与对象相对路径 (Key)，客户端随后直接通过 HTTP PUT 将二进制流写入 S3。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "媒体中心"
+                ],
+                "summary": "申请 S3 预签名直传凭证",
+                "parameters": [
+                    {
+                        "description": "预签名上传申请参数",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.PresignUploadBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "预签名上传凭证",
+                        "schema": {
+                            "$ref": "#/definitions/dto.PresignUploadResource"
+                        }
+                    },
+                    "400": {
+                        "description": "参数非法或不满足配额规则",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Response"
+                        }
+                    }
+                },
+                "x-order": 1
+            }
+        },
         "/realtime/proxy/subscribe": {
             "post": {
                 "description": "接收 Centrifugo 反向代理发起的频道订阅鉴权请求，校验 HMAC-SHA256 签名并调度频道权限策略。",
@@ -554,9 +606,9 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "上传并更新当前登录用户的个人头像。仅允许上传不超过 2MB 的 JPEG、PNG 或 WebP 格式图片，自动按魔数头校验真实图像并清除历史旧头像。",
+                "description": "保存客户端直传 S3 成功后的头像相对路径，自动校验存储对象存在性并清理历史旧头像。",
                 "consumes": [
-                    "multipart/form-data"
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -564,14 +616,16 @@
                 "tags": [
                     "个人资料"
                 ],
-                "summary": "上传本人头像",
+                "summary": "更新本人头像",
                 "parameters": [
                     {
-                        "type": "file",
-                        "description": "头像图片文件 (最大 2MB，支持 JPEG/PNG/WebP)",
-                        "name": "avatar",
-                        "in": "formData",
-                        "required": true
+                        "description": "直传 S3 成功后的头像相对路径",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateAvatarBody"
+                        }
                     }
                 ],
                 "responses": {
@@ -581,14 +635,14 @@
                             "$ref": "#/definitions/dto.ProfileResource"
                         }
                     },
-                    "401": {
-                        "description": "未认证",
+                    "400": {
+                        "description": "路径非法或存储对象不存在",
                         "schema": {
                             "$ref": "#/definitions/errs.Response"
                         }
                     },
-                    "422": {
-                        "description": "文件校验失败",
+                    "401": {
+                        "description": "未认证",
                         "schema": {
                             "$ref": "#/definitions/errs.Response"
                         }
@@ -646,9 +700,106 @@
                 }
             }
         },
+        "dto.ImageVariantResource": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "description": "存储端相对路径（Key）",
+                    "type": "string",
+                    "example": "uploads/avatars/20261031/uuid.png"
+                },
+                "thumb_url": {
+                    "description": "签名后微缩图访问 URL",
+                    "type": "string",
+                    "example": "https://img.example.com/sig2/rs:fill:64:64:1/g:fp:0:0/...@webp"
+                },
+                "url": {
+                    "description": "签名后标准尺寸访问 URL",
+                    "type": "string",
+                    "example": "https://img.example.com/sig1/rs:fill:256:256:1/g:fp:0:0/...@webp"
+                }
+            }
+        },
+        "dto.PresignUploadBody": {
+            "type": "object",
+            "required": [
+                "category",
+                "file_name",
+                "file_size",
+                "mime_type"
+            ],
+            "properties": {
+                "category": {
+                    "description": "业务存储类目（如 avatars, covers, documents, attachments）",
+                    "type": "string",
+                    "enum": [
+                        "avatars",
+                        "covers",
+                        "documents",
+                        "attachments"
+                    ],
+                    "example": "avatars"
+                },
+                "file_name": {
+                    "description": "上传的原始文件名（用于清洗及保留扩展名）",
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "example": "avatar.png"
+                },
+                "file_size": {
+                    "description": "文件预期大小（字节单位，用于前置配额校验）",
+                    "type": "integer",
+                    "maximum": 104857600,
+                    "example": 1048576
+                },
+                "mime_type": {
+                    "description": "文件的 MIME 类型（如 image/png, image/jpeg）",
+                    "type": "string",
+                    "example": "image/png"
+                }
+            }
+        },
+        "dto.PresignUploadResource": {
+            "type": "object",
+            "properties": {
+                "expires_in": {
+                    "description": "凭证有效倒计时（秒）",
+                    "type": "integer",
+                    "example": 900
+                },
+                "headers": {
+                    "description": "客户端执行直传时必须携带的 HTTP 请求头",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "method": {
+                    "description": "直传 HTTP 方法（固定为 PUT）",
+                    "type": "string",
+                    "example": "PUT"
+                },
+                "path": {
+                    "description": "对象在存储桶中的相对路径（Key），客户端直传成功后向业务接口提交此路径",
+                    "type": "string",
+                    "example": "uploads/avatars/20261031/uuid.png"
+                },
+                "upload_url": {
+                    "description": "S3 预签名直传目标地址（带临时安全签名参数）",
+                    "type": "string",
+                    "example": "https://s3.amazonaws.com/bucket/uploads/avatars/20261031/uuid.png?X-Amz-..."
+                }
+            }
+        },
         "dto.ProfileResource": {
             "type": "object",
             "properties": {
+                "avatarPath": {
+                    "description": "用户头像在对象存储中的相对路径",
+                    "type": "string",
+                    "example": "avatars/20261031/uuid.webp"
+                },
                 "createdAt": {
                     "description": "账号创建时间 (ISO 8601 UTC)",
                     "type": "string",
@@ -673,11 +824,6 @@
                     "description": "用户唯一标识",
                     "type": "string",
                     "example": "usr_01J9X4N8Y0ABCD"
-                },
-                "image": {
-                    "description": "用户头像 URL",
-                    "type": "string",
-                    "example": "https://example.com/avatar.png"
                 },
                 "name": {
                     "description": "用户展示昵称",
@@ -885,17 +1031,17 @@
                 "password"
             ],
             "properties": {
+                "avatarPath": {
+                    "description": "用户头像在对象存储中的相对路径",
+                    "type": "string",
+                    "maxLength": 2048,
+                    "example": "uploads/avatar/20261031/uuid.webp"
+                },
                 "email": {
                     "description": "用户电子邮箱",
                     "type": "string",
                     "maxLength": 254,
                     "example": "alex@example.com"
-                },
-                "image": {
-                    "description": "用户头像 URL",
-                    "type": "string",
-                    "maxLength": 2048,
-                    "example": "https://example.com/avatar.png"
                 },
                 "name": {
                     "description": "用户展示昵称",
@@ -967,9 +1113,31 @@
                 }
             }
         },
+        "dto.UpdateAvatarBody": {
+            "type": "object",
+            "required": [
+                "avatar_path"
+            ],
+            "properties": {
+                "avatar_path": {
+                    "description": "头像文件在对象存储中的相对路径（Key）",
+                    "type": "string",
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "example": "uploads/avatars/20261031/uuid.png"
+                }
+            }
+        },
         "dto.UpdateProfileBody": {
             "type": "object",
             "properties": {
+                "avatar_path": {
+                    "description": "用户头像在对象存储中的相对路径（Key）",
+                    "type": "string",
+                    "maxLength": 512,
+                    "x-nullable": true,
+                    "example": "uploads/avatars/20261031/uuid.png"
+                },
                 "displayUsername": {
                     "description": "用户显示名称",
                     "type": "string",
@@ -977,13 +1145,6 @@
                     "minLength": 1,
                     "x-nullable": true,
                     "example": "Alex Mercer"
-                },
-                "image": {
-                    "description": "用户头像 URL",
-                    "type": "string",
-                    "maxLength": 2048,
-                    "x-nullable": true,
-                    "example": "https://example.com/avatar.png"
                 },
                 "name": {
                     "description": "用户展示昵称",
@@ -1012,6 +1173,14 @@
         "dto.UserResource": {
             "type": "object",
             "properties": {
+                "avatar": {
+                    "description": "用户头像复合对象（包含相对存储路径与 Imgproxy 防篡改签名访问 URL）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.ImageVariantResource"
+                        }
+                    ]
+                },
                 "createdAt": {
                     "description": "账号创建时间 (ISO 8601 UTC)",
                     "type": "string",
@@ -1036,11 +1205,6 @@
                     "description": "用户唯一标识",
                     "type": "string",
                     "example": "usr_01J9X4N8Y0ABCD"
-                },
-                "image": {
-                    "description": "用户头像 URL",
-                    "type": "string",
-                    "example": "https://example.com/avatar.png"
                 },
                 "name": {
                     "description": "用户展示昵称",

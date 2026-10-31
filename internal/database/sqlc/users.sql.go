@@ -28,7 +28,7 @@ INSERT INTO "user" (
   name,
   email,
   email_verified,
-  image,
+  avatar_path,
   role,
   status,
   username,
@@ -48,14 +48,14 @@ VALUES (
   $9,
   $10
 )
-RETURNING id, name, email, email_verified, image, role, status, banned, two_factor_enabled, username, display_username, phone_number, phone_number_verified, is_anonymous, last_login_method, ban_reason, ban_expires, last_login_at, created_at, updated_at, deleted_at
+RETURNING id, name, email, email_verified, avatar_path, role, status, banned, two_factor_enabled, username, display_username, phone_number, phone_number_verified, is_anonymous, last_login_method, ban_reason, ban_expires, last_login_at, created_at, updated_at, deleted_at
 `
 
 type CreateUserParams struct {
 	Name                string
 	Email               string
 	EmailVerified       bool
-	Image               *string
+	AvatarPath          *string
 	Role                string
 	Status              string
 	Username            *string
@@ -69,7 +69,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.Name,
 		arg.Email,
 		arg.EmailVerified,
-		arg.Image,
+		arg.AvatarPath,
 		arg.Role,
 		arg.Status,
 		arg.Username,
@@ -83,7 +83,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Name,
 		&i.Email,
 		&i.EmailVerified,
-		&i.Image,
+		&i.AvatarPath,
 		&i.Role,
 		&i.Status,
 		&i.Banned,
@@ -109,7 +109,7 @@ INSERT INTO "user" (
   name,
   email,
   email_verified,
-  image,
+  avatar_path,
   role,
   status,
   username,
@@ -121,7 +121,7 @@ SELECT
   b.name,
   b.email,
   b.email_verified,
-  b.image,
+  b.avatar_path,
   b.role,
   b.status,
   b.username,
@@ -132,7 +132,7 @@ FROM jsonb_to_recordset(($1::jsonb) -> 'rows') AS b(
   name text,
   email text,
   email_verified boolean,
-  image text,
+  avatar_path text,
   role text,
   status text,
   username text,
@@ -140,7 +140,7 @@ FROM jsonb_to_recordset(($1::jsonb) -> 'rows') AS b(
   phone_number text,
   phone_number_verified boolean
 )
-RETURNING id, name, email, email_verified, image, role, status, banned, two_factor_enabled, username, display_username, phone_number, phone_number_verified, is_anonymous, last_login_method, ban_reason, ban_expires, last_login_at, created_at, updated_at, deleted_at
+RETURNING id, name, email, email_verified, avatar_path, role, status, banned, two_factor_enabled, username, display_username, phone_number, phone_number_verified, is_anonymous, last_login_method, ban_reason, ban_expires, last_login_at, created_at, updated_at, deleted_at
 `
 
 type CreateUsersBatchParams struct {
@@ -162,7 +162,7 @@ func (q *Queries) CreateUsersBatch(ctx context.Context, arg CreateUsersBatchPara
 			&i.Name,
 			&i.Email,
 			&i.EmailVerified,
-			&i.Image,
+			&i.AvatarPath,
 			&i.Role,
 			&i.Status,
 			&i.Banned,
@@ -191,7 +191,7 @@ func (q *Queries) CreateUsersBatch(ctx context.Context, arg CreateUsersBatchPara
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, name, email, email_verified, image, role, status, banned, two_factor_enabled, username, display_username, phone_number, phone_number_verified, is_anonymous, last_login_method, ban_reason, ban_expires, last_login_at, created_at, updated_at, deleted_at
+SELECT id, name, email, email_verified, avatar_path, role, status, banned, two_factor_enabled, username, display_username, phone_number, phone_number_verified, is_anonymous, last_login_method, ban_reason, ban_expires, last_login_at, created_at, updated_at, deleted_at
 FROM "user" AS u
 WHERE lower(u.email) = lower($1)
   AND u.deleted_at IS NULL
@@ -209,7 +209,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, arg GetUserByEmailParams) 
 		&i.Name,
 		&i.Email,
 		&i.EmailVerified,
-		&i.Image,
+		&i.AvatarPath,
 		&i.Role,
 		&i.Status,
 		&i.Banned,
@@ -232,7 +232,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, arg GetUserByEmailParams) 
 
 const getUserByID = `-- name: GetUserByID :one
 
-SELECT id, name, email, email_verified, image, role, status, banned, two_factor_enabled, username, display_username, phone_number, phone_number_verified, is_anonymous, last_login_method, ban_reason, ban_expires, last_login_at, created_at, updated_at, deleted_at
+SELECT id, name, email, email_verified, avatar_path, role, status, banned, two_factor_enabled, username, display_username, phone_number, phone_number_verified, is_anonymous, last_login_method, ban_reason, ban_expires, last_login_at, created_at, updated_at, deleted_at
 FROM "user" AS u
 WHERE u.id = $1
   AND u.deleted_at IS NULL
@@ -257,7 +257,7 @@ func (q *Queries) GetUserByID(ctx context.Context, arg GetUserByIDParams) (User,
 		&i.Name,
 		&i.Email,
 		&i.EmailVerified,
-		&i.Image,
+		&i.AvatarPath,
 		&i.Role,
 		&i.Status,
 		&i.Banned,
@@ -279,7 +279,7 @@ func (q *Queries) GetUserByID(ctx context.Context, arg GetUserByIDParams) (User,
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, name, email, email_verified, image, role, status, banned, two_factor_enabled, username, display_username, phone_number, phone_number_verified, is_anonymous, last_login_method, ban_reason, ban_expires, last_login_at, created_at, updated_at, deleted_at
+SELECT id, name, email, email_verified, avatar_path, role, status, banned, two_factor_enabled, username, display_username, phone_number, phone_number_verified, is_anonymous, last_login_method, ban_reason, ban_expires, last_login_at, created_at, updated_at, deleted_at
 FROM "user" AS u
 WHERE u.username IS NOT NULL
   AND lower(u.username) = lower($1)
@@ -298,7 +298,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, arg GetUserByUsernamePa
 		&i.Name,
 		&i.Email,
 		&i.EmailVerified,
-		&i.Image,
+		&i.AvatarPath,
 		&i.Role,
 		&i.Status,
 		&i.Banned,
@@ -320,7 +320,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, arg GetUserByUsernamePa
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT u.id, u.name, u.email, u.email_verified, u.image, u.role, u.status, u.banned, u.two_factor_enabled, u.username, u.display_username, u.phone_number, u.phone_number_verified, u.is_anonymous, u.last_login_method, u.ban_reason, u.ban_expires, u.last_login_at, u.created_at, u.updated_at, u.deleted_at, count(*) OVER () AS total_count
+SELECT u.id, u.name, u.email, u.email_verified, u.avatar_path, u.role, u.status, u.banned, u.two_factor_enabled, u.username, u.display_username, u.phone_number, u.phone_number_verified, u.is_anonymous, u.last_login_method, u.ban_reason, u.ban_expires, u.last_login_at, u.created_at, u.updated_at, u.deleted_at, count(*) OVER () AS total_count
 FROM "user" AS u
 WHERE u.deleted_at IS NULL
   AND ($1::text IS NULL OR u.status = $1::text)
@@ -386,7 +386,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 			&i.User.Name,
 			&i.User.Email,
 			&i.User.EmailVerified,
-			&i.User.Image,
+			&i.User.AvatarPath,
 			&i.User.Role,
 			&i.User.Status,
 			&i.User.Banned,
@@ -416,7 +416,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 }
 
 const listUsersAfter = `-- name: ListUsersAfter :many
-SELECT id, name, email, email_verified, image, role, status, banned, two_factor_enabled, username, display_username, phone_number, phone_number_verified, is_anonymous, last_login_method, ban_reason, ban_expires, last_login_at, created_at, updated_at, deleted_at
+SELECT id, name, email, email_verified, avatar_path, role, status, banned, two_factor_enabled, username, display_username, phone_number, phone_number_verified, is_anonymous, last_login_method, ban_reason, ban_expires, last_login_at, created_at, updated_at, deleted_at
 FROM "user" AS u
 WHERE u.deleted_at IS NULL
   AND ($1::text IS NULL OR u.status = $1::text)
@@ -462,7 +462,7 @@ func (q *Queries) ListUsersAfter(ctx context.Context, arg ListUsersAfterParams) 
 			&i.Name,
 			&i.Email,
 			&i.EmailVerified,
-			&i.Image,
+			&i.AvatarPath,
 			&i.Role,
 			&i.Status,
 			&i.Banned,
@@ -491,7 +491,7 @@ func (q *Queries) ListUsersAfter(ctx context.Context, arg ListUsersAfterParams) 
 }
 
 const listUsersForSearch = `-- name: ListUsersForSearch :many
-SELECT id, name, email, email_verified, image, role, status, banned, two_factor_enabled, username, display_username, phone_number, phone_number_verified, is_anonymous, last_login_method, ban_reason, ban_expires, last_login_at, created_at, updated_at, deleted_at
+SELECT id, name, email, email_verified, avatar_path, role, status, banned, two_factor_enabled, username, display_username, phone_number, phone_number_verified, is_anonymous, last_login_method, ban_reason, ban_expires, last_login_at, created_at, updated_at, deleted_at
 FROM "user" AS u
 WHERE u.deleted_at IS NULL
   AND ($1::text = '' OR u.id > $1::text)
@@ -519,7 +519,7 @@ func (q *Queries) ListUsersForSearch(ctx context.Context, arg ListUsersForSearch
 			&i.Name,
 			&i.Email,
 			&i.EmailVerified,
-			&i.Image,
+			&i.AvatarPath,
 			&i.Role,
 			&i.Status,
 			&i.Banned,
@@ -572,7 +572,7 @@ SET email_verified = true,
     updated_at = now()
 WHERE u.id = $1
   AND u.deleted_at IS NULL
-RETURNING id, name, email, email_verified, image, role, status, banned, two_factor_enabled, username, display_username, phone_number, phone_number_verified, is_anonymous, last_login_method, ban_reason, ban_expires, last_login_at, created_at, updated_at, deleted_at
+RETURNING id, name, email, email_verified, avatar_path, role, status, banned, two_factor_enabled, username, display_username, phone_number, phone_number_verified, is_anonymous, last_login_method, ban_reason, ban_expires, last_login_at, created_at, updated_at, deleted_at
 `
 
 type SetUserEmailVerifiedParams struct {
@@ -587,7 +587,7 @@ func (q *Queries) SetUserEmailVerified(ctx context.Context, arg SetUserEmailVeri
 		&i.Name,
 		&i.Email,
 		&i.EmailVerified,
-		&i.Image,
+		&i.AvatarPath,
 		&i.Role,
 		&i.Status,
 		&i.Banned,
@@ -632,7 +632,7 @@ const updateUser = `-- name: UpdateUser :one
 UPDATE "user" AS u
 SET
   name = COALESCE($1, u.name),
-  image = CASE WHEN $2::bool THEN NULL ELSE COALESCE($3, u.image) END,
+  avatar_path = CASE WHEN $2::bool THEN NULL ELSE COALESCE($3, u.avatar_path) END,
   username = CASE WHEN $4::bool THEN NULL ELSE COALESCE($5, u.username) END,
   display_username = CASE WHEN $6::bool THEN NULL ELSE COALESCE($7, u.display_username) END,
   phone_number = CASE WHEN $8::bool THEN NULL ELSE COALESCE($9, u.phone_number) END,
@@ -645,13 +645,13 @@ SET
   updated_at = now()
 WHERE u.id = $18
   AND u.deleted_at IS NULL
-RETURNING id, name, email, email_verified, image, role, status, banned, two_factor_enabled, username, display_username, phone_number, phone_number_verified, is_anonymous, last_login_method, ban_reason, ban_expires, last_login_at, created_at, updated_at, deleted_at
+RETURNING id, name, email, email_verified, avatar_path, role, status, banned, two_factor_enabled, username, display_username, phone_number, phone_number_verified, is_anonymous, last_login_method, ban_reason, ban_expires, last_login_at, created_at, updated_at, deleted_at
 `
 
 type UpdateUserParams struct {
 	Name             *string
-	ClearImage       bool
-	Image            *string
+	ClearAvatarPath  bool
+	AvatarPath       *string
 	ClearUsername    bool
 	Username         *string
 	ClearDisplayName bool
@@ -673,8 +673,8 @@ type UpdateUserParams struct {
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
 	row := q.db.QueryRow(ctx, updateUser,
 		arg.Name,
-		arg.ClearImage,
-		arg.Image,
+		arg.ClearAvatarPath,
+		arg.AvatarPath,
 		arg.ClearUsername,
 		arg.Username,
 		arg.ClearDisplayName,
@@ -697,7 +697,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.Name,
 		&i.Email,
 		&i.EmailVerified,
-		&i.Image,
+		&i.AvatarPath,
 		&i.Role,
 		&i.Status,
 		&i.Banned,

@@ -99,6 +99,7 @@ const (
 	CodeDatabaseUnavailable Code = "DATABASE_UNAVAILABLE"
 
 	// 以下为内部失败码：不登记进 statuses，对外统一 500，仅用于堆栈与日志定位。
+	CodeStorageFailed            Code = "STORAGE_FAILED"
 	CodeCSVWriteError            Code = "CSV_WRITE_ERROR"
 	CodeCSVFlushError            Code = "CSV_FLUSH_ERROR"
 	CodeCSVGeneratorError        Code = "CSV_GENERATOR_ERROR"
@@ -253,6 +254,8 @@ func domain(c Code) string {
 		return "payment"
 	case strings.HasPrefix(s, "DATABASE_"):
 		return "database"
+	case strings.HasPrefix(s, "STORAGE_"):
+		return "storage"
 	default:
 		return "app"
 	}

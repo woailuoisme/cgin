@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"cgin/internal/media"
+	"cgin/pkg/media"
 )
 
 func TestSecurityValidator_Validate(t *testing.T) {

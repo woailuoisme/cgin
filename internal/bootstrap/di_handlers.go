@@ -12,6 +12,7 @@ import (
 	"cgin/internal/middleware/global"
 	"cgin/internal/service"
 	adminservice "cgin/internal/service/admin"
+	"cgin/pkg/media"
 )
 
 // HandlersPackage 声明 HTTP 传输适配层（各模块 Handler、路由表与 Gin 路由引擎）。
@@ -59,12 +60,19 @@ var HandlersPackage = do.Package(
 		return handler.NewPaymentHandler(svc), nil
 	}),
 
-	// 8. 路由处理器聚合
+	// 8. 媒体资源处理器
+	do.Lazy(func(i do.Injector) (*handler.MediaHandler, error) {
+		engine := do.MustInvoke[media.Engine](i)
+		return handler.NewMediaHandler(engine), nil
+	}),
+
+	// 9. 路由处理器聚合
 	do.Lazy(func(i do.Injector) (routeHandlers, error) {
 		return routeHandlers{
 			system:    do.MustInvoke[*handler.SystemHandler](i),
 			auth:      do.MustInvoke[*handler.AuthHandler](i),
 			profile:   do.MustInvoke[*handler.ProfileHandler](i),
+			media:     do.MustInvoke[*handler.MediaHandler](i),
 			admin:     do.MustInvoke[*adminhandler.UserHandler](i),
 			adminAuth: do.MustInvoke[*adminhandler.AuthHandler](i),
 			realtime:  do.MustInvoke[*handler.RealtimeHandler](i),
@@ -72,7 +80,7 @@ var HandlersPackage = do.Package(
 		}, nil
 	}),
 
-	// 9. Gin HTTP 引擎与洋葱中间件管线
+	// 10. Gin HTTP 引擎与洋葱中间件管线
 	do.Lazy(func(i do.Injector) (*gin.Engine, error) {
 		cfg := do.MustInvoke[*config.Config](i)
 		globalMW := do.MustInvoke[*global.Middleware](i)

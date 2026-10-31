@@ -158,7 +158,7 @@ alias db-shell := db
 #   管理端规范 = 用户管理 + 管理员认证。
 # 支付中心（渠道回调）两套都不收录。
 docs:
-    swag init -d "$(find cmd internal pkg shared -type f -name '*.go' -exec dirname {} + | sort -u | paste -sd, -)" -g main.go -o shared/apidocs --parseInternal --outputTypes json --exclude internal/handler/admin,internal/dto/admin,internal/service/admin,internal/route/admin -t "认证中心,个人资料,实时通信"
+    swag init -d "$(find cmd internal pkg shared -type f -name '*.go' -exec dirname {} + | sort -u | paste -sd, -)" -g main.go -o shared/apidocs --parseInternal --outputTypes json --exclude internal/handler/admin,internal/dto/admin,internal/service/admin,internal/route/admin -t "认证中心,个人资料,实时通信,媒体中心"
     swag init -d "$(find cmd internal pkg shared -type f -name '*.go' -exec dirname {} + | sort -u | paste -sd, -)" -g admin_doc.go -o shared/apidocs/admin_tmp --parseInternal --outputTypes json -t "用户管理,管理员认证"
     mv shared/apidocs/admin_tmp/swagger.json shared/apidocs/admin_swagger.json
     rm -rf shared/apidocs/admin_tmp

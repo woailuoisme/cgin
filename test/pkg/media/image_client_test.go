@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/config"
-	"cgin/internal/media"
+	"cgin/pkg/media"
 )
 
 // TestImageClientSeparatesPublicAndInternalURL 验证：
@@ -24,19 +24,21 @@ func TestImageClientSeparatesPublicAndInternalURL(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	client := media.NewImageClient(config.ImgproxyConfig{
-		Enabled:     true,
-		BaseURL:     "https://img.example.com/",
-		InternalURL: server.URL + "/",
-		Insecure:    true,
-	})
+	engine := media.NewEngine(config.MediaConfig{
+		Imgproxy: config.ImgproxyConfig{
+			Enabled:     true,
+			BaseURL:     "https://img.example.com/",
+			InternalURL: server.URL + "/",
+			Insecure:    true,
+		},
+	}, config.StorageConfig{Driver: "memory-mock"}, nil)
 
-	url, err := client.URL("local://avatars/2026/10/a.png", media.WithResize(64, 64))
+	url, err := engine.SignWithOptions("local://avatars/2026/10/a.png", media.WithResize(64, 64))
 	require.NoError(t, err)
 	assert.Contains(t, url, "https://img.example.com/insecure/", "签名 URL 必须走对外地址")
 	assert.NotContains(t, url, server.URL, "签名 URL 不得暴露内部探测地址")
 
-	require.NoError(t, client.Ping(t.Context()))
+	require.NoError(t, engine.Ping(t.Context()))
 	assert.Equal(t, 1, probes, "健康探测应命中内部地址")
 }
 
@@ -47,11 +49,13 @@ func TestImageClientFallsBackToBaseURL(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	client := media.NewImageClient(config.ImgproxyConfig{
-		Enabled:  true,
-		BaseURL:  server.URL,
-		Insecure: true,
-	})
+	engine := media.NewEngine(config.MediaConfig{
+		Imgproxy: config.ImgproxyConfig{
+			Enabled:  true,
+			BaseURL:  server.URL,
+			Insecure: true,
+		},
+	}, config.StorageConfig{Driver: "memory-mock"}, nil)
 
-	require.NoError(t, client.Ping(t.Context()))
+	require.NoError(t, engine.Ping(t.Context()))
 }

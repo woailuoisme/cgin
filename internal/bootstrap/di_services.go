@@ -7,7 +7,6 @@ import (
 
 	"cgin/internal/config"
 	"cgin/internal/database"
-	"cgin/internal/media"
 	"cgin/internal/service"
 	adminservice "cgin/internal/service/admin"
 	"cgin/internal/user"
@@ -16,6 +15,7 @@ import (
 	"cgin/pkg/hasher"
 	"cgin/pkg/i18n"
 	"cgin/pkg/mailer"
+	"cgin/pkg/media"
 	"cgin/pkg/notification"
 	"cgin/pkg/payment"
 	platformRealtime "cgin/pkg/realtime"
@@ -83,7 +83,7 @@ var ServicesPackage = do.Package(
 		disk := do.MustInvoke[storage.Disk](i)
 		searchClient := do.MustInvoke[search.Client](i)
 		gateway := do.MustInvoke[platformRealtime.Gateway](i)
-		mediaManager := do.MustInvoke[*media.Manager](i)
+		mediaEngine := do.MustInvoke[media.Engine](i)
 		mailerClient := do.MustInvoke[mailer.Mailer](i)
 
 		return service.NewSystemService(service.SystemDeps{
@@ -92,7 +92,7 @@ var ServicesPackage = do.Package(
 			Storage:  disk,
 			Search:   searchClient,
 			Realtime: gateway,
-			Imgproxy: mediaManager,
+			Imgproxy: mediaEngine,
 			Mailer:   mailerClient,
 		}), nil
 	}),
@@ -114,10 +114,10 @@ var ServicesPackage = do.Package(
 	// 6. 个人资料维护服务
 	do.Lazy(func(i do.Injector) (*service.ProfileService, error) {
 		userService := do.MustInvoke[*user.Service](i)
-		mediaManager := do.MustInvoke[*media.Manager](i)
+		mediaEngine := do.MustInvoke[media.Engine](i)
 		return service.MustNewProfileService(service.ProfileDeps{
 			Users:   userService,
-			Avatars: mediaManager,
+			Storage: mediaEngine,
 		}), nil
 	}),
 

@@ -34,6 +34,11 @@ var defaultDisallowedMimeTypes = []string{
 	"application/x-httpd-php",
 }
 
+// Validator 定义文件安全性、大小上限及 MIME 格式兼容性的校验契约。
+type Validator interface {
+	Validate(ctx context.Context, originalName string, size int64, mimeType string) error
+}
+
 // FileValidator 执行上传安全策略校验（大小上限、危险扩展名/MIME黑名单及可选的扩展名/MIME白名单）。
 type FileValidator struct {
 	MaxFileSize          int64

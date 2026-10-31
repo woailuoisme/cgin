@@ -18,8 +18,8 @@ type UserResource struct {
 	Email string `json:"email" example:"alex@example.com"`
 	// 邮箱是否已完成验证
 	EmailVerified bool `json:"emailVerified" example:"true"`
-	// 用户头像 URL
-	Image *string `json:"image" example:"https://example.com/avatar.png"`
+	// 用户头像复合对象（包含相对存储路径与 Imgproxy 防篡改签名访问 URL）
+	Avatar *ImageVariantResource `json:"avatar"`
 	// 用户权限角色 (user: 普通用户, admin: 系统管理员)
 	Role enum.Role `json:"role" example:"user" enums:"user,admin"`
 	// 唯一登录用户名
@@ -44,7 +44,7 @@ func ProjectUser(u *sqlc.User) UserResource {
 		Name:            profile.Name,
 		Email:           profile.Email,
 		EmailVerified:   profile.EmailVerified,
-		Image:           profile.Image,
+		Avatar:          BuildAvatar(profile.AvatarPath),
 		Role:            profile.Role,
 		Username:        profile.Username,
 		DisplayUsername: profile.DisplayUsername,
