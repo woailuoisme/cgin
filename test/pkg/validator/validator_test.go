@@ -65,9 +65,7 @@ type numericProbe struct {
 func newTranslator(t *testing.T, defaultLanguage string) i18n.Translator {
 	t.Helper()
 
-	translator, err := i18n.New(&config.Config{
-		I18n: config.I18nConfig{DefaultLanguage: defaultLanguage},
-	})
+	translator, err := i18n.New(config.I18nConfig{DefaultLanguage: defaultLanguage})
 	require.NoError(t, err)
 	return translator
 }

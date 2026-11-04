@@ -17,15 +17,11 @@ import (
 	"cgin/pkg/logger"
 	"cgin/pkg/money"
 	"cgin/pkg/payment"
-	"cgin/pkg/payment/enum"
 )
 
 func TestPaymentManagerDisabledWhenEmpty(t *testing.T) {
-	cfg := &config.Config{
-		App: config.AppConfig{Env: "development"},
-		Payment: config.PaymentConfig{
-			FakeEnabled: false,
-		},
+	cfg := config.PaymentConfig{
+		FakeEnabled: false,
 	}
 
 	manager, err := payment.NewManager(cfg, logger.Nop())
@@ -35,12 +31,9 @@ func TestPaymentManagerDisabledWhenEmpty(t *testing.T) {
 }
 
 func TestPaymentManagerFakeLifecycle(t *testing.T) {
-	cfg := &config.Config{
-		App: config.AppConfig{Env: "development"},
-		Payment: config.PaymentConfig{
-			FakeEnabled: true,
-			CertsDir:    "./storage/app/certs",
-		},
+	cfg := config.PaymentConfig{
+		FakeEnabled: true,
+		CertsDir:    "./storage/app/certs",
 	}
 
 	manager, err := payment.NewManager(cfg, logger.Nop())
@@ -51,12 +44,12 @@ func TestPaymentManagerFakeLifecycle(t *testing.T) {
 	ctx := t.Context()
 
 	// 1. 验证微信与支付宝均注册了 Fake 渠道应用
-	assert.Contains(t, manager.Applications(enum.PaymentChannelWechat), payment.FakeApplicationKey)
-	assert.Contains(t, manager.Applications(enum.PaymentChannelAlipay), payment.FakeApplicationKey)
+	assert.Contains(t, manager.Applications(payment.ChannelWechat), payment.FakeApplicationKey)
+	assert.Contains(t, manager.Applications(payment.ChannelAlipay), payment.FakeApplicationKey)
 
 	// 2. 发起微信扫码支付 (Native)
 	createReq := payment.CreateRequest{
-		Scene:       enum.PaymentSceneWechatNative,
+		Scene:       payment.SceneWechatNative,
 		OutTradeNo:  "ORDER_20260927_001",
 		Amount:      8800, // 88.00 元
 		Subject:     "测试订单",
@@ -67,13 +60,13 @@ func TestPaymentManagerFakeLifecycle(t *testing.T) {
 	inst, err := manager.Create(ctx, createReq)
 	require.NoError(t, err)
 	require.NotNil(t, inst)
-	assert.Equal(t, enum.PaymentSceneWechatNative, inst.Scene)
-	assert.Equal(t, enum.PaymentInstructionQRCode, inst.Action)
+	assert.Equal(t, payment.SceneWechatNative, inst.Scene)
+	assert.Equal(t, payment.InstructionQRCode, inst.Action)
 	assert.NotEmpty(t, inst.Value)
 
 	// 3. 发起支付宝手机网站支付 (Wap)
 	alipayCreateReq := payment.CreateRequest{
-		Scene:      enum.PaymentSceneAlipayWap,
+		Scene:      payment.SceneAlipayWap,
 		OutTradeNo: "ORDER_20260927_002",
 		Amount:     12800,
 		Subject:    "支付宝充值",
@@ -81,45 +74,45 @@ func TestPaymentManagerFakeLifecycle(t *testing.T) {
 	alipayInst, err := manager.Create(ctx, alipayCreateReq)
 	require.NoError(t, err)
 	require.NotNil(t, alipayInst)
-	assert.Equal(t, enum.PaymentSceneAlipayWap, alipayInst.Scene)
-	assert.Equal(t, enum.PaymentInstructionQRCode, alipayInst.Action)
+	assert.Equal(t, payment.SceneAlipayWap, alipayInst.Scene)
+	assert.Equal(t, payment.InstructionQRCode, alipayInst.Action)
 	assert.NotEmpty(t, alipayInst.Value)
 
 	// 4. 查询订单状态：Fake 默认未注入时返回 Pending
-	queryRes, err := manager.Query(ctx, enum.PaymentChannelWechat, payment.QueryRequest{
+	queryRes, err := manager.Query(ctx, payment.ChannelWechat, payment.QueryRequest{
 		OutTradeNo: "ORDER_20260927_001",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, queryRes)
 	assert.Equal(t, "ORDER_20260927_001", queryRes.OutTradeNo)
-	assert.Equal(t, enum.PaymentStatusPending, queryRes.Status)
+	assert.Equal(t, payment.StatusPending, queryRes.Status)
 
 	// 获取 Fake Provider 并注入成功状态
-	provider, err := manager.ForScene(enum.PaymentChannelWechat, enum.PaymentSceneWechatNative)
+	provider, err := manager.ForScene(payment.ChannelWechat, payment.SceneWechatNative)
 	require.NoError(t, err)
 	fakeProvider, ok := provider.(*payment.FakeProvider)
 	require.True(t, ok)
 	fakeProvider.SetPaymentResult("ORDER_20260927_001", &payment.PaymentResult{
 		OutTradeNo:     "ORDER_20260927_001",
 		ChannelTradeNo: "WX_TRADE_123456",
-		Status:         enum.PaymentStatusSucceeded,
+		Status:         payment.StatusSucceeded,
 	})
 
-	queryRes, err = manager.Query(ctx, enum.PaymentChannelWechat, payment.QueryRequest{
+	queryRes, err = manager.Query(ctx, payment.ChannelWechat, payment.QueryRequest{
 		OutTradeNo: "ORDER_20260927_001",
 	})
 	require.NoError(t, err)
-	assert.Equal(t, enum.PaymentStatusSucceeded, queryRes.Status)
+	assert.Equal(t, payment.StatusSucceeded, queryRes.Status)
 	assert.Equal(t, "WX_TRADE_123456", queryRes.ChannelTradeNo)
 
 	// 5. 关闭未支付订单
-	err = manager.Close(ctx, enum.PaymentChannelWechat, payment.CloseRequest{
+	err = manager.Close(ctx, payment.ChannelWechat, payment.CloseRequest{
 		OutTradeNo: "ORDER_20260927_001",
 	})
 	require.NoError(t, err)
 
 	// 6. 发起退款：未注入时 Fake 默认返回 Pending
-	refundRes, err := manager.Refund(ctx, enum.PaymentChannelWechat, payment.RefundRequest{
+	refundRes, err := manager.Refund(ctx, payment.ChannelWechat, payment.RefundRequest{
 		OutTradeNo:   "ORDER_20260927_001",
 		OutRefundNo:  "REFUND_20260927_001",
 		TotalAmount:  8800,
@@ -129,27 +122,27 @@ func TestPaymentManagerFakeLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, refundRes)
 	assert.Equal(t, "REFUND_20260927_001", refundRes.OutRefundNo)
-	assert.Equal(t, enum.PaymentRefundStatusPending, refundRes.Status)
+	assert.Equal(t, payment.RefundStatusPending, refundRes.Status)
 
 	// 注入退款成功状态
 	fakeProvider.MarkRefundSucceeded("REFUND_20260927_001", 8800)
 
 	// 7. 查询退款
-	queryRefundRes, err := manager.QueryRefund(ctx, enum.PaymentChannelWechat, payment.QueryRefundRequest{
+	queryRefundRes, err := manager.QueryRefund(ctx, payment.ChannelWechat, payment.QueryRefundRequest{
 		OutTradeNo:  "ORDER_20260927_001",
 		OutRefundNo: "REFUND_20260927_001",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, queryRefundRes)
 	assert.Equal(t, "REFUND_20260927_001", queryRefundRes.OutRefundNo)
-	assert.Equal(t, enum.PaymentRefundStatusSucceeded, queryRefundRes.Status)
+	assert.Equal(t, payment.RefundStatusSucceeded, queryRefundRes.Status)
 
 	// 8. 解析通知：Fake 必须预先入队通知
 	fakeProvider.QueueNotification(&payment.Notification{
-		Kind: enum.PaymentNotificationKindPayment,
+		Kind: payment.NotificationKindPayment,
 		Payment: &payment.PaymentResult{
 			OutTradeNo: "ORDER_20260927_001",
-			Status:     enum.PaymentStatusSucceeded,
+			Status:     payment.StatusSucceeded,
 		},
 	})
 
@@ -159,10 +152,10 @@ func TestPaymentManagerFakeLifecycle(t *testing.T) {
 		bytes.NewBufferString(`{"event_id":"NOTIFY_123","event_type":"TRANSACTION.SUCCESS","out_trade_no":"ORDER_20260927_001","amount":8800}`),
 	)
 	httpReq.Header.Set("Content-Type", "application/json")
-	notifyRes, err := manager.ParseNotification(ctx, enum.PaymentChannelWechat, payment.FakeApplicationKey, httpReq)
+	notifyRes, err := manager.ParseNotification(ctx, payment.ChannelWechat, payment.FakeApplicationKey, httpReq)
 	require.NoError(t, err)
 	require.NotNil(t, notifyRes)
-	assert.Equal(t, enum.PaymentNotificationKindPayment, notifyRes.Kind)
+	assert.Equal(t, payment.NotificationKindPayment, notifyRes.Kind)
 	assert.Equal(t, "ORDER_20260927_001", notifyRes.Payment.OutTradeNo)
 }
 
@@ -204,20 +197,17 @@ func TestCertsDirResolution(t *testing.T) {
 	require.NoError(t, os.WriteFile(certFile, certContent, 0o600))
 
 	// 配置相对路径，测试通过 CertsDir 解析
-	cfg := &config.Config{
-		App: config.AppConfig{Env: "development"},
-		Payment: config.PaymentConfig{
-			CertsDir: certsDir,
-			Wechat: config.WechatPaymentChannelConfig{
-				Default: config.WechatPaymentAppConfig{
-					AppID:                  "wx123456",
-					MchID:                  "1234567890",
-					MerchantSerialNo:       "SERIAL123",
-					APIv3Key:               "12345678901234567890123456789012",
-					MerchantPrivateKeyPath: "wechat/apiclient_key.pem",
-					NotifyURL:              "https://example.com/notify",
-					Scenes:                 []string{"wechat_native"},
-				},
+	cfg := config.PaymentConfig{
+		CertsDir: certsDir,
+		Wechat: config.WechatPaymentChannelConfig{
+			Default: config.WechatPaymentAppConfig{
+				AppID:                  "wx123456",
+				MchID:                  "1234567890",
+				MerchantSerialNo:       "SERIAL123",
+				APIv3Key:               "12345678901234567890123456789012",
+				MerchantPrivateKeyPath: "wechat/apiclient_key.pem",
+				NotifyURL:              "https://example.com/notify",
+				Scenes:                 []string{"wechat_native"},
 			},
 		},
 	}
@@ -262,10 +252,10 @@ func TestPaymentMoneyVO(t *testing.T) {
 
 type stubPayOnlyProvider struct{}
 
-func (s *stubPayOnlyProvider) Channel() enum.PaymentChannel { return enum.PaymentChannelWechat }
-func (s *stubPayOnlyProvider) Application() string          { return "stub" }
-func (s *stubPayOnlyProvider) Scenes() []enum.PaymentScene {
-	return []enum.PaymentScene{enum.PaymentSceneWechatNative}
+func (s *stubPayOnlyProvider) Channel() payment.Channel { return payment.ChannelWechat }
+func (s *stubPayOnlyProvider) Application() string      { return "stub" }
+func (s *stubPayOnlyProvider) Scenes() []payment.Scene {
+	return []payment.Scene{payment.SceneWechatNative}
 }
 func (s *stubPayOnlyProvider) HealthCheck() error { return nil }
 func (s *stubPayOnlyProvider) Create(ctx context.Context, req payment.CreateRequest) (*payment.Instruction, error) {
@@ -275,11 +265,8 @@ func (s *stubPayOnlyProvider) Create(ctx context.Context, req payment.CreateRequ
 func (s *stubPayOnlyProvider) Close(ctx context.Context, req payment.CloseRequest) error { return nil }
 
 func TestPaymentCapabilityISP(t *testing.T) {
-	cfg := &config.Config{
-		App: config.AppConfig{Env: "development"},
-		Payment: config.PaymentConfig{
-			FakeEnabled: false,
-		},
+	cfg := config.PaymentConfig{
+		FakeEnabled: false,
 	}
 	mgr, err := payment.NewManager(cfg, logger.Nop())
 	require.NoError(t, err)
@@ -291,7 +278,7 @@ func TestPaymentCapabilityISP(t *testing.T) {
 
 	// 1. Payable 能力支持，正常调用
 	inst, err := mgr.Create(ctx, payment.CreateRequest{
-		Scene:      enum.PaymentSceneWechatNative,
+		Scene:      payment.SceneWechatNative,
 		OutTradeNo: "STUB_001",
 		Amount:     100,
 		Subject:    "Stub Pay",
@@ -300,7 +287,7 @@ func TestPaymentCapabilityISP(t *testing.T) {
 	assert.NotNil(t, inst)
 
 	// 2. Refundable 能力未实现，调用退款必须返回 ErrCapabilityNotSupported
-	_, err = mgr.Refund(ctx, enum.PaymentChannelWechat, payment.RefundRequest{
+	_, err = mgr.Refund(ctx, payment.ChannelWechat, payment.RefundRequest{
 		OutTradeNo:   "STUB_001",
 		OutRefundNo:  "REFUND_001",
 		TotalAmount:  100,
@@ -309,7 +296,7 @@ func TestPaymentCapabilityISP(t *testing.T) {
 	require.ErrorIs(t, err, payment.ErrCapabilityNotSupported)
 
 	// 3. Queryable 能力未实现，调用查询必须返回 ErrCapabilityNotSupported
-	_, err = mgr.Query(ctx, enum.PaymentChannelWechat, payment.QueryRequest{
+	_, err = mgr.Query(ctx, payment.ChannelWechat, payment.QueryRequest{
 		OutTradeNo: "STUB_001",
 	}, "stub")
 	require.ErrorIs(t, err, payment.ErrCapabilityNotSupported)

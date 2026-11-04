@@ -14,9 +14,15 @@ import (
 
 const defaultMemoryCapacity = 10_000
 
+var (
+	_ Store        = (*MemoryStore)(nil)
+	_ LockProvider = (*MemoryStore)(nil)
+	_ Locker       = (*MemoryLocker)(nil)
+)
+
 type memoryItem struct {
 	value     string
-	expiresAt time.Time // IsZero() 表示无过期时间
+	expiresAt time.Time
 }
 
 func (it memoryItem) isExpired(now time.Time) bool {
@@ -27,12 +33,11 @@ func (it memoryItem) isExpired(now time.Time) bool {
 }
 
 // MemoryStore 基于 samber/hot 的高性能纯内存缓存实现，适用于本地开发、测试与脱机环境。
-// 内置 WTinyLFU 驱逐策略、容量上限保护、精确惰性过期与并发安全保障（零后台常驻协程）。
 type MemoryStore struct {
 	hot    *hot.HotCache[string, memoryItem]
 	locker *MemoryLocker
 	group  singleflight.Group
-	mu     sync.Mutex // 保护 Increment / SetNX / DeleteIfMatch 复合读写原子性
+	mu     sync.Mutex
 	closed atomic.Bool
 }
 
@@ -57,16 +62,8 @@ func NewMemoryStoreWithCapacity(capacity int) *MemoryStore {
 	}
 }
 
-// 确保 *MemoryStore 完整实现 Store 与 LockProvider 契约。
-var (
-	_ Store        = (*MemoryStore)(nil)
-	_ LockProvider = (*MemoryStore)(nil)
-)
-
 // Driver 返回内存驱动标识。
-func (m *MemoryStore) Driver() string {
-	return "memory"
-}
+func (m *MemoryStore) Driver() string { return "memory" }
 
 // Ping 检查内存驱动可用性（遵循 ctx 取消信号）。
 func (m *MemoryStore) Ping(ctx context.Context) error {
@@ -118,12 +115,10 @@ func (m *MemoryStore) Get(ctx context.Context, key string) (string, error) {
 	if !found {
 		return "", ErrNotFound
 	}
-
 	if item.isExpired(time.Now()) {
 		m.hot.Delete(key)
 		return "", ErrNotFound
 	}
-
 	return item.value, nil
 }
 
@@ -187,7 +182,6 @@ func (m *MemoryStore) Exists(ctx context.Context, key string) (bool, error) {
 	if !found {
 		return false, nil
 	}
-
 	return !item.isExpired(time.Now()), nil
 }
 
@@ -248,7 +242,6 @@ func (m *MemoryStore) TTL(ctx context.Context, key string) (time.Duration, error
 		m.hot.Delete(key)
 		return 0, nil
 	}
-
 	if item.expiresAt.IsZero() {
 		return -time.Second, nil
 	}
@@ -288,36 +281,6 @@ func (m *MemoryStore) Delete(ctx context.Context, keys ...string) (int64, error)
 	return deleted, nil
 }
 
-// DeleteIfMatch 仅当键的当前值等于 expected 时原子删除该键，返回是否真正删除。
-func (m *MemoryStore) DeleteIfMatch(ctx context.Context, key, expected string) (bool, error) {
-	if err := m.checkReady(ctx); err != nil {
-		return false, err
-	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.closed.Load() {
-		return false, errClosed
-	}
-
-	item, found := m.hot.Peek(key)
-	if !found {
-		return false, nil
-	}
-
-	if item.isExpired(time.Now()) {
-		m.hot.Delete(key)
-		return false, nil
-	}
-
-	if item.value != expected {
-		return false, nil
-	}
-
-	m.hot.Delete(key)
-	return true, nil
-}
-
 // Remember 实现 cache-aside 模式，通过 singleflight 防止进程内并发击穿。
 func (m *MemoryStore) Remember(
 	ctx context.Context,
@@ -346,4 +309,91 @@ func (m *MemoryStore) Remember(
 // Locker 返回关联该纯内存存储环境的单例互斥锁管理器。
 func (m *MemoryStore) Locker() Locker {
 	return m.locker
+}
+
+// MemoryLocker 纯内存互斥锁管理器，适用于单元测试与单机无 Redis 场景。
+type MemoryLocker struct {
+	mu     sync.Mutex
+	locks  map[string]chan struct{}
+	closed bool
+}
+
+// NewMemoryLocker 创建纯内存互斥锁管理器。
+func NewMemoryLocker() *MemoryLocker {
+	return &MemoryLocker{
+		locks: make(map[string]chan struct{}),
+	}
+}
+
+func (m *MemoryLocker) getLockChan(name string) (chan struct{}, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return nil, ErrLockerClosed
+	}
+	ch, ok := m.locks[name]
+	if !ok {
+		ch = make(chan struct{}, 1)
+		ch <- struct{}{}
+		m.locks[name] = ch
+	}
+	return ch, nil
+}
+
+func makeLockerRelease(ctx context.Context, ch chan struct{}) (context.Context, context.CancelFunc) {
+	lockedCtx, cancel := context.WithCancel(ctx)
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			cancel()
+			ch <- struct{}{}
+		})
+	}
+	stop := context.AfterFunc(lockedCtx, release)
+	return lockedCtx, func() {
+		stop()
+		release()
+	}
+}
+
+// Lock 阻塞等待并获取指定名称的内存锁。
+func (m *MemoryLocker) Lock(ctx context.Context, name string) (context.Context, context.CancelFunc, error) {
+	ch, err := m.getLockChan(name)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	case <-ch:
+		lockedCtx, release := makeLockerRelease(ctx, ch)
+		return lockedCtx, release, nil
+	}
+}
+
+// TryLock 尝试非阻塞获取内存锁。
+func (m *MemoryLocker) TryLock(ctx context.Context, name string) (context.Context, context.CancelFunc, error) {
+	ch, err := m.getLockChan(name)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	case <-ch:
+		lockedCtx, release := makeLockerRelease(ctx, ch)
+		return lockedCtx, release, nil
+	default:
+		return nil, nil, ErrNotLocked
+	}
+}
+
+// Close 关闭内存锁管理器。
+func (m *MemoryLocker) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.closed = true
+	return nil
 }

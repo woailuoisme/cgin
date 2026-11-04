@@ -33,33 +33,26 @@ var SecurityPackage = do.Package(
 		return platformauth.NewTokenIssuer(cfg.JWT, c), nil
 	}),
 
-	// 2. 用户认证凭据提供者
-	do.Lazy(func(i do.Injector) (*user.Provider, error) {
-		db := do.MustInvoke[*database.DB](i)
-		h := do.MustInvoke[hasher.PasswordHasher](i)
-		return user.MustNewProvider(db, h), nil
-	}),
-
-	// 3. 用户领域内核服务
+	// 2. 用户领域内核服务（统一提供用户 CRUD、查询与认证凭据/口令策略）
 	do.Lazy(func(i do.Injector) (*user.Service, error) {
 		db := do.MustInvoke[*database.DB](i)
 		h := do.MustInvoke[hasher.PasswordHasher](i)
 		return user.MustNewService(db, h), nil
 	}),
 
-	// 4. 双通道认证守卫（客户端与管理端）
+	// 3. 双通道认证守卫（客户端与管理端）
 	do.Lazy(func(i do.Injector) (AuthGuards, error) {
 		cfg := do.MustInvoke[*config.Config](i)
 		tokens := do.MustInvoke[*platformauth.TokenIssuer](i)
-		userProvider := do.MustInvoke[*user.Provider](i)
+		users := do.MustInvoke[*user.Service](i)
 
 		clientGuard := platformauth.NewGuard(
 			tokens,
-			userProvider,
+			users,
 			user.ClientPolicy{RequireEmailVerification: cfg.Auth.RequireEmailVerification},
-			userProvider.Identity,
+			users.Identity,
 		)
-		adminGuard := platformauth.NewGuard(tokens, userProvider, user.AdminPolicy{}, userProvider.Identity)
+		adminGuard := platformauth.NewGuard(tokens, users, user.AdminPolicy{}, users.Identity)
 
 		return AuthGuards{
 			Client: clientGuard,

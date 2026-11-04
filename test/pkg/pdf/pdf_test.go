@@ -213,7 +213,7 @@ func TestDocumentWithConcerns(t *testing.T) {
 func TestInvoiceDocumentTemplate(t *testing.T) {
 	ctx := t.Context()
 
-	translator, err := i18n.New(&config.Config{I18n: config.I18nConfig{DefaultLanguage: "zh-CN"}})
+	translator, err := i18n.New(config.I18nConfig{DefaultLanguage: "zh-CN"})
 	require.NoError(t, err)
 
 	newInvoice := func(language string) *template.InvoiceDocument {

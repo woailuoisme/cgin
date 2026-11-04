@@ -98,7 +98,19 @@ type Disk interface {
 
 // Open 根据配置构造存储驱动并执行可用性健康探测。
 func Open(ctx context.Context, cfg config.StorageConfig) (Disk, error) {
-	disk, err := createDriver(cfg)
+	var (
+		disk Disk
+		err  error
+	)
+	switch cfg.Driver {
+	case config.StorageDriverLocal:
+		disk, err = NewLocalDisk(cfg.Local.Root, cfg.Local.URL)
+	case config.StorageDriverS3:
+		disk, err = NewS3Disk(cfg.S3)
+	default:
+		return nil, fmt.Errorf("unknown storage driver %q, options: %s / %s",
+			cfg.Driver, config.StorageDriverLocal, config.StorageDriverS3)
+	}
 	if err != nil {
 		return nil, err
 	}

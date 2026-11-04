@@ -1,4 +1,4 @@
-// Package excel 提供低内存占用的 xlsx 流式写出能力。
+// Package excel 提供低内存占用的 xlsx 流式写出与读取能力。
 //
 // 对外只有一条写入路径：表头 + 行迭代器 → io.Writer。样式、公式注入防护、
 // 单表行数上限等行为全部收敛在实现内部，调用方无法逐个关闭。
@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/dromara/carbon/v2"
-	"github.com/samber/oops"
 	"github.com/xuri/excelize/v2"
 
 	"cgin/pkg/errs"
@@ -104,14 +103,14 @@ func Write(ctx context.Context, w io.Writer, sheet string, header []string, next
 
 	writer, err := file.NewStreamWriter(sheetName)
 	if err != nil {
-		return oops.Code(errs.CodeExcelStreamError).Wrap(err)
+		return errs.Wrap(errs.CodeExcelStreamError, "failed to create excel stream writer", err)
 	}
 
 	rowIndex := 1
 	if len(header) > 0 {
 		// 流式写入器要求列宽先于任何行写入确定，否则 SetColWidth 会报错。
 		if err := writer.SetColWidth(1, len(header), maxColumnWidth); err != nil {
-			return oops.Code(errs.CodeExcelStreamError).Wrap(err)
+			return errs.Wrap(errs.CodeExcelStreamError, "failed to set excel column width", err)
 		}
 		if err := writeHeaderRow(file, writer, header); err != nil {
 			return err
@@ -126,14 +125,13 @@ func Write(ctx context.Context, w io.Writer, sheet string, header []string, next
 
 		row, ok, iterErr := next()
 		if iterErr != nil {
-			return oops.Code(errs.CodeExcelGeneratorError).Wrap(iterErr)
+			return errs.Wrap(errs.CodeExcelGeneratorError, "failed to read next row from iterator", iterErr)
 		}
 		if !ok {
 			break
 		}
 		if rowIndex > MaxRowsPerSheet {
-			return oops.Code(errs.CodeExcelRowsError).
-				Errorf("excel: sheet %q exceeds %d rows", sheetName, MaxRowsPerSheet)
+			return errs.New(errs.CodeExcelRowsError, fmt.Sprintf("excel: sheet %q exceeds %d rows", sheetName, MaxRowsPerSheet))
 		}
 		if err := writeRow(writer, row, rowIndex); err != nil {
 			return err
@@ -142,10 +140,10 @@ func Write(ctx context.Context, w io.Writer, sheet string, header []string, next
 	}
 
 	if err := writer.Flush(); err != nil {
-		return oops.Code(errs.CodeExcelFlushError).Wrap(err)
+		return errs.Wrap(errs.CodeExcelFlushError, "failed to flush excel stream writer", err)
 	}
 	if err := file.Write(w); err != nil {
-		return oops.Code(errs.CodeExcelStreamWriteError).Wrap(err)
+		return errs.Wrap(errs.CodeExcelStreamWriteError, "failed to write excel workbook to output", err)
 	}
 	return nil
 }
@@ -156,7 +154,7 @@ func renameDefaultSheet(file *excelize.File, sheetName string) error {
 		return nil
 	}
 	if err := file.SetSheetName(defaultSheetName, sheetName); err != nil {
-		return oops.Code(errs.CodeExcelStreamError).Wrap(err)
+		return errs.Wrap(errs.CodeExcelStreamError, "failed to rename default excel sheet", err)
 	}
 	return nil
 }
@@ -172,7 +170,7 @@ func freezeHeaderRow(file *excelize.File, sheetName string) error {
 		ActivePane:  "bottomLeft",
 	}
 	if err := file.SetPanes(sheetName, panes); err != nil {
-		return oops.Code(errs.CodeExcelStreamError).Wrap(err)
+		return errs.Wrap(errs.CodeExcelStreamError, "failed to freeze excel header row", err)
 	}
 	return nil
 }
@@ -187,7 +185,7 @@ func writeHeaderRow(file *excelize.File, writer *excelize.StreamWriter, header [
 		},
 	})
 	if err != nil {
-		return oops.Code(errs.CodeExcelStyleError).Wrap(err)
+		return errs.Wrap(errs.CodeExcelStyleError, "failed to create excel header style", err)
 	}
 
 	cells := make([]any, len(header))
@@ -197,10 +195,10 @@ func writeHeaderRow(file *excelize.File, writer *excelize.StreamWriter, header [
 
 	cellName, err := excelize.CoordinatesToCellName(1, 1)
 	if err != nil {
-		return oops.Code(errs.CodeExcelStreamError).Wrap(err)
+		return errs.Wrap(errs.CodeExcelStreamError, "failed to resolve excel header cell coordinates", err)
 	}
 	if err := writer.SetRow(cellName, cells); err != nil {
-		return oops.Code(errs.CodeExcelStreamError).Wrap(err)
+		return errs.Wrap(errs.CodeExcelStreamError, "failed to write excel header row", err)
 	}
 	return nil
 }
@@ -214,10 +212,10 @@ func writeRow(writer *excelize.StreamWriter, row []any, rowIndex int) error {
 
 	cellName, err := excelize.CoordinatesToCellName(1, rowIndex)
 	if err != nil {
-		return oops.Code(errs.CodeExcelStreamError).Wrap(err)
+		return errs.Wrap(errs.CodeExcelStreamError, "failed to resolve excel row cell coordinates", err)
 	}
 	if err := writer.SetRow(cellName, cells); err != nil {
-		return oops.Code(errs.CodeExcelStreamError).Wrap(err)
+		return errs.Wrap(errs.CodeExcelStreamError, "failed to write excel data row", err)
 	}
 	return nil
 }

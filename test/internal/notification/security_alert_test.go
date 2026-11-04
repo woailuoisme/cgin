@@ -8,7 +8,7 @@ import (
 
 	sharedNotif "cgin/internal/notification"
 	"cgin/pkg/mailer"
-	"cgin/pkg/notification/contract"
+	"cgin/pkg/notification"
 )
 
 func TestSecurityAlertNotification(t *testing.T) {
@@ -43,7 +43,7 @@ func TestSecurityAlertNotification(t *testing.T) {
 	assert.Equal(t, "security_alert", rtMsgDefault.Event)
 
 	// 5. 验证指定接收者的自定义实时广播频道路由
-	recipient := contract.NewRecipient("user_999", "users").WithRoute("realtime", "private:users.user_999")
+	recipient := notification.NewRecipient("user_999", "users").WithRoute("realtime", "private:users.user_999")
 	rtMsgCustom := n.ToRealtime(recipient)
 	assert.Equal(t, "private:users.user_999", rtMsgCustom.Channel)
 	assert.Equal(t, "security_alert", rtMsgCustom.Event)

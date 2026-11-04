@@ -77,6 +77,9 @@ func buildEngine(
 
 	// 全局中间件链按洋葱模型分层，顺序即依赖：观测要在最外层包裹，信封与恢复要能兜住后续链路。
 	engine.Use(
+		// 静态资源与浏览器降噪
+		globalMW.Favicon(),
+
 		// 链路观测
 		globalMW.Telemetry(),
 		globalMW.RequestID(),

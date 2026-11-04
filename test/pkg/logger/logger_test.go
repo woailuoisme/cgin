@@ -20,15 +20,11 @@ func TestMain(m *testing.M) {
 
 // TestLogger_BuildAndContext 验证日志器构建与 Context 请求标识传递。
 func TestLogger_BuildAndContext(t *testing.T) {
-	cfg := &config.Config{
-		App: config.AppConfig{
-			Name: "cgin-test",
-			Env:  "local",
-		},
-		Log: config.LogConfig{
-			Level:   "debug",
-			Channel: "console",
-		},
+	cfg := config.LogConfig{
+		Level:       "debug",
+		Channel:     "console",
+		ServiceName: "cgin-test",
+		Env:         "local",
 	}
 
 	l := logger.New(cfg)
@@ -45,15 +41,11 @@ func TestLogger_BuildAndContext(t *testing.T) {
 
 // TestLogger_ChannelJSON 验证 JSON 通道构建。
 func TestLogger_ChannelJSON(t *testing.T) {
-	cfg := &config.Config{
-		App: config.AppConfig{
-			Name: "cgin-test",
-			Env:  "production",
-		},
-		Log: config.LogConfig{
-			Level:   "info",
-			Channel: "json",
-		},
+	cfg := config.LogConfig{
+		Level:       "info",
+		Channel:     "json",
+		ServiceName: "cgin-test",
+		Env:         "production",
 	}
 
 	l := logger.New(cfg)
@@ -66,10 +58,7 @@ func TestLogger_ColorDecision(t *testing.T) {
 		t.Setenv("NO_COLOR", "1")
 		t.Setenv("FORCE_COLOR", "1")
 
-		cfg := &config.Config{
-			App: config.AppConfig{Env: "local"},
-			Log: config.LogConfig{Channel: "console"},
-		}
+		cfg := config.LogConfig{Channel: "console", Env: "local"}
 		l := logger.New(cfg)
 		assert.NotZero(t, l)
 	})
@@ -78,10 +67,7 @@ func TestLogger_ColorDecision(t *testing.T) {
 		t.Setenv("NO_COLOR", "")
 		t.Setenv("FORCE_COLOR", "0")
 
-		cfg := &config.Config{
-			App: config.AppConfig{Env: "production"},
-			Log: config.LogConfig{Channel: "console"},
-		}
+		cfg := config.LogConfig{Channel: "console", Env: "production"}
 		l := logger.New(cfg)
 		assert.NotZero(t, l)
 
@@ -94,10 +80,7 @@ func TestLogger_ColorDecision(t *testing.T) {
 		t.Setenv("NO_COLOR", "")
 		t.Setenv("FORCE_COLOR", "1")
 
-		cfg := &config.Config{
-			App: config.AppConfig{Env: "production"},
-			Log: config.LogConfig{Channel: "console"},
-		}
+		cfg := config.LogConfig{Channel: "console", Env: "production"}
 		l := logger.New(cfg)
 		assert.NotZero(t, l)
 

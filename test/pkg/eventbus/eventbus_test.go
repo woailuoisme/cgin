@@ -27,6 +27,17 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
+func newTestManager(t *testing.T, opts ...eventbus.Option) *eventbus.Manager {
+	t.Helper()
+	mgr, err := eventbus.NewManager(config.EventBusConfig{
+		Driver:      eventbus.DriverGoChannel,
+		TopicPrefix: "test",
+		LogLevel:    "silent",
+	}, logger.Nop(), opts...)
+	require.NoError(t, err)
+	return mgr
+}
+
 type userRegisteredEvent struct {
 	UserID string `json:"userId"`
 	Email  string `json:"email"`
@@ -75,7 +86,7 @@ func TestEventBus_NewAndDriverValidation(t *testing.T) {
 
 // TestEventBus_PublishAndListen 验证强类型领域事件的发布、监听与消费闭环。
 func TestEventBus_PublishAndListen(t *testing.T) {
-	mgr := eventbus.NewTestManager()
+	mgr := newTestManager(t)
 	defer func() {
 		_ = mgr.Close()
 	}()
@@ -289,7 +300,7 @@ func TestEventBus_RetryAndFinalErrorBoundary(t *testing.T) {
 
 // TestEventBus_LifecycleAndErrors 验证生命周期边界与错误分支。
 func TestEventBus_LifecycleAndErrors(t *testing.T) {
-	mgr := eventbus.NewTestManager()
+	mgr := newTestManager(t)
 
 	// 1. 批量/空处理器注册
 	require.NoError(t, mgr.RegisterHandler())
@@ -336,7 +347,7 @@ func TestEventBus_FunctionalOptions(t *testing.T) {
 		}
 	}
 
-	mgr := eventbus.NewTestManager(
+	mgr := newTestManager(t,
 		eventbus.WithCloseTimeout(2*time.Second),
 		eventbus.WithRetry(2, 50*time.Millisecond, 200*time.Millisecond),
 		eventbus.WithHandlerTimeout(5*time.Second),

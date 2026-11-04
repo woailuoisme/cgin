@@ -121,7 +121,6 @@ pkg/                            # 可复用的横切基础设施与跨切片基�
 ├── notification/               # 通知渠道抽象、异步工作池与多通道驱动
 ├── payment/                    # 微信/支付宝收单网关与 Fake 渠道
 ├── pdf/                        # maroto 报表渲染与字体注册
-├── qrcode/                     # 二维码生成与渲染
 ├── queue/                      # Asynq 队列客户端、调度与中间件管线
 ├── ready/                      # 就绪探针契约与组件状态机
 ├── realtime/                   # Centrifugo 凭据签发与订阅代理
@@ -163,6 +162,7 @@ test/                           # 外部测试包（测试代码与业务逻辑�
 | **Idempotency-Key 幂等重放** | 自建（官方无对应物） | `internal/middleware/global/idempotency.go` |
 | **分级滑动窗口限流** | 自建（官方无对应物） | `internal/middleware/throttle.go` |
 | **探针路由降噪** | 自建（官方 skipper 无该语义） | `internal/middleware/global/observability.go` |
+| **浏览器图标静默降噪** | 自建（对齐 Fiber `favicon`，官方无对应物） | `internal/middleware/global/favicon.go` |
 | **资源+动作级鉴权** | 自建（官方 authz 只支持 URL+Method） | `internal/middleware/auth.go` `Can()` |
 
 ### 🚨 架构分层绝对红线

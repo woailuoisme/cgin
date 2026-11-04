@@ -1,3 +1,4 @@
+// Package eventbus 提供基于 Watermill CQRS 的强类型领域事件总线、路由管道与中间件生命周期管理。
 package eventbus
 
 import (
@@ -9,21 +10,59 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/components/cqrs"
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/ThreeDotsLabs/watermill/message/router/middleware"
+	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
 	"github.com/rs/zerolog"
 
 	"cgin/internal/config"
 	"cgin/pkg/logger"
 )
 
+// DriverGoChannel 代表基于进程内内存通道的默认事件传输驱动。
+const DriverGoChannel = "go_channel"
+
+// Event 是领域事件的统一强类型契约接口（值接收者实现，使 T 与 *T 均满足契约）。
+type Event interface {
+	EventName() string
+}
+
+// Publisher 是业务层发布领域事件的统一契约接口。
+type Publisher interface {
+	Publish(ctx context.Context, event Event) error
+}
+
+// EventHandler 定义领域事件处理器的统一契约。
+type EventHandler = cqrs.EventHandler
+
+// Subscriber 是事件监听器注册与声明的契约接口。
+type Subscriber interface {
+	RegisterHandler(handlers ...EventHandler) error
+}
+
+type nopPublisher struct{}
+
+var defaultNopPublisher Publisher = nopPublisher{}
+
+func (nopPublisher) Publish(context.Context, Event) error { return nil }
+
+// NopPublisher 返回静默丢弃所有事件的空发布器，作为可选 Publisher 依赖的默认兜底。
+func NopPublisher() Publisher {
+	return defaultNopPublisher
+}
+
+// Listen 使用 Go 泛型向事件总线声明式注册强类型领域事件监听器。
+func Listen[T Event](bus Subscriber, name string, handler func(ctx context.Context, event *T) error) error {
+	if bus == nil {
+		return fmt.Errorf("eventbus: cannot register handler %q on nil subscriber", name)
+	}
+	return bus.RegisterHandler(cqrs.NewEventHandler(name, handler))
+}
+
 var (
-	_ Bus        = (*Manager)(nil)
 	_ Publisher  = (*Manager)(nil)
 	_ Subscriber = (*Manager)(nil)
-	_ Runner     = (*Manager)(nil)
 )
 
 // Option 为 Manager 构造提供函数式配置选项。
@@ -33,8 +72,7 @@ type Option func(*Manager)
 type Manager struct {
 	cfg            config.EventBusConfig
 	baseLogger     *zerolog.Logger
-	logger         watermill.LoggerAdapter
-	driver         PubSubDriver
+	pubSub         *gochannel.GoChannel
 	router         *message.Router
 	eventBus       *cqrs.EventBus
 	eventProcessor *cqrs.EventProcessor
@@ -103,19 +141,15 @@ func WithChannelBuffer(size int) Option {
 // NewManager 初始化并构建基于 Watermill CQRS 的事件总线管理器。
 func NewManager(cfg config.EventBusConfig, zlog *zerolog.Logger, opts ...Option) (*Manager, error) {
 	base := cmp.Or(zlog, logger.Nop())
-
-	// 事件总线子系统支持独立日志级别，默认降级为 warn 以减少启动期内部流水输出。
 	if cfg.LogLevel != "" {
 		sublog := base.Level(logger.ParseLevel(cfg.LogLevel))
 		base = &sublog
 	}
-
 	adapter := NewLoggerAdapter(base)
 
 	m := &Manager{
 		cfg:                  cfg,
 		baseLogger:           cmp.Or(zlog, logger.Default()),
-		logger:               adapter,
 		closeTimeout:         10 * time.Second,
 		retryMax:             3,
 		retryInitialInterval: 100 * time.Millisecond,
@@ -129,28 +163,30 @@ func NewManager(cfg config.EventBusConfig, zlog *zerolog.Logger, opts ...Option)
 		}
 	}
 
-	driver, err := createDriver(m.cfg, adapter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create pubsub driver: %w", err)
+	switch m.cfg.Driver {
+	case DriverGoChannel, "":
+	default:
+		return nil, fmt.Errorf("unsupported event bus driver: %s", m.cfg.Driver)
 	}
-	m.driver = driver
+
+	buffer := m.cfg.BufferSize
+	if buffer <= 0 {
+		buffer = 2048
+	}
+	pubSub := gochannel.NewGoChannel(gochannel.Config{
+		OutputChannelBuffer: int64(buffer),
+	}, adapter)
+	m.pubSub = pubSub
 
 	router, err := message.NewRouter(message.RouterConfig{
 		CloseTimeout: m.closeTimeout,
 	}, adapter)
 	if err != nil {
-		_ = driver.Close()
+		_ = pubSub.Close()
 		return nil, fmt.Errorf("failed to create router: %w", err)
 	}
 	m.router = router
 
-	// 挂载中间件管道：
-	// 1. Recoverer（异常恢复）
-	// 2. observabilityContextMiddleware（还原 Remote SpanContext + logger.WithContext(request_id)）
-	// 3. CorrelationID（关联标识）
-	// 4. finalErrorBoundaryMiddleware（重试耗尽后的毒丸兜底与 oops 结构化错误日志，防止 gochannel 无限 Nack）
-	// 5. Retry（指数退避重试）
-	// 6. Timeout（单次执行超时控制）
 	retryMiddleware := middleware.Retry{
 		MaxRetries:          m.retryMax,
 		InitialInterval:     m.retryInitialInterval,
@@ -175,9 +211,16 @@ func NewManager(cfg config.EventBusConfig, zlog *zerolog.Logger, opts ...Option)
 		}
 	}
 
-	marshaler := defaultJSONMarshaler()
+	marshaler := cqrs.JSONMarshaler{
+		GenerateName: func(v any) string {
+			if ev, ok := v.(Event); ok {
+				return ev.EventName()
+			}
+			return cqrs.StructName(v)
+		},
+	}
 
-	eventBus, err := cqrs.NewEventBusWithConfig(driver, cqrs.EventBusConfig{
+	eventBus, err := cqrs.NewEventBusWithConfig(pubSub, cqrs.EventBusConfig{
 		GeneratePublishTopic: func(params cqrs.GenerateEventPublishTopicParams) (string, error) {
 			return qualifyTopic(m.cfg.TopicPrefix, params.EventName), nil
 		},
@@ -187,7 +230,7 @@ func NewManager(cfg config.EventBusConfig, zlog *zerolog.Logger, opts ...Option)
 	})
 	if err != nil {
 		_ = router.Close()
-		_ = driver.Close()
+		_ = pubSub.Close()
 		return nil, fmt.Errorf("failed to create event bus: %w", err)
 	}
 	m.eventBus = eventBus
@@ -197,14 +240,14 @@ func NewManager(cfg config.EventBusConfig, zlog *zerolog.Logger, opts ...Option)
 			return qualifyTopic(m.cfg.TopicPrefix, params.EventName), nil
 		},
 		SubscriberConstructor: func(cqrs.EventProcessorSubscriberConstructorParams) (message.Subscriber, error) {
-			return driver, nil
+			return pubSub, nil
 		},
 		Marshaler: marshaler,
 		Logger:    adapter,
 	})
 	if err != nil {
 		_ = router.Close()
-		_ = driver.Close()
+		_ = pubSub.Close()
 		return nil, fmt.Errorf("failed to create event processor: %w", err)
 	}
 	m.eventProcessor = eventProcessor
@@ -212,21 +255,7 @@ func NewManager(cfg config.EventBusConfig, zlog *zerolog.Logger, opts ...Option)
 	return m, nil
 }
 
-// NewTestManager 创建一个基于内存 GoChannel 的轻量测试事件管理器实例。
-func NewTestManager(opts ...Option) *Manager {
-	mgr, err := NewManager(config.EventBusConfig{
-		Driver:      DriverGoChannel,
-		TopicPrefix: "test",
-		LogLevel:    "error",
-		BufferSize:  1024,
-	}, logger.Nop(), opts...)
-	if err != nil {
-		panic(fmt.Sprintf("failed to create test event bus manager: %v", err))
-	}
-	return mgr
-}
-
-// RegisterHandler 向 EventProcessor 注册一个或多个强类型领域事件处理器，满足 Subscriber 接口契约。
+// RegisterHandler 向 EventProcessor 注册一个或多个强类型领域事件处理器。
 func (m *Manager) RegisterHandler(handlers ...EventHandler) error {
 	if m == nil || m.eventProcessor == nil {
 		return errors.New("event processor is not initialized")
@@ -314,8 +343,8 @@ func (m *Manager) Close() error {
 	if m.router != nil {
 		closeErrs = append(closeErrs, m.router.Close())
 	}
-	if m.driver != nil {
-		closeErrs = append(closeErrs, m.driver.Close())
+	if m.pubSub != nil {
+		closeErrs = append(closeErrs, m.pubSub.Close())
 	}
 
 	return errors.Join(closeErrs...)
@@ -324,17 +353,6 @@ func (m *Manager) Close() error {
 // Shutdown 确保应用停止时自动回收总线资源，满足 do.ShutdownerWithError 契约。
 func (m *Manager) Shutdown() error {
 	return m.Close()
-}
-
-func defaultJSONMarshaler() cqrs.JSONMarshaler {
-	return cqrs.JSONMarshaler{
-		GenerateName: func(v any) string {
-			if ev, ok := v.(Event); ok {
-				return ev.EventName()
-			}
-			return cqrs.StructName(v)
-		},
-	}
 }
 
 func qualifyTopic(prefix, eventName string) string {

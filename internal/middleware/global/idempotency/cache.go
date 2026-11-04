@@ -187,7 +187,12 @@ func (l *cacheLocker) Unlock(ctx context.Context, key string) error {
 	unlockCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), unlockTimeout)
 	defer cancel()
 
-	_, err := l.store.DeleteIfMatch(unlockCtx, cacheLockKey(key), token)
+	lockKey := cacheLockKey(key)
+	val, err := l.store.Get(unlockCtx, lockKey)
+	if err != nil || val != token {
+		return nil
+	}
+	_, err = l.store.Delete(unlockCtx, lockKey)
 	return err
 }
 

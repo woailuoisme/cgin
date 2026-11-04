@@ -13,7 +13,7 @@ import (
 	"cgin/internal/database"
 	"cgin/internal/database/sqlc"
 	"cgin/pkg/errs"
-	"cgin/pkg/notification/contract"
+	"cgin/pkg/notification"
 )
 
 // Channel 数据库通知渠道实现。
@@ -22,9 +22,9 @@ type Channel struct {
 }
 
 var (
-	_ contract.Channel      = (*Channel)(nil)
-	_ contract.Formatter    = (*Channel)(nil)
-	_ contract.BatchChannel = (*Channel)(nil)
+	_ notification.Channel      = (*Channel)(nil)
+	_ notification.Formatter    = (*Channel)(nil)
+	_ notification.BatchChannel = (*Channel)(nil)
 )
 
 // NewChannel 创建数据库通知渠道实例。
@@ -43,7 +43,7 @@ func (c *Channel) DB() *database.DB {
 }
 
 // Format 将领域通知对象转换为数据库持久化载荷 *Message。
-func (c *Channel) Format(n contract.Notification, notifiable any) (any, error) {
+func (c *Channel) Format(n notification.Notification, notifiable any) (any, error) {
 	if n == nil {
 		return nil, oops.Code(errs.CodeNotificationUnsupportedDB).
 			Errorf("notification cannot be nil")
@@ -55,7 +55,7 @@ func (c *Channel) Format(n contract.Notification, notifiable any) (any, error) {
 		return NewMessage(notifType, data), nil
 	}
 
-	if cf, ok := n.(contract.ChannelFormatter); ok {
+	if cf, ok := n.(notification.ChannelFormatter); ok {
 		raw := cf.Format(c.Name(), notifiable)
 		if dataMap, ok := raw.(map[string]any); ok {
 			return NewMessage(notifType, dataMap), nil
@@ -74,7 +74,7 @@ func (c *Channel) extractMessage(notifiable, message any) (*Message, error) {
 		return v, nil
 	case Message:
 		return &v, nil
-	case contract.Notification:
+	case notification.Notification:
 		formatted, err := c.Format(v, notifiable)
 		if err != nil {
 			return nil, err
@@ -108,7 +108,7 @@ func (c *Channel) Send(ctx context.Context, notifiable any, message any) error {
 		return oops.Code(errs.CodeNotificationMissingRecipient).Errorf("database: notifiable entity is nil")
 	}
 
-	target := contract.ToNotifiable(notifiable)
+	target := notification.ToNotifiable(notifiable)
 	if target == nil {
 		return oops.Code(errs.CodeNotificationMissingRecipient).Errorf("database: cannot resolve notifiable target")
 	}
@@ -316,9 +316,9 @@ func (c *Channel) ClearAll(ctx context.Context, notifiable any) error {
 
 // resolveRecipient 解析可通知实体的类型标识与主键 ID。
 func resolveRecipient(notifiable any) (string, string, error) {
-	target := contract.ToNotifiable(notifiable)
+	target := notification.ToNotifiable(notifiable)
 	if target == nil || target.GetNotifiableID() == "" {
 		return "", "", oops.Code(errs.CodeNotificationMissingRecipientID).Errorf("database: recipient ID cannot be empty")
 	}
-	return cmp.Or(target.GetNotifiableType(), contract.DefaultNotifiableType), target.GetNotifiableID(), nil
+	return cmp.Or(target.GetNotifiableType(), notification.DefaultNotifiableType), target.GetNotifiableID(), nil
 }

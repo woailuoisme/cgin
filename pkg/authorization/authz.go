@@ -1,179 +1,129 @@
-// Package authorization 提供基于 Casbin 与内存只读快查的高性能 RBAC 权限授权与 Gate 门禁能力。
+// Package authorization 封装基于 Casbin 的静态 RBAC 权限校验器（ADR-0003）。
+//
+// 模型与策略在编译期嵌入二进制：权限矩阵是代码契约的一部分，随版本发布演进。
 package authorization
 
 import (
-	"bytes"
 	"context"
-	"embed"
-	"encoding/csv"
-	"errors"
+	_ "embed"
 	"fmt"
-	"io"
-	"io/fs"
 	"slices"
 	"strings"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/casbin/casbin/v2/model"
-	stringadapter "github.com/casbin/casbin/v2/persist/string-adapter"
+	"github.com/casbin/casbin/v2/persist"
+	"github.com/samber/oops"
 
 	"cgin/pkg/authentication"
 	"cgin/pkg/errs"
 )
 
-// 常用资源与动作常量。
 const (
+	// ResourceUsers 声明后台用户管理资源标识。
 	ResourceUsers = "users"
 
+	// ActionCreate 声明新建资源动作。
 	ActionCreate = "create"
-	ActionList   = "list"
-	ActionRead   = "read"
+	// ActionList 声明分页列举资源动作。
+	ActionList = "list"
+	// ActionRead 声明读取单个资源详情动作。
+	ActionRead = "read"
+	// ActionUpdate 声明局部或全量更新资源动作。
 	ActionUpdate = "update"
+	// ActionDelete 声明删除资源动作。
 	ActionDelete = "delete"
 )
 
-// Resource 辅助函数，便捷返回资源名称字符串。
-func Resource(name string) string {
-	return name
-}
+//go:embed rbac/model.conf
+var embeddedModel string
 
-//go:embed rbac/model.conf rbac/policy.csv
-var rbacFS embed.FS
+//go:embed rbac/policy.csv
+var embeddedPolicy string
 
-// Enforcer 判断角色对资源的操作权限，同时完整实现 authentication.Gate 契约。
+// Enforcer 持有并发安全的 Casbin 实例，供路由级鉴权与业务用例共用。
 type Enforcer struct {
-	enforcer   *casbin.Enforcer
-	fastLookup map[string]map[string]struct{} // role -> "resource:action" 预编译快速只读索引，纳秒级 O(1) 命中
+	inner *casbin.SyncedEnforcer
 }
 
-var _ authentication.Gate = (*Enforcer)(nil)
-
-// New 从内嵌策略文件构造 Enforcer 并预编译静态快查矩阵。
+// New 装载内嵌的 RBAC 模型与策略并返回并发安全的校验器。
 func New() (*Enforcer, error) {
-	modelText, err := fs.ReadFile(rbacFS, "rbac/model.conf")
+	m, err := model.NewModelFromString(embeddedModel)
 	if err != nil {
-		return nil, fmt.Errorf("authorization: read model failed: %w", err)
-	}
-	policyText, err := fs.ReadFile(rbacFS, "rbac/policy.csv")
-	if err != nil {
-		return nil, fmt.Errorf("authorization: read policy failed: %w", err)
+		return nil, oops.In("authorization").Wrapf(err, "load casbin model")
 	}
 
-	parsedModel, err := model.NewModelFromString(string(modelText))
+	e, err := casbin.NewSyncedEnforcer(m)
 	if err != nil {
-		return nil, fmt.Errorf("authorization: parse model failed: %w", err)
+		return nil, oops.In("authorization").Wrapf(err, "init casbin enforcer")
 	}
 
-	enforcer, err := casbin.NewEnforcer(parsedModel, stringadapter.NewAdapter(string(policyText)))
-	if err != nil {
-		return nil, fmt.Errorf("authorization: new enforcer failed: %w", err)
+	if err := loadEmbeddedPolicy(e); err != nil {
+		return nil, err
 	}
-	// 策略全部来自内嵌文件，运行期没有任何变更来源。
-	enforcer.EnableAutoSave(false)
-
-	// 预编译静态策略表为只读 map，绝大多数权限校验以 O(1) 纳秒级完成
-	fastLookup := buildFastLookup(policyText)
-
-	return &Enforcer{
-		enforcer:   enforcer,
-		fastLookup: fastLookup,
-	}, nil
+	return &Enforcer{inner: e}, nil
 }
 
-// CasbinEnforcer 返回底层的 Casbin Enforcer 实例，供 gin-contrib/authz 等官方中间件直通使用。
-func (e *Enforcer) CasbinEnforcer() *casbin.Enforcer {
-	if e == nil {
-		return nil
-	}
-	return e.enforcer
-}
-
-// buildFastLookup 解析 policy.csv 规则集，构建 role -> "resource:action" 索引
-func buildFastLookup(data []byte) map[string]map[string]struct{} {
-	lookup := make(map[string]map[string]struct{})
-	reader := csv.NewReader(bytes.NewReader(data))
-	reader.TrimLeadingSpace = true
-	reader.FieldsPerRecord = -1
-
-	for {
-		record, err := reader.Read()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			continue
-		}
-		// 期待格式: p, role, resource, action
-		if len(record) < 4 || strings.TrimSpace(record[0]) != "p" {
-			continue
-		}
-		role := strings.TrimSpace(record[1])
-		resource := strings.TrimSpace(record[2])
-		action := strings.TrimSpace(record[3])
-		if role == "" || resource == "" || action == "" {
-			continue
-		}
-
-		if lookup[role] == nil {
-			lookup[role] = make(map[string]struct{})
-		}
-		lookup[role][resource+":"+action] = struct{}{}
-	}
-	return lookup
-}
-
-// CanRole 判定指定单一角色是否被授予指定资源和动作的操作权限。
+// CanRole 判断给定角色是否被允许在指定资源上执行指定动作。
 func (e *Enforcer) CanRole(role, resource, action string) (bool, error) {
-	if role == "" || resource == "" || action == "" {
+	if role == "" {
 		return false, nil
 	}
-
-	// 1. O(1) 预编译静态只读快查命中
-	if actions, ok := e.fastLookup[role]; ok {
-		if _, allowed := actions[resource+":"+action]; allowed {
-			return true, nil
-		}
-	}
-
-	// 2. 回退至 Casbin 引擎兜底验证
-	allowed, err := e.enforcer.Enforce(role, resource, action)
+	allowed, err := e.inner.Enforce(role, resource, action)
 	if err != nil {
-		return false, fmt.Errorf("authorization: enforce failed: %w", err)
+		return false, oops.In("authorization").
+			With("role", role, "resource", resource, "action", action).
+			Wrapf(err, "casbin enforce")
 	}
 	return allowed, nil
 }
 
-// CanRoles 判定一组角色中是否有任一角色具备指定权限。
+// CanRoles 判断给定的多个角色中是否有任意一个具备目标资源动作权限。
 func (e *Enforcer) CanRoles(roles []string, resource, action string) bool {
 	return slices.ContainsFunc(roles, func(role string) bool {
-		allowed, _ := e.CanRole(role, resource, action)
-		return allowed
+		allowed, err := e.CanRole(role, resource, action)
+		return err == nil && allowed
 	})
 }
 
-// Can 实现 authentication.Gate 契约：从上下文提取主体角色并判断权限。
+// Can 从上下文提取认证身份并校验是否具备指定资源动作权限。
 func (e *Enforcer) Can(ctx context.Context, resource, action string) bool {
 	id, ok := authentication.FromContext(ctx)
-	if !ok || id.UserID == "" {
+	if !ok {
 		return false
 	}
-	return e.CanRoles(id.AllRoles(), resource, action)
+	roles := id.AllRoles()
+	if len(roles) == 0 {
+		return false
+	}
+	if len(roles) == 1 {
+		allowed, err := e.CanRole(roles[0], resource, action)
+		return err == nil && allowed
+	}
+	return e.CanRoles(roles, resource, action)
 }
 
-// Authorize 实现 authentication.Gate 契约：校验权限，无权限直接返回 403 Forbidden 统一错误。
+// Authorize 从上下文校验当前身份是否具备指定权限；未认证返回 401，无权限返回 403。
 func (e *Enforcer) Authorize(ctx context.Context, resource, action string) error {
-	if !e.Can(ctx, resource, action) {
-		return errs.Forbidden("You are not allowed to perform this action")
+	id, err := authentication.RequireIdentity(ctx)
+	if err != nil {
+		return err
+	}
+	if !e.CanRoles(id.AllRoles(), resource, action) {
+		return errs.Forbidden("You do not have permission to perform this action")
 	}
 	return nil
 }
 
-// Allows 实现 authentication.Gate 契约，是 Can 的语义别名。
-func (e *Enforcer) Allows(ctx context.Context, resource, action string) bool {
-	return e.Can(ctx, resource, action)
-}
-
-// Denies 实现 authentication.Gate 契约：判定当前请求主体是否被禁止该操作。
-func (e *Enforcer) Denies(ctx context.Context, resource, action string) bool {
-	return !e.Can(ctx, resource, action)
+func loadEmbeddedPolicy(e *casbin.SyncedEnforcer) error {
+	for idx, raw := range strings.Split(embeddedPolicy, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if err := persist.LoadPolicyLine(line, e.GetModel()); err != nil {
+			return fmt.Errorf("authorization: parse policy line %d: %w", idx+1, err)
+		}
+	}
+	return nil
 }

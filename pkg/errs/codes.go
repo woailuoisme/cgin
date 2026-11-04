@@ -100,9 +100,6 @@ const (
 
 	// 以下为内部失败码：不登记进 statuses，对外统一 500，仅用于堆栈与日志定位。
 	CodeStorageFailed            Code = "STORAGE_FAILED"
-	CodeCSVWriteError            Code = "CSV_WRITE_ERROR"
-	CodeCSVFlushError            Code = "CSV_FLUSH_ERROR"
-	CodeCSVGeneratorError        Code = "CSV_GENERATOR_ERROR"
 	CodeExcelStreamError         Code = "EXCEL_STREAM_ERROR"
 	CodeExcelStreamWriteError    Code = "EXCEL_STREAM_WRITE_ERROR"
 	CodeExcelFlushError          Code = "EXCEL_FLUSH_ERROR"
@@ -210,6 +207,38 @@ func Status(c Code) int {
 	return http.StatusInternalServerError
 }
 
+// CodeForStatus 返回 HTTP 状态码对应的通用错误码；未覆盖的状态一律返回 CodeInternal。
+func CodeForStatus(status int) Code {
+	switch status {
+	case http.StatusBadRequest:
+		return CodeBadRequest
+	case http.StatusUnauthorized:
+		return CodeAuthTokenInvalid
+	case http.StatusForbidden:
+		return CodeForbidden
+	case http.StatusNotFound:
+		return CodeNotFound
+	case http.StatusMethodNotAllowed:
+		return CodeMethodNotAllowed
+	case http.StatusConflict:
+		return CodeConflict
+	case http.StatusRequestEntityTooLarge:
+		return CodeRequestTooLarge
+	case http.StatusUnprocessableEntity:
+		return CodeValidationFailed
+	case http.StatusTooManyRequests:
+		return CodeRateLimited
+	case StatusClientClosedRequest:
+		return CodeClientClosedRequest
+	case http.StatusGatewayTimeout:
+		return CodeGatewayTimeout
+	case http.StatusServiceUnavailable:
+		return CodeServiceUnavailable
+	default:
+		return CodeInternal
+	}
+}
+
 // statusMessages 是各状态码在错误未声明对外文案时的兜底描述。
 // 4xx 必须给出与状态语义相符的说明，不能沿用 5xx 的"意外错误"口吻。
 var statusMessages = map[int]string{
@@ -242,7 +271,7 @@ func domain(c Code) string {
 	switch {
 	case strings.HasPrefix(s, "AUTH_"):
 		return "auth"
-	case strings.HasPrefix(s, "EXCEL_"), strings.HasPrefix(s, "CSV_"), c == CodeEmptySheets:
+	case strings.HasPrefix(s, "EXCEL_"), c == CodeEmptySheets:
 		return "excel"
 	case strings.HasPrefix(s, "NOTIFICATION_"):
 		return "notification"

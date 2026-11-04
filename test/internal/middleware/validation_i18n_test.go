@@ -22,7 +22,7 @@ import (
 func TestValidationMessageTranslation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	translator, err := i18n.New(&config.Config{I18n: config.I18nConfig{DefaultLanguage: "en"}})
+	translator, err := i18n.New(config.I18nConfig{DefaultLanguage: "en"})
 	require.NoError(t, err)
 
 	cases := []struct {

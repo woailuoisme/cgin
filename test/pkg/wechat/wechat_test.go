@@ -35,10 +35,11 @@ func TestWeChatClientCreationAndAccessors(t *testing.T) {
 	require.NotNil(t, client)
 	assert.Equal(t, cfg.AppID, client.AppID())
 
-	// 验证各细粒度子服务门面
-	assert.NotNil(t, client.Auth())
-	assert.NotNil(t, client.Phone())
-	assert.NotNil(t, client.WxaCode())
+	// 验证直接实现细粒度 ISP 契约与聚合契约
+	var _ wechat.AuthService = client
+	var _ wechat.PhoneService = client
+	var _ wechat.WxaCodeService = client
+	var _ wechat.MiniProgramClient = client
 
 	// 验证链式 WithBaseURL
 	returned := client.WithBaseURL("https://api.weixin.qq.com/")
@@ -65,9 +66,6 @@ func TestWeChatClientUninitializedOperations(t *testing.T) {
 	require.Error(t, err)
 
 	assert.Empty(t, client.AppID())
-	assert.Nil(t, client.Auth())
-	assert.Nil(t, client.Phone())
-	assert.Nil(t, client.WxaCode())
 }
 
 func TestWeChatManagerMultiAppResolution(t *testing.T) {
@@ -157,19 +155,19 @@ func TestWeChatFakeClientAndManager(t *testing.T) {
 	ctx := t.Context()
 
 	// 默认 Mock 输出验证
-	session, err := fakeClient.Auth().Code2Session(ctx, "test_code_123")
+	session, err := fakeClient.Code2Session(ctx, "test_code_123")
 	require.NoError(t, err)
 	assert.Equal(t, "mock_openid_test_code_123", session.OpenID)
 	assert.Equal(t, "mock_unionid_test_code_123", session.UnionID)
 	assert.Equal(t, "mock_session_key_1234567890", session.SessionKey)
 
-	phone, err := fakeClient.Phone().GetPhoneNumber(ctx, "test_code_123")
+	phone, err := fakeClient.GetPhoneNumber(ctx, "test_code_123")
 	require.NoError(t, err)
 	assert.Equal(t, "+8613800000000", phone.PhoneNumber)
 	assert.Equal(t, "13800000000", phone.PurePhoneNumber)
 	assert.Equal(t, "wx_fake_test_appid", phone.Watermark.AppID)
 
-	codeBytes, err := fakeClient.WxaCode().GetUnlimited(ctx, wechat.UnlimitedCodeParams{Scene: "id=1"})
+	codeBytes, err := fakeClient.GetUnlimitedCode(ctx, wechat.UnlimitedCodeParams{Scene: "id=1"})
 	require.NoError(t, err)
 	assert.NotEmpty(t, codeBytes)
 
@@ -177,7 +175,7 @@ func TestWeChatFakeClientAndManager(t *testing.T) {
 	fakeClient.Code2SessionFunc = func(_ context.Context, code string) (*wechat.Session, error) {
 		return &wechat.Session{OpenID: "custom_" + code}, nil
 	}
-	customSession, err := fakeClient.Auth().Code2Session(ctx, "custom_code")
+	customSession, err := fakeClient.Code2Session(ctx, "custom_code")
 	require.NoError(t, err)
 	assert.Equal(t, "custom_custom_code", customSession.OpenID)
 
@@ -412,7 +410,7 @@ func TestWeChatTokenL1AndL2Caching(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 10 {
 		wg.Go(func() {
-			info, err := client.Phone().GetPhoneNumber(ctx, "mock_code")
+			info, err := client.GetPhoneNumber(ctx, "mock_code")
 			require.NoError(t, err)
 			assert.NotNil(t, info)
 		})
@@ -475,7 +473,7 @@ func TestWeChatTokenRefreshOnCredentialFailure(t *testing.T) {
 	client := wechat.NewClient(cfg, nil, wechat.WithBaseURL(server.URL))
 	require.NotNil(t, client)
 
-	phone, err := client.Phone().GetPhoneNumber(t.Context(), "code123")
+	phone, err := client.GetPhoneNumber(t.Context(), "code123")
 	require.NoError(t, err)
 	assert.Equal(t, "+8613800138000", phone.PhoneNumber)
 

@@ -12,7 +12,6 @@ import (
 	"cgin/internal/user"
 	"cgin/pkg/cache"
 	"cgin/pkg/eventbus"
-	"cgin/pkg/hasher"
 	"cgin/pkg/i18n"
 	"cgin/pkg/mailer"
 	"cgin/pkg/media"
@@ -35,9 +34,7 @@ var ServicesPackage = do.Package(
 	do.Lazy(func(i do.Injector) (*service.AuthService, error) {
 		db := do.MustInvoke[*database.DB](i)
 		userService := do.MustInvoke[*user.Service](i)
-		userProvider := do.MustInvoke[*user.Provider](i)
 		guards := do.MustInvoke[AuthGuards](i)
-		h := do.MustInvoke[hasher.PasswordHasher](i)
 		c := do.MustInvoke[cache.Store](i)
 		mailerClient := do.MustInvoke[mailer.Mailer](i)
 		notifier := do.MustInvoke[*notification.Notifier](i)
@@ -46,17 +43,15 @@ var ServicesPackage = do.Package(
 		pub := do.MustInvoke[eventbus.Publisher](i)
 
 		return service.MustNewAuthService(service.AuthDeps{
-			DB:          db,
-			Users:       userService,
-			Credentials: userProvider,
-			Guard:       guards.Client,
-			Hasher:      h,
-			Cache:       c,
-			Mailer:      mailerClient,
-			Notifier:    notifier,
-			Translator:  translator,
-			Config:      cfg,
-			Publisher:   pub,
+			DB:         db,
+			Users:      userService,
+			Guard:      guards.Client,
+			Cache:      c,
+			Mailer:     mailerClient,
+			Notifier:   notifier,
+			Translator: translator,
+			Config:     cfg,
+			Publisher:  pub,
 		}), nil
 	}),
 
@@ -69,10 +64,10 @@ var ServicesPackage = do.Package(
 	// 3. 管理端认证服务
 	do.Lazy(func(i do.Injector) (*adminservice.AuthService, error) {
 		guards := do.MustInvoke[AuthGuards](i)
-		userProvider := do.MustInvoke[*user.Provider](i)
+		userService := do.MustInvoke[*user.Service](i)
 		return adminservice.MustNewAuthService(adminservice.AuthDeps{
 			Guard:     guards.Admin,
-			Passwords: userProvider,
+			Passwords: userService,
 		}), nil
 	}),
 

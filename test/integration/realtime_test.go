@@ -33,10 +33,10 @@ import (
 )
 
 // getRealtimeConfig 加载当前环境的 Centrifugo 配置。
-func getRealtimeConfig(t *testing.T) config.CentrifugoConfig {
+func getRealtimeConfig(t *testing.T) config.RealtimeConfig {
 	t.Helper()
 
-	var rtCfg config.CentrifugoConfig
+	var rtCfg config.RealtimeConfig
 	if cfg, err := config.Load(); err == nil {
 		rtCfg = cfg.Realtime
 	}
@@ -68,7 +68,7 @@ func getRealtimeConfig(t *testing.T) config.CentrifugoConfig {
 }
 
 // ensureCentrifugoReachable 探测 Centrifugo 服务是否存活，不可达时安全跳过。
-func ensureCentrifugoReachable(t *testing.T, cfg config.CentrifugoConfig) {
+func ensureCentrifugoReachable(t *testing.T, cfg config.RealtimeConfig) {
 	t.Helper()
 
 	parsed, err := url.Parse(cfg.URL)

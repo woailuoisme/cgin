@@ -9,10 +9,10 @@ require (
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/ThreeDotsLabs/watermill v1.5.3
 	github.com/aarondl/opt v0.0.0-20250607033636-982744e1bd65
-	github.com/adhocore/gronx v1.20.5
+	github.com/adhocore/gronx v1.20.6
 	github.com/alexliesenfeld/health v0.8.1
 	github.com/brianvoe/gofakeit/v7 v7.18.1
-	github.com/caarlos0/env/v11 v11.4.1
+	github.com/caarlos0/env/v11 v11.4.2
 	github.com/casbin/casbin/v2 v2.135.0
 	github.com/centrifugal/gocent/v3 v3.4.0
 	github.com/charmbracelet/x/term v0.2.2
@@ -29,7 +29,7 @@ require (
 	github.com/gin-contrib/timeout v1.2.4
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-pay/gopay v1.5.123
-	github.com/go-playground/validator/v10 v10.30.5
+	github.com/go-playground/validator/v10 v10.30.6
 	github.com/go-resty/resty/v2 v2.17.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
@@ -42,7 +42,7 @@ require (
 	github.com/nicksnyder/go-i18n/v2 v2.7.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/redis/rueidis v1.0.79
-	github.com/resend/resend-go/v4 v4.11.0
+	github.com/resend/resend-go/v4 v4.12.0
 	github.com/rs/zerolog v1.35.1
 	github.com/samber/do/v2 v2.1.0
 	github.com/samber/hot v0.13.1
@@ -52,7 +52,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
 	github.com/wneessen/go-mail v0.8.1
-	github.com/xuri/excelize/v2 v2.11.0
+	github.com/xuri/excelize/v2 v2.11.1
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.72.0
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.23.0
@@ -109,8 +109,8 @@ require (
 	github.com/go-pay/util v0.0.4 // indirect
 	github.com/go-pay/xlog v0.0.3 // indirect
 	github.com/go-pay/xtime v0.0.2 // indirect
-	github.com/go-playground/locales v0.14.1 // indirect
-	github.com/go-playground/universal-translator v0.18.1 // indirect
+	github.com/go-playground/locales v0.14.2 // indirect
+	github.com/go-playground/universal-translator v0.18.2 // indirect
 	github.com/goccy/go-json v0.11.1 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
@@ -154,7 +154,7 @@ require (
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.60.0 // indirect
 	github.com/redis/go-redis/v9 v9.23.0 // indirect
-	github.com/richardlehane/mscfb v1.0.7 // indirect
+	github.com/richardlehane/mscfb v1.0.9 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
@@ -171,7 +171,7 @@ require (
 	github.com/ugorji/go/codec v1.3.1 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/xo/terminfo v1.0.0 // indirect
-	github.com/xuri/efp v0.0.1 // indirect
+	github.com/xuri/efp v0.0.3-0.20260924042702-217b81952dec // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.8.0 // indirect

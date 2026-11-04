@@ -1,0 +1,31 @@
+# Dependabot 配置：按仓库实际使用的包管理生态划分。
+# 当前为纯 Go 后端（module cgin，单根 go.mod）：Go 直接依赖 + Dockerfile 基础镜像 + CI Actions。
+version: 2
+updates:
+  # Go 模块：minor/patch 升级归并为单个 PR 降低噪音，major 单独成 PR 便于评审
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+      time: "09:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 10
+    groups:
+      go-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions：保持 workflow 里的 uses 为最新主版本；
+  # actions 彼此独立，归并成单个 PR 便于整体回滚
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      time: "09:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns:
+          - "*"

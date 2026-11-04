@@ -19,7 +19,7 @@ import (
 	"cgin/pkg/errs"
 )
 
-// Client 是队列基础设施的唯一实现类型：同一实例同时满足 Dispatcher、Inspector 与 Worker 三个 seam。
+// Client 是队列基础设施的核心实现：同一实例同时满足 Dispatcher (入队)、Inspector (巡检) 与 Worker (生命周期) 三大接口契约。
 type Client struct {
 	client    *asynq.Client
 	inspector *asynq.Inspector

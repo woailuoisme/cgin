@@ -18,12 +18,9 @@ import (
 	"cgin/pkg/resilience"
 )
 
-// Config 为 config.CentrifugoConfig 的类型别名，消除重复定义并直接复用统一配置结构。
-type Config = config.CentrifugoConfig
-
 // manager 是 Gateway 的唯一实现：一个 Centrifugo HTTP API 客户端加一份频道订阅策略表。
 type manager struct {
-	cfg      *Config
+	cfg      *config.RealtimeConfig
 	client   *gocent.Client
 	registry *Registry
 }
@@ -32,7 +29,7 @@ var _ Gateway = (*manager)(nil)
 
 // NewManager 创建 Centrifugo 实时通信网关。
 // reg 为 nil 时退化为空注册表 —— 所有频道订阅都会被拒，符合 Fail-Closed 默认。
-func NewManager(cfg *Config, reg *Registry) Gateway {
+func NewManager(cfg *config.RealtimeConfig, reg *Registry) Gateway {
 	m := &manager{
 		cfg:      cfg,
 		registry: cmp.Or(reg, NewRegistry()),

@@ -84,7 +84,7 @@ func (m *mockDriver) Count() int {
 func TestMailpitDriverLifecycle(t *testing.T) {
 	cfg := config.MailConfig{
 		Driver:      "mailpit",
-		FromAddress: "no-reply@cgin.local",
+		FromAddress: "no-reply@cfiber.local",
 		FromName:    "cgin",
 		Mailpit: config.MailpitConfig{
 			Host: "127.0.0.1",
@@ -480,21 +480,6 @@ func TestManager_SendAndLifecycle(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "driver is not initialized")
 	})
-}
-
-func TestCustomDriverRegistration(t *testing.T) {
-	mock := &mockDriver{}
-	mailer.RegisterDriver("custom-test", func() (mailer.Driver, error) {
-		return mock, nil
-	})
-
-	client, err := mailer.New(config.MailConfig{Driver: "custom-test"}, logger.Nop())
-	require.NoError(t, err)
-	require.NotNil(t, client)
-
-	err = client.Send(context.Background(), mailer.NewMessage().WithTo("test@custom.com").WithSubject("Custom"))
-	require.NoError(t, err)
-	assert.Equal(t, 1, mock.Count())
 }
 
 func BenchmarkMessage_FluentBuilder(b *testing.B) {

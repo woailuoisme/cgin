@@ -10,141 +10,167 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"cgin/internal/console/core"
 	"cgin/internal/database"
 	"cgin/internal/database/seeders"
 )
 
-// DBMigrateOptions 封装 db:migrate 命令的参数与依赖容器。
-type DBMigrateOptions struct {
-	noopComplete
-
-	Env     string
-	Factory Factory
-}
-
-// NewDBMigrateOptions 构造 DBMigrateOptions 实例。
-func NewDBMigrateOptions(f Factory) *DBMigrateOptions {
-	return &DBMigrateOptions{
-		Env:     "app",
-		Factory: f,
-	}
-}
-
-// Validate 校验迁移命令参数。
-func (o *DBMigrateOptions) Validate() error {
-	if o.Env == "" {
-		return &ValidationError{Field: "env", Message: "environment cannot be empty"}
-	}
-	return nil
-}
-
-// Run 执行数据库版本迁移。
-func (o *DBMigrateOptions) Run(ctx context.Context) error {
-	return runAtlas(ctx, o.Factory.IOStreams(), "migrate", "apply", "--env", o.Env)
-}
-
 // newDBMigrateCmd 委托 atlas 应用版本式迁移。
 func newDBMigrateCmd(f Factory) *cobra.Command {
-	opts := NewDBMigrateOptions(f)
+	env := "app"
 
 	cmd := &cobra.Command{
 		Use:   "db:migrate",
 		Short: "Apply database migrations via Atlas (atlas migrate apply)",
 		Args:  maxArgs(0),
-		RunE:  runCommand(opts),
+		RunE: runE(func(ctx context.Context, _ []string) error {
+			if strings.TrimSpace(env) == "" {
+				return &ValidationError{Field: "env", Message: "environment cannot be empty"}
+			}
+			return runAtlas(ctx, f.IOStreams(), "migrate", "apply", "--env", env)
+		}),
 	}
 
-	cmd.Flags().StringVar(&opts.Env, "env", "app", "Atlas environment name to apply")
-
+	cmd.Flags().StringVar(&env, "env", "app", "Atlas environment name to apply")
 	return cmd
 }
 
-// DBSeedOptions 封装 db:seed 命令的参数与依赖容器。
-type DBSeedOptions struct {
-	noopComplete
+// newDBSeedCmd 调度运行数据播种器。
+func newDBSeedCmd(f Factory) *cobra.Command {
+	var (
+		className = "DatabaseSeeder"
+		fresh     bool
+		force     bool
+	)
 
-	ClassName string
-	Fresh     bool
-	Force     bool
-	Factory   Factory
+	cmd := &cobra.Command{
+		Use:   "db:seed",
+		Short: "Seed database with records (default: DatabaseSeeder)",
+		Args:  maxArgs(0),
+		RunE: runE(func(ctx context.Context, _ []string) error {
+			targetSeeder, ok := seeders.Get(className)
+			if !ok {
+				return &ValidationError{
+					Field:   "class",
+					Message: fmt.Sprintf("seeder [%s] not found (available: %v)", className, seeders.List()),
+				}
+			}
+
+			streams := f.IOStreams()
+			if fresh && !force {
+				appName := defaultAppName
+				if cfg, err := f.Config(); err == nil && cfg != nil && cfg.App.Name != "" {
+					appName = cfg.App.Name
+				} else if err != nil {
+					return err
+				}
+
+				if err := confirmOrCancel(
+					f,
+					false,
+					"Are you sure you want to fresh the database before seeding?",
+					fmt.Sprintf("All table data in %s will be permanently deleted.", appName),
+					"Yes, wipe all data",
+					"Database seed operation cancelled.",
+				); err != nil {
+					return err
+				}
+			}
+
+			db, err := f.DB(ctx)
+			if err != nil {
+				return err
+			}
+
+			if fresh {
+				streams.Title("Wiping all table data...")
+				if err := truncateAllTables(ctx, db); err != nil {
+					return err
+				}
+				streams.Success("All table data cleared successfully.")
+			}
+
+			streams.Title("Seeding [%s]...", className)
+			if err := runSeederWithProgress(ctx, streams, db, targetSeeder); err != nil {
+				return err
+			}
+
+			streams.Success("Database seeding completed successfully.")
+			return nil
+		}),
+	}
+
+	cmd.Flags().StringVarP(&className, "class", "c", "DatabaseSeeder", "The class name of the seeder to run")
+	cmd.Flags().BoolVar(&fresh, "fresh", false, "Wipe all table data before seeding")
+	cmd.Flags().BoolVarP(&force, FlagForce, "f", false, UsageForceFlag)
+	_ = cmd.RegisterFlagCompletionFunc("class", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return seeders.List(), cobra.ShellCompDirectiveNoFileComp
+	})
+	return cmd
 }
 
-// NewDBSeedOptions 构造 DBSeedOptions 实例。
-func NewDBSeedOptions(f Factory) *DBSeedOptions {
-	return &DBSeedOptions{
-		ClassName: "DatabaseSeeder",
-		Factory:   f,
+// newDBFreshCmd 清空数据库后重放迁移并写入种子数据。
+func newDBFreshCmd(f Factory) *cobra.Command {
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "db:fresh",
+		Short: "Drop all tables, re-run migrations, and seed database (destructive)",
+		Args:  maxArgs(0),
+		RunE: runE(func(ctx context.Context, _ []string) error {
+			cfg, err := f.Config()
+			if err != nil {
+				return err
+			}
+
+			appName := defaultAppName
+			if cfg != nil && cfg.App.Name != "" {
+				appName = cfg.App.Name
+			}
+
+			if err := confirmOrCancel(
+				f,
+				force,
+				"Are you sure you want to fresh the database?",
+				fmt.Sprintf("All data in %s will be permanently dropped and migrations will be re-run.", appName),
+				"Yes, drop and re-migrate",
+				"Database fresh operation cancelled.",
+			); err != nil {
+				return err
+			}
+
+			db, err := f.DB(ctx)
+			if err != nil {
+				return err
+			}
+
+			streams := f.IOStreams()
+			streams.Title("Rebuilding public schema...")
+			if _, err := db.Pool().Exec(ctx, "DROP SCHEMA IF EXISTS public CASCADE"); err != nil {
+				return fmt.Errorf("failed to drop public schema: %w", err)
+			}
+			if _, err := db.Pool().Exec(ctx, "CREATE SCHEMA public"); err != nil {
+				return fmt.Errorf("failed to recreate public schema: %w", err)
+			}
+
+			streams.Title("Applying versioned migrations...")
+			if err := runAtlas(ctx, streams, "migrate", "apply", "--env", "app"); err != nil {
+				return err
+			}
+
+			streams.Title("Seeding initial data via DatabaseSeeder...")
+			if err := runSeederWithProgress(ctx, streams, db, &seeders.DatabaseSeeder{}); err != nil {
+				return err
+			}
+
+			streams.Success("Database refreshed and seeded successfully.")
+			return nil
+		}),
 	}
+
+	cmd.Flags().BoolVarP(&force, FlagForce, "f", false, UsageForceFlag)
+	return cmd
 }
 
-// Validate 校验指定的 Seeder 类名是否合法存在。
-func (o *DBSeedOptions) Validate() error {
-	if _, ok := seeders.Get(o.ClassName); !ok {
-		available := seeders.List()
-		return &ValidationError{
-			Field:   "class",
-			Message: fmt.Sprintf("seeder [%s] not found (available: %v)", o.ClassName, available),
-		}
-	}
-	return nil
-}
-
-// Run 调度运行数据播种。
-func (o *DBSeedOptions) Run(ctx context.Context) error {
-	streams := o.Factory.IOStreams()
-
-	if o.Fresh && !o.Force {
-		appName := "cgin"
-		if cfg, err := o.Factory.Config(); err == nil && cfg != nil && cfg.App.Name != "" {
-			appName = cfg.App.Name
-		} else if err != nil {
-			return err
-		}
-
-		confirmed, err := o.Factory.Prompter().Confirm(
-			"Are you sure you want to fresh the database before seeding?",
-			fmt.Sprintf("All table data in %s will be permanently deleted.", appName),
-			"Yes, wipe all data",
-		)
-		if err != nil {
-			return err
-		}
-		if !confirmed {
-			core.WarnTo(streams.Out, "Database seed operation cancelled.")
-			return core.ErrCanceled
-		}
-	}
-
-	db, err := o.Factory.DB(ctx)
-	if err != nil {
-		return err
-	}
-
-	if o.Fresh {
-		core.TitleTo(streams.Out, "Wiping all table data...")
-		if err := truncateAllTables(ctx, db); err != nil {
-			return err
-		}
-		core.SuccessTo(streams.Out, "All table data cleared successfully.")
-	}
-
-	targetSeeder, ok := seeders.Get(o.ClassName)
-	if !ok {
-		available := seeders.List()
-		return fmt.Errorf("seeder [%s] not found (available: %v)", o.ClassName, available)
-	}
-
-	core.TitleTo(streams.Out, fmt.Sprintf("Seeding [%s]...", o.ClassName))
-	if err := runSeederWithProgress(ctx, streams, db, targetSeeder); err != nil {
-		return err
-	}
-
-	core.SuccessTo(streams.Out, "Database seeding completed successfully.")
-	return nil
-}
-
-// truncateAllTables 清空 public Schema 下所有业务数据表并重置自增序列。
 func truncateAllTables(ctx context.Context, db *database.DB) error {
 	if db == nil || db.Pool() == nil {
 		return errors.New("database connection pool is uninitialized")
@@ -173,7 +199,6 @@ func truncateAllTables(ctx context.Context, db *database.DB) error {
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("failed to iterate table names: %w", err)
 	}
-
 	if len(tables) == 0 {
 		return nil
 	}
@@ -185,109 +210,7 @@ func truncateAllTables(ctx context.Context, db *database.DB) error {
 	return nil
 }
 
-// newDBSeedCmd 调度运行数据播种器（支持通过 --class 指定单个 Seeder，缺省为 DatabaseSeeder；支持 --fresh 清空表数据）。
-func newDBSeedCmd(f Factory) *cobra.Command {
-	opts := NewDBSeedOptions(f)
-
-	cmd := &cobra.Command{
-		Use:   "db:seed",
-		Short: "Seed database with records (default: DatabaseSeeder)",
-		Args:  maxArgs(0),
-		RunE:  runCommand(opts),
-	}
-
-	cmd.Flags().StringVarP(&opts.ClassName, "class", "c", "DatabaseSeeder", "The class name of the seeder to run")
-	cmd.Flags().BoolVar(&opts.Fresh, "fresh", false, "Wipe all table data before seeding")
-	cmd.Flags().BoolVarP(&opts.Force, core.FlagForce, "f", false, core.UsageForceFlag)
-	_ = cmd.RegisterFlagCompletionFunc("class", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-		return seeders.List(), cobra.ShellCompDirectiveNoFileComp
-	})
-
-	return cmd
-}
-
-// DBFreshOptions 封装 db:fresh 命令的参数与依赖容器。
-type DBFreshOptions struct {
-	noopComplete
-	noopValidate
-
-	Force   bool
-	Factory Factory
-}
-
-// NewDBFreshOptions 构造 DBFreshOptions 实例。
-func NewDBFreshOptions(f Factory) *DBFreshOptions {
-	return &DBFreshOptions{Factory: f}
-}
-
-// Run 清空数据库后重放迁移并写入种子数据。
-func (o *DBFreshOptions) Run(ctx context.Context) error {
-	cfg, err := o.Factory.Config()
-	if err != nil {
-		return err
-	}
-
-	streams := o.Factory.IOStreams()
-	if !o.Force {
-		confirmed, err := o.Factory.Prompter().Confirm(
-			"Are you sure you want to fresh the database?",
-			fmt.Sprintf("All data in %s will be permanently dropped and migrations will be re-run.", cfg.App.Name),
-			"Yes, drop and re-migrate",
-		)
-		if err != nil {
-			return err
-		}
-		if !confirmed {
-			core.WarnTo(streams.Out, "Database fresh operation cancelled.")
-			return core.ErrCanceled
-		}
-	}
-
-	db, err := o.Factory.DB(ctx)
-	if err != nil {
-		return err
-	}
-
-	core.TitleTo(streams.Out, "Rebuilding public schema...")
-	if _, err := db.Pool().Exec(ctx, "DROP SCHEMA IF EXISTS public CASCADE"); err != nil {
-		return fmt.Errorf("failed to drop public schema: %w", err)
-	}
-	if _, err := db.Pool().Exec(ctx, "CREATE SCHEMA public"); err != nil {
-		return fmt.Errorf("failed to recreate public schema: %w", err)
-	}
-
-	core.TitleTo(streams.Out, "Applying versioned migrations...")
-	if err := runAtlas(ctx, streams, "migrate", "apply", "--env", "app"); err != nil {
-		return err
-	}
-
-	core.TitleTo(streams.Out, "Seeding initial data via DatabaseSeeder...")
-	if err := runSeederWithProgress(ctx, streams, db, &seeders.DatabaseSeeder{}); err != nil {
-		return err
-	}
-
-	core.SuccessTo(streams.Out, "Database refreshed and seeded successfully.")
-	return nil
-}
-
-// newDBFreshCmd 清空数据库后重放迁移并写入种子数据。破坏性操作默认需要交互确认。
-func newDBFreshCmd(f Factory) *cobra.Command {
-	opts := NewDBFreshOptions(f)
-
-	cmd := &cobra.Command{
-		Use:   "db:fresh",
-		Short: "Drop all tables, re-run migrations, and seed database (destructive)",
-		Args:  maxArgs(0),
-		RunE:  runCommand(opts),
-	}
-
-	cmd.Flags().BoolVarP(&opts.Force, core.FlagForce, "f", false, core.UsageForceFlag)
-
-	return cmd
-}
-
-// runAtlas 以当前工作目录为基准调用 atlas 命令行工具，输入输出绑定到 IOStreams。
-func runAtlas(ctx context.Context, streams *core.IOStreams, args ...string) error {
+func runAtlas(ctx context.Context, streams *IOStreams, args ...string) error {
 	command := exec.CommandContext(ctx, "atlas", args...)
 	command.Stdout = streams.Out
 	command.Stderr = streams.ErrOut
@@ -299,19 +222,18 @@ func runAtlas(ctx context.Context, streams *core.IOStreams, args ...string) erro
 	return nil
 }
 
-// runSeederWithProgress 带有控制台步骤展示与细粒度进度条调度的 Seeder 执行函数。
-func runSeederWithProgress(ctx context.Context, streams *core.IOStreams, db *database.DB, targetSeeder seeders.Seeder) error {
-	var subBar *core.ProgressBar
+func runSeederWithProgress(ctx context.Context, streams *IOStreams, db *database.DB, targetSeeder seeders.Seeder) error {
+	var subBar *ProgressBar
 
 	stepHook := func(name string, index, total int, duration time.Duration, done bool) {
 		if !done {
-			core.InfoTo(streams.Out, "• [%d/%d] Seeding %s...", index, total, name)
+			streams.Info("• [%d/%d] Seeding %s...", index, total, name)
 		} else {
 			if subBar != nil {
 				subBar.Finish()
 				subBar = nil
 			}
-			core.SuccessTo(streams.Out, "✓ [%d/%d] %s completed (%s)", index, total, name, duration.Round(time.Millisecond))
+			streams.Success("✓ [%d/%d] %s completed (%s)", index, total, name, duration.Round(time.Millisecond))
 		}
 	}
 
@@ -320,7 +242,7 @@ func runSeederWithProgress(ctx context.Context, streams *core.IOStreams, db *dat
 			return
 		}
 		if subBar == nil {
-			subBar = core.NewProgressBarTo(streams.Out, streams.CanPrompt(), total, "Records")
+			subBar = NewProgressBarTo(streams.Out, streams.CanPrompt(), total, "Records")
 		}
 		subBar.Set(current)
 	}

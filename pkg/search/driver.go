@@ -3,6 +3,8 @@ package search
 import (
 	"fmt"
 	"strings"
+
+	"cgin/internal/config"
 )
 
 // Driver 代表支持的搜索引擎驱动类型常量。
@@ -12,7 +14,7 @@ const (
 )
 
 // createDriver 依据配置构造对应的搜索引擎客户端。
-func createDriver(cfg Config) (Client, error) {
+func createDriver(cfg config.SearchConfig) (Client, error) {
 	switch strings.ToLower(strings.TrimSpace(cfg.Driver)) {
 	case "", DriverNoop:
 		return NewNoop(), nil

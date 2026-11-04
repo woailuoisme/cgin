@@ -183,3 +183,50 @@ func TestAccessLog_ProbeSilencing(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
 	assert.NotEmpty(t, strings.TrimSpace(buf.String()), "异常状态探针必须保留日志用于监控告警")
 }
+
+// TestFavicon_Silencing 验证 /favicon.ico 拦截中间件对 GET/HEAD 返回 204 且不刷访问日志，
+// 对 OPTIONS 返回 200，对其他方法返回 405。
+func TestFavicon_Silencing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var buf bytes.Buffer
+	testLogger := logger.NewWithOptions(
+		logger.WithLevel("debug"),
+		logger.WithChannel("json"),
+		logger.WithWriter(&buf),
+	)
+
+	mw := global.New(global.Deps{Logger: testLogger})
+	engine := gin.New()
+	engine.Use(
+		mw.Favicon(),
+		mw.RequestID(),
+		mw.AccessLog(),
+		mw.ErrorHandler(),
+	)
+
+	// 1. GET /favicon.ico 静默返回 204，不触发 RequestID 和 AccessLog
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/favicon.ico", nil))
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	assert.Empty(t, strings.TrimSpace(buf.String()), "/favicon.ico 请求禁止输出 404 访问日志噪音")
+	assert.Empty(t, rec.Header().Get("x-request-id"))
+
+	// 2. HEAD /favicon.ico 静默返回 204
+	rec = httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodHead, "/favicon.ico", nil))
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	assert.Empty(t, strings.TrimSpace(buf.String()))
+
+	// 3. OPTIONS /favicon.ico 返回 200 与 Allow 头
+	rec = httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodOptions, "/favicon.ico", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "GET, HEAD, OPTIONS", rec.Header().Get("Allow"))
+
+	// 4. POST /favicon.ico 返回 405 Method Not Allowed
+	rec = httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/favicon.ico", nil))
+	require.Equal(t, http.StatusMethodNotAllowed, rec.Code)
+	assert.Equal(t, "GET, HEAD, OPTIONS", rec.Header().Get("Allow"))
+}

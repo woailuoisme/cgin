@@ -4,7 +4,10 @@ package ready
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
+
+	"github.com/samber/lo"
 )
 
 // 常用基础设施组件名称常量，用于规范 checks 映射键名与链路日志。
@@ -16,6 +19,18 @@ const (
 	ComponentRealtime = "realtime"
 	ComponentImgproxy = "imgproxy"
 	ComponentMailer   = "mailer"
+)
+
+// 全局就绪状态与组件健康度常量。
+const (
+	StatusReady    = "ready"
+	StatusDegraded = "degraded"
+	StatusNotReady = "not ready"
+
+	CheckHealthy     = "healthy"
+	CheckDegraded    = "degraded"
+	CheckUnreachable = "unreachable"
+	CheckDisabled    = "disabled"
 )
 
 // ErrProbeNotConfigured 表示探测实例未注入或未初始化。
@@ -98,4 +113,28 @@ func PingerFunc(p Pinger) CheckFunc {
 		}
 		return p.Ping(ctx)
 	}
+}
+
+// ComponentStatus 描述单个被测组件的健康状态与元信息。
+type ComponentStatus struct {
+	Status   string `json:"status"`
+	Driver   string `json:"driver,omitempty"`
+	Latency  string `json:"latency,omitempty"`
+	Critical bool   `json:"critical"`
+}
+
+// Result 聚合全部探测组件的就绪评估结果。
+type Result struct {
+	Status string                     `json:"status"`
+	Checks map[string]ComponentStatus `json:"checks"`
+}
+
+// IsReady 返回当前服务是否具备对外承接流量的能力（ready 或 degraded 均视为就绪）。
+func (r Result) IsReady() bool {
+	return r.Status != StatusNotReady
+}
+
+// StatusCode 返回与评估结果匹配的标准 HTTP 状态码（就绪返回 200，未就绪返回 503）。
+func (r Result) StatusCode() int {
+	return lo.Ternary(r.Status == StatusNotReady, http.StatusServiceUnavailable, http.StatusOK)
 }

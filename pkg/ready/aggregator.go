@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -154,4 +155,77 @@ func (a *Aggregator) Check(ctx context.Context) (Result, map[string]error) {
 	}
 
 	return reducer.snapshot(), errs
+}
+
+type resultReducer struct {
+	mu      sync.Mutex
+	results map[string]ComponentStatus
+	overall string
+}
+
+func newResultReducer() *resultReducer {
+	return &resultReducer{
+		results: make(map[string]ComponentStatus),
+		overall: StatusReady,
+	}
+}
+
+// escalateOverall 依据检查项关键性升级整体状态。调用方必须持有 r.mu。
+func (r *resultReducer) escalateOverall(critical bool) {
+	if critical {
+		r.overall = StatusNotReady
+		return
+	}
+	if r.overall == StatusReady {
+		r.overall = StatusDegraded
+	}
+}
+
+// failureStatus 返回单项失败状态：关键项为 unreachable，非关键项为 degraded。
+func failureStatus(critical bool) string {
+	return lo.Ternary(critical, CheckUnreachable, CheckDegraded)
+}
+
+func (r *resultReducer) addChecked(check Check, err error, latency time.Duration) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	status := CheckHealthy
+	if err != nil {
+		r.escalateOverall(check.Critical)
+		status = failureStatus(check.Critical)
+	}
+
+	latencyStr := lo.Ternary(latency >= 0, latency.Round(time.Microsecond).String(), "")
+
+	r.results[check.Name] = ComponentStatus{
+		Status:   status,
+		Driver:   check.Driver,
+		Latency:  latencyStr,
+		Critical: check.Critical,
+	}
+}
+
+func (r *resultReducer) addDisabled(check Check) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.results[check.Name] = ComponentStatus{
+		Status:   CheckDisabled,
+		Driver:   check.Driver,
+		Critical: check.Critical,
+	}
+}
+
+func (r *resultReducer) snapshot() Result {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	copied := make(map[string]ComponentStatus, len(r.results))
+	maps.Copy(copied, r.results)
+
+	return Result{
+		Status: r.overall,
+		Checks: copied,
+	}
 }

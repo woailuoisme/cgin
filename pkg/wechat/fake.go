@@ -5,7 +5,8 @@ import (
 	"time"
 )
 
-// FakeClient 实现了 MiniProgramClient 接口，用于本地脱机开发与自动化测试。
+// FakeClient 直接实现 MiniProgramClient 及 AuthService / PhoneService / WxaCodeService 接口，
+// 用于本地脱机开发与自动化测试。
 type FakeClient struct {
 	appID string
 
@@ -15,12 +16,7 @@ type FakeClient struct {
 	GetUnlimitedFunc   func(ctx context.Context, params UnlimitedCodeParams) ([]byte, error)
 }
 
-var (
-	_ MiniProgramClient = (*FakeClient)(nil)
-	_ AuthService       = (*fakeAuthService)(nil)
-	_ PhoneService      = (*fakePhoneService)(nil)
-	_ WxaCodeService    = (*fakeWxaCodeService)(nil)
-)
+var _ MiniProgramClient = (*FakeClient)(nil)
 
 // NewFakeClient 构造一个具有可预测输出的 FakeClient 实例。
 func NewFakeClient(appID string) *FakeClient {
@@ -35,28 +31,10 @@ func (f *FakeClient) AppID() string {
 	return f.appID
 }
 
-// Auth 返回认证子服务。
-func (f *FakeClient) Auth() AuthService {
-	return &fakeAuthService{fake: f}
-}
-
-// Phone 返回手机号验证子服务。
-func (f *FakeClient) Phone() PhoneService {
-	return &fakePhoneService{fake: f}
-}
-
-// WxaCode 返回小程序码子服务。
-func (f *FakeClient) WxaCode() WxaCodeService {
-	return &fakeWxaCodeService{fake: f}
-}
-
-type fakeAuthService struct {
-	fake *FakeClient
-}
-
-func (s *fakeAuthService) Code2Session(ctx context.Context, code string) (*Session, error) {
-	if s.fake.Code2SessionFunc != nil {
-		return s.fake.Code2SessionFunc(ctx, code)
+// Code2Session 返回注入或默认的模拟登录会话。
+func (f *FakeClient) Code2Session(ctx context.Context, code string) (*Session, error) {
+	if f.Code2SessionFunc != nil {
+		return f.Code2SessionFunc(ctx, code)
 	}
 
 	return &Session{
@@ -66,13 +44,10 @@ func (s *fakeAuthService) Code2Session(ctx context.Context, code string) (*Sessi
 	}, nil
 }
 
-type fakePhoneService struct {
-	fake *FakeClient
-}
-
-func (s *fakePhoneService) GetPhoneNumber(ctx context.Context, code string) (*PhoneInfo, error) {
-	if s.fake.GetPhoneNumberFunc != nil {
-		return s.fake.GetPhoneNumberFunc(ctx, code)
+// GetPhoneNumber 返回注入或默认的模拟手机号信息。
+func (f *FakeClient) GetPhoneNumber(ctx context.Context, code string) (*PhoneInfo, error) {
+	if f.GetPhoneNumberFunc != nil {
+		return f.GetPhoneNumberFunc(ctx, code)
 	}
 
 	return &PhoneInfo{
@@ -80,19 +55,16 @@ func (s *fakePhoneService) GetPhoneNumber(ctx context.Context, code string) (*Ph
 		PurePhoneNumber: "13800000000",
 		CountryCode:     "86",
 		Watermark: Watermark{
-			AppID:     s.fake.appID,
+			AppID:     f.appID,
 			Timestamp: time.Now().Unix(),
 		},
 	}, nil
 }
 
-type fakeWxaCodeService struct {
-	fake *FakeClient
-}
-
-func (s *fakeWxaCodeService) GetUnlimited(ctx context.Context, params UnlimitedCodeParams) ([]byte, error) {
-	if s.fake.GetUnlimitedFunc != nil {
-		return s.fake.GetUnlimitedFunc(ctx, params)
+// GetUnlimitedCode 返回注入或默认的最小合法 JPEG 字节流。
+func (f *FakeClient) GetUnlimitedCode(ctx context.Context, params UnlimitedCodeParams) ([]byte, error) {
+	if f.GetUnlimitedFunc != nil {
+		return f.GetUnlimitedFunc(ctx, params)
 	}
 
 	// 返回合法的最小 JPEG 字节流

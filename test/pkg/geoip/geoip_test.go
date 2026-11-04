@@ -58,10 +58,6 @@ func TestNoopService(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Internal IP", loc.Country)
 
-	loc, err = svc.LookupAddr(ctx, addr)
-	require.NoError(t, err)
-	assert.Equal(t, "Internal IP", loc.Country)
-
 	// 6. Summary 与 SummaryAddr
 	assert.Equal(t, "Internal IP", svc.Summary(ctx, "127.0.0.1"))
 	assert.Equal(t, "Internal IP", svc.SummaryAddr(ctx, addr))
@@ -109,48 +105,6 @@ func TestNewServiceFallback(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, svc)
 	assert.Equal(t, "Internal IP", svc.Summary(t.Context(), "127.0.0.1"))
-}
-
-// mockProvider 用于单元测试模拟自定义物理地理定位提供者。
-type mockProvider struct {
-	called bool
-}
-
-func (m *mockProvider) SearchAddr(_ context.Context, _ netip.Addr) (*geoip.Location, error) {
-	m.called = true
-	return &geoip.Location{
-		Country:  "United States",
-		Province: "California",
-		City:     "San Francisco",
-		ISP:      "Cloudflare",
-	}, nil
-}
-
-func (m *mockProvider) Close() error {
-	return nil
-}
-
-func TestWithCustomProviderAndContext(t *testing.T) {
-	mock := &mockProvider{}
-	svc := geoip.NewWithProvider(mock)
-	require.NotNil(t, svc)
-
-	ctx := t.Context()
-	loc, err := svc.Lookup(ctx, "1.1.1.1")
-	require.NoError(t, err)
-	assert.True(t, mock.called)
-	assert.Equal(t, "United States", loc.Country)
-	assert.Equal(t, "San Francisco", loc.City)
-	assert.Equal(t, "United States·California·San Francisco·Cloudflare", svc.Summary(ctx, "1.1.1.1"))
-
-	// 局域网地址不经过底层 Provider
-	mock.called = false
-	locInternal, err := svc.Lookup(ctx, "192.168.1.1")
-	require.NoError(t, err)
-	assert.False(t, mock.called)
-	assert.Equal(t, "Internal IP", locInternal.Country)
-
-	svc.Close()
 }
 
 func BenchmarkNoopService_LookupAddr(b *testing.B) {

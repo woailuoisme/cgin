@@ -114,28 +114,23 @@ func (p *mockUserProvider) RecordLogin(_ context.Context, id string, _ string) e
 	return nil
 }
 
-// TestGuardCheckAndGuest 测试 Check 与 Guest 状态判断及 ID 提取。
-func TestGuardCheckAndGuest(t *testing.T) {
+// TestGuardCheckAndID 测试 Check 状态判断及 ID 提取。
+func TestGuardCheckAndID(t *testing.T) {
 	guard := authentication.NewGuard(newTestTokenIssuer(15*time.Minute), nil, user.ClientPolicy{}, user.Identity)
 
 	ctx := context.Background()
 	assert.False(t, guard.Check(ctx))
-	assert.True(t, guard.Guest(ctx))
 
-	// 注入身份
 	authCtx := authentication.With(ctx, authentication.Identity{
 		UserID: "usr_123",
 		Role:   "user",
 	})
 	assert.True(t, guard.Check(authCtx))
-	assert.False(t, guard.Guest(authCtx))
 
-	// 提取 ID
 	userID, err := guard.ID(authCtx)
 	require.NoError(t, err)
 	assert.Equal(t, "usr_123", userID)
 
-	// 未认证提取 ID 返回 401
 	_, err = guard.ID(ctx)
 	require.Error(t, err)
 	bizErr, ok := errs.As(err)
@@ -156,19 +151,16 @@ func TestGuardUserAndUserOrFail(t *testing.T) {
 	guard := authentication.NewGuard(newTestTokenIssuer(15*time.Minute), provider, user.ClientPolicy{}, user.Identity)
 	ctx := context.Background()
 
-	// 访客调用 User 返回 (nil, nil)
 	u, err := guard.User(ctx)
 	require.NoError(t, err)
 	assert.Nil(t, u)
 
-	// 访客调用 UserOrFail 返回 401
 	_, err = guard.UserOrFail(ctx)
 	require.Error(t, err)
 	bizErr, ok := errs.As(err)
 	require.True(t, ok)
 	assert.Equal(t, errs.CodeAuthTokenInvalid, bizErr.Code())
 
-	// 预置 WithUser
 	mockUser := &sqlc.User{
 		ID:     "usr_preset",
 		Role:   enum.RoleUser,
@@ -186,7 +178,6 @@ func TestGuardUserAndUserOrFail(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "usr_preset", userOrFail.ID)
 
-	// 仅含 Identity 时，通过 Provider 按需回源加载
 	idCtx := authentication.With(ctx, authentication.Identity{
 		UserID: "usr_db",
 		Role:   "user",
@@ -197,7 +188,7 @@ func TestGuardUserAndUserOrFail(t *testing.T) {
 	assert.Equal(t, "DB User", userFromDB.Name)
 }
 
-// TestGuardLoginAndClaims 测试 Login 签发与 Claims / Payload 提取。
+// TestGuardLoginAndClaims 测试 Login 签发与自定义声明提取。
 func TestGuardLoginAndClaims(t *testing.T) {
 	issuer := newTestTokenIssuer(15 * time.Minute)
 	provider := newMockUserProvider()
@@ -217,29 +208,15 @@ func TestGuardLoginAndClaims(t *testing.T) {
 	assert.NotEmpty(t, sess.RefreshToken)
 	assert.Positive(t, sess.ExpiresIn)
 
-	// 解析令牌并放入上下文
 	claims, err := issuer.Parse(sess.Token, authentication.TypeAccess)
 	require.NoError(t, err)
+	assert.Equal(t, "usr_test_login", claims.Subject)
 
-	ctx := authentication.With(context.Background(), authentication.Identity{
-		UserID: claims.Subject,
-		Role:   claims.Role,
-		Claims: claims,
-	})
-
-	// 提取 Claims
-	cGot, err := guard.Claims(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, "usr_test_login", cGot.Subject)
-
-	// 提取自定义 Claim
-	val, err := guard.GetClaim(ctx, "tenant_id")
-	require.NoError(t, err)
+	val, ok := claims.GetClaim("tenant_id")
+	require.True(t, ok)
 	assert.Equal(t, "tenant_abc", val)
 
-	// Payload 转换
-	payload, err := guard.Payload(ctx)
-	require.NoError(t, err)
+	payload := claims.Payload()
 	assert.Equal(t, "usr_test_login", payload["sub"])
 	assert.Equal(t, "tenant_abc", payload["tenant_id"])
 }
@@ -259,14 +236,12 @@ func TestGuardLoginWithoutRefreshToken(t *testing.T) {
 	assert.Empty(t, sess.RefreshToken, "关闭刷新令牌时不得返回 refresh token")
 	assert.Positive(t, sess.ExpiresIn)
 
-	// 空刷新令牌不可用于续期
 	_, _, err = guard.Refresh(context.Background(), "")
 	require.Error(t, err)
 	bizErr, ok := errs.As(err)
 	require.True(t, ok)
 	assert.Equal(t, errs.CodeAuthTokenInvalid, bizErr.Code())
 
-	// 默认路径仍签发双令牌
 	withRefresh, err := guard.Login(context.Background(), u)
 	require.NoError(t, err)
 	assert.NotEmpty(t, withRefresh.RefreshToken)
@@ -286,19 +261,16 @@ func TestGuardAttemptAndValidate(t *testing.T) {
 	guard := authentication.NewGuard(issuer, provider, user.ClientPolicy{}, user.Identity)
 	ctx := context.Background()
 
-	// 凭据有效时的 Attempt
 	loginUser, sess, err := guard.Attempt(ctx, authentication.Credentials{Account: "alex@example.com", Password: "correct"})
 	require.NoError(t, err)
 	assert.Equal(t, "usr_alex", loginUser.ID)
 	assert.NotEmpty(t, sess.Token)
 	assert.Contains(t, provider.loginHistory, "usr_alex")
 
-	// Validate 仅校验凭据，不签发令牌
 	validUser, err := guard.Validate(ctx, authentication.Credentials{Account: "alex@example.com", Password: "correct"})
 	require.NoError(t, err)
 	assert.Equal(t, "usr_alex", validUser.ID)
 
-	// 口令错误时的 Attempt
 	provider.validPass = false
 	_, _, err = guard.Attempt(ctx, authentication.Credentials{Account: "alex@example.com", Password: "wrong"})
 	require.Error(t, err)
@@ -309,35 +281,11 @@ func TestGuardAttemptAndValidate(t *testing.T) {
 	_, err = guard.Validate(ctx, authentication.Credentials{Account: "alex@example.com", Password: "wrong"})
 	require.Error(t, err)
 
-	// 用户不存在时的 Attempt
 	_, _, err = guard.Attempt(ctx, authentication.Credentials{Account: "notfound@example.com", Password: "any"})
 	require.Error(t, err)
 	bizErr, ok = errs.As(err)
 	require.True(t, ok)
 	assert.Equal(t, errs.CodeAuthInvalidCredentials, bizErr.Code())
-}
-
-// TestGuardLoginUsingID 测试按用户 ID 登录。
-func TestGuardLoginUsingID(t *testing.T) {
-	issuer := newTestTokenIssuer(15 * time.Minute)
-	provider := newMockUserProvider()
-	provider.users["usr_target"] = &sqlc.User{
-		ID:     "usr_target",
-		Role:   enum.RoleUser,
-		Status: enum.StatusActive,
-	}
-
-	guard := authentication.NewGuard(issuer, provider, user.ClientPolicy{}, user.Identity)
-	ctx := context.Background()
-
-	u, sess, err := guard.LoginUsingID(ctx, "usr_target")
-	require.NoError(t, err)
-	assert.Equal(t, "usr_target", u.ID)
-	assert.NotEmpty(t, sess.Token)
-
-	// 用户不存在返回 404
-	_, _, err = guard.LoginUsingID(ctx, "usr_unknown")
-	require.Error(t, err)
 }
 
 // TestGuardPolicyRejection 测试 AdminPolicy 对普通用户的拦截。
@@ -346,18 +294,16 @@ func TestGuardPolicyRejection(t *testing.T) {
 
 	normalUser := &sqlc.User{
 		ID:     "usr_normal",
-		Role:   enum.RoleUser, // 非 admin 角色
+		Role:   enum.RoleUser,
 		Status: enum.StatusActive,
 	}
 
-	// 尝试以普通用户身份登录 AdminGuard 应被策略拒绝
 	_, err := guard.Login(context.Background(), normalUser)
 	require.Error(t, err)
 	bizErr, ok := errs.As(err)
 	require.True(t, ok)
 	assert.Equal(t, errs.CodeForbidden, bizErr.Code())
 
-	// 封禁账号应被拒绝
 	bannedAdmin := &sqlc.User{
 		ID:     "usr_banned_admin",
 		Role:   enum.RoleAdmin,
@@ -368,67 +314,6 @@ func TestGuardPolicyRejection(t *testing.T) {
 	bizErr, ok = errs.As(err)
 	require.True(t, ok)
 	assert.Equal(t, errs.CodeAuthAccountBanned, bizErr.Code())
-}
-
-// TestGuardSetTokenBinding 测试显式绑定令牌后从上下文读取身份。
-func TestGuardSetTokenBinding(t *testing.T) {
-	issuer := newTestTokenIssuer(15 * time.Minute)
-	guard := authentication.NewGuard(issuer, nil, user.ClientPolicy{}, user.Identity)
-
-	u := &sqlc.User{
-		ID:     "usr_clone",
-		Role:   enum.RoleUser,
-		Status: enum.StatusActive,
-	}
-
-	sess, err := guard.Login(context.Background(), u)
-	require.NoError(t, err)
-
-	// 测试 SetToken 显式绑定
-	boundCtx, err := guard.SetToken(context.Background(), sess.Token)
-	require.NoError(t, err)
-	assert.True(t, guard.Check(boundCtx))
-	id, err := guard.ID(boundCtx)
-	require.NoError(t, err)
-	assert.Equal(t, "usr_clone", id)
-
-	claims, err := guard.Claims(boundCtx)
-	require.NoError(t, err)
-	assert.Equal(t, "usr_clone", claims.Subject)
-}
-
-// TestAuthManager 测试多守卫注册与解析。
-func TestAuthManager(t *testing.T) {
-	issuer := newTestTokenIssuer(15 * time.Minute)
-	clientGuard := authentication.NewGuard(issuer, nil, user.ClientPolicy{}, user.Identity)
-	adminGuard := authentication.NewGuard(issuer, nil, user.AdminPolicy{}, user.Identity)
-
-	mgr := authentication.NewManager()
-	mgr.Register("client", clientGuard)
-	mgr.Register("admin", adminGuard)
-	mgr.SetDefault("client")
-
-	// 默认守卫解析
-	defGuard, err := mgr.Default()
-	require.NoError(t, err)
-	assert.Equal(t, clientGuard, defGuard)
-
-	// 指定守卫解析
-	adGuard, err := mgr.Guard("admin")
-	require.NoError(t, err)
-	assert.Equal(t, adminGuard, adGuard)
-
-	// 类型安全辅助函数
-	typedGuard, ok := authentication.GetGuard[*sqlc.User](mgr, "client")
-	assert.True(t, ok)
-	assert.Equal(t, clientGuard, typedGuard)
-
-	// MustGuard
-	assert.Equal(t, adminGuard, mgr.MustGuard("admin"))
-
-	// 未知守卫
-	_, err = mgr.Guard("unknown")
-	assert.Error(t, err)
 }
 
 // TestGuardRevocationEpochAndInvalidateAll 测试用户注销纪元与批量作废会话。
@@ -448,42 +333,17 @@ func TestGuardRevocationEpochAndInvalidateAll(t *testing.T) {
 	sess, err := guard.Login(ctx, provider.users["usr_epoch"])
 	require.NoError(t, err)
 
-	// 初始状态下令牌有效
 	authCtx, claims, err := guard.AuthenticateToken(ctx, sess.Token)
 	require.NoError(t, err)
 	assert.Equal(t, "usr_epoch", claims.Subject)
 	assert.True(t, guard.Check(authCtx))
 
-	// 触发用户级注销纪元（InvalidateAll）
 	err = guard.InvalidateAll(ctx, "usr_epoch")
 	require.NoError(t, err)
 
-	// 原令牌认证被拒，返回 401 撤销错误
 	_, _, err = guard.AuthenticateToken(ctx, sess.Token)
 	require.Error(t, err)
 	bizErr, ok := errs.As(err)
-	require.True(t, ok)
-	assert.Equal(t, errs.CodeAuthTokenRevoked, bizErr.Code())
-
-	// 测试 LogoutAll 在已认证上下文中的调用
-	user2 := &sqlc.User{
-		ID:     "usr_epoch2",
-		Role:   enum.RoleUser,
-		Status: enum.StatusActive,
-	}
-	provider.users["usr_epoch2"] = user2
-	sess2, err := guard.Login(ctx, user2)
-	require.NoError(t, err)
-
-	authCtx2, _, err := guard.AuthenticateToken(ctx, sess2.Token)
-	require.NoError(t, err)
-
-	err = guard.LogoutAll(authCtx2)
-	require.NoError(t, err)
-
-	_, _, err = guard.AuthenticateToken(ctx, sess2.Token)
-	require.Error(t, err)
-	bizErr, ok = errs.As(err)
 	require.True(t, ok)
 	assert.Equal(t, errs.CodeAuthTokenRevoked, bizErr.Code())
 }
@@ -514,7 +374,6 @@ func TestGuardAuthenticateTokenPolicy(t *testing.T) {
 	adminGuard := authentication.NewGuard(issuer, provider, user.AdminPolicy{}, user.Identity)
 	ctx := context.Background()
 
-	// 1. 普通用户访问 AdminGuard 应被策略拒绝（返回 CodeForbidden）
 	normalPair, err := issuer.Issue("usr_normal", "user")
 	require.NoError(t, err)
 	_, _, err = adminGuard.AuthenticateToken(ctx, normalPair.AccessToken)
@@ -523,7 +382,6 @@ func TestGuardAuthenticateTokenPolicy(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, errs.CodeForbidden, bizErr.Code())
 
-	// 2. 封禁管理员访问 AdminGuard 应被策略拒绝（返回 CodeAuthAccountBanned）
 	bannedPair, err := issuer.Issue("usr_banned", "admin")
 	require.NoError(t, err)
 	_, _, err = adminGuard.AuthenticateToken(ctx, bannedPair.AccessToken)
@@ -532,14 +390,12 @@ func TestGuardAuthenticateTokenPolicy(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, errs.CodeAuthAccountBanned, bizErr.Code())
 
-	// 3. 正常管理员访问 AdminGuard 认证通过，且上下文缓存被填充（后续 User 0 次 DB 查询）
 	adminPair, err := issuer.Issue("usr_admin", "admin")
 	require.NoError(t, err)
 	authCtx, claims, err := adminGuard.AuthenticateToken(ctx, adminPair.AccessToken)
 	require.NoError(t, err)
 	assert.Equal(t, "usr_admin", claims.Subject)
 
-	// 从 authCtx 提取用户实体，验证为 Admin Guy 且无需再次查库
 	u, err := adminGuard.User(authCtx)
 	require.NoError(t, err)
 	assert.Equal(t, "usr_admin", u.ID)
@@ -551,7 +407,6 @@ func TestAuthManagerResolve(t *testing.T) {
 	issuer := newTestTokenIssuer(15 * time.Minute)
 	mgr := authentication.NewManager()
 
-	// 未注册任何守卫时无法解析默认守卫
 	_, err := mgr.Resolve()
 	require.ErrorIs(t, err, authentication.ErrGuardNotFound)
 
@@ -562,11 +417,9 @@ func TestAuthManagerResolve(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, custom, sg)
 
-	// Resolve 未知 Guard 返回 ErrGuardNotFound
 	_, err = mgr.Resolve("unknown")
 	require.ErrorIs(t, err, authentication.ErrGuardNotFound)
 
-	// 首个注册的守卫自动成为默认守卫
 	defSG, err := mgr.Resolve()
 	require.NoError(t, err)
 	assert.Equal(t, sg, defSG)
@@ -578,11 +431,14 @@ type testSubjectUser struct {
 	dept string
 }
 
+func (u *testSubjectUser) GetJWTCustomClaims() map[string]any {
+	return map[string]any{"dept": u.dept}
+}
+
 func testSubjectIdentity(u *testSubjectUser) authentication.Identity {
 	return authentication.Identity{
-		UserID:       u.id,
-		Role:         u.role,
-		CustomClaims: map[string]any{"dept": u.dept},
+		UserID: u.id,
+		Role:   u.role,
 	}
 }
 
@@ -593,9 +449,7 @@ func TestGuardSetUserAndUserFromContext(t *testing.T) {
 	)
 	ctx := context.Background()
 
-	// 初始状态：未认证且无实体缓存
 	assert.False(t, guard.Check(ctx))
-	assert.False(t, guard.HasUser(ctx))
 
 	manualCtx := guard.SetUser(ctx, &sqlc.User{
 		ID:     "usr_manual",
@@ -603,17 +457,16 @@ func TestGuardSetUserAndUserFromContext(t *testing.T) {
 		Status: enum.StatusActive,
 	})
 	assert.True(t, guard.Check(manualCtx))
-	assert.True(t, guard.HasUser(manualCtx))
 
 	uFromCtx, ok := authentication.UserFromContext[*sqlc.User](manualCtx)
 	assert.True(t, ok)
 	assert.Equal(t, "usr_manual", uFromCtx.ID)
 }
 
-// TestGuardJWTSubjectAutoClaims 测试实体实现 JWTSubject 契约时自动嵌入自定义声明（对应 jwt-auth）。
+// TestGuardJWTSubjectAutoClaims 测试实体实现 JWTSubject 契约时自动嵌入自定义声明。
 func TestGuardJWTSubjectAutoClaims(t *testing.T) {
 	issuer := newTestTokenIssuer(15 * time.Minute)
-	guard := authentication.NewGuard(issuer, nil, authentication.AllowAllPolicy[*testSubjectUser]{}, testSubjectIdentity)
+	guard := authentication.NewGuard(issuer, nil, nil, testSubjectIdentity)
 
 	subUser := &testSubjectUser{
 		id:   "usr_subject_1",
@@ -621,7 +474,6 @@ func TestGuardJWTSubjectAutoClaims(t *testing.T) {
 		dept: "engineering",
 	}
 
-	// 1. Login 自动提取 JWTSubject 声明
 	sess, err := guard.Login(context.Background(), subUser)
 	require.NoError(t, err)
 	assert.NotEmpty(t, sess.Token)
@@ -634,7 +486,6 @@ func TestGuardJWTSubjectAutoClaims(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, "engineering", val)
 
-	// 2. 与 WithClaims 叠加时两者合并
 	sessWithMore, err := guard.Login(context.Background(), subUser, authentication.WithClaims(map[string]any{
 		"team": "core-infra",
 	}))
@@ -660,7 +511,6 @@ func TestGuardValidateTimingAndAntiEnumeration(t *testing.T) {
 	guard := authentication.NewGuard(issuer, provider, user.ClientPolicy{RequireEmailVerification: true}, user.Identity)
 	ctx := t.Context()
 
-	// 1. 用户不存在时触发 EqualiseTiming，防止时序枚举
 	_, err := guard.Validate(ctx, authentication.Credentials{
 		Account:  "ghost@example.com",
 		Password: "GuessPass123!",
@@ -669,7 +519,6 @@ func TestGuardValidateTimingAndAntiEnumeration(t *testing.T) {
 	assert.Equal(t, 1, provider.equaliseCalls)
 	assert.Equal(t, "GuessPass123!", provider.lastEqualised)
 
-	// 2. 封禁账号在密码错误时返回 CodeAuthInvalidCredentials（而非 CodeAuthAccountBanned），防止状态枚举
 	provider.validPass = false
 	_, err = guard.Validate(ctx, authentication.Credentials{
 		Account:  "banned@example.com",
@@ -680,7 +529,6 @@ func TestGuardValidateTimingAndAntiEnumeration(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, errs.CodeAuthInvalidCredentials, bizErr.Code())
 
-	// 3. 封禁账号在密码正确时才返回 CodeAuthAccountBanned
 	provider.validPass = true
 	_, err = guard.Validate(ctx, authentication.Credentials{
 		Account:  "banned@example.com",
@@ -705,12 +553,10 @@ func TestGuardResolveUser(t *testing.T) {
 	guard := authentication.NewGuard(issuer, provider, user.AdminPolicy{}, user.Identity)
 	ctx := t.Context()
 
-	// 1. Context 未缓存时回源 Provider 并通过策略校验
 	u, err := guard.ResolveUser(ctx, "usr_resolve")
 	require.NoError(t, err)
 	assert.Equal(t, "usr_resolve", u.ID)
 
-	// 2. Context 已缓存时直接返回缓存实体（无需 Provider）
 	noProviderGuard := authentication.NewGuard(issuer, nil, user.AdminPolicy{}, user.Identity)
 	cachedCtx := noProviderGuard.SetUser(ctx, u)
 	uCached, err := noProviderGuard.ResolveUser(cachedCtx, "usr_resolve")

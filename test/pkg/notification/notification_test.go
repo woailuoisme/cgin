@@ -16,12 +16,6 @@ import (
 	"cgin/internal/notification/store"
 	"cgin/pkg/cache"
 	"cgin/pkg/notification"
-	"cgin/pkg/notification/async"
-	"cgin/pkg/notification/channel/chat"
-	"cgin/pkg/notification/channel/mail"
-	"cgin/pkg/notification/channel/realtime"
-	"cgin/pkg/notification/channel/sms"
-	"cgin/pkg/notification/contract"
 	"cgin/pkg/queue"
 )
 
@@ -59,36 +53,36 @@ type mockNotification struct {
 	content string
 }
 
-func (n *mockNotification) Via(notifiable any) []string {
+func (n *mockNotification) Via(_ any) []string {
 	return []string{"mail", "sms", "chat", "database", "realtime"}
 }
 
-func (n *mockNotification) ToMail(notifiable any) any {
-	return mail.NewMessage().
+func (n *mockNotification) ToMail(_ any) any {
+	return notification.NewMailMessage().
 		WithSubject("测试邮件").
 		WithText(n.content)
 }
 
-func (n *mockNotification) ToSMS(notifiable any) any {
-	return sms.NewMessage().
+func (n *mockNotification) ToSMS(_ any) any {
+	return notification.NewSMSMessage().
 		WithPhone("13800138000").
 		WithContent(n.content)
 }
 
-func (n *mockNotification) ToChat(notifiable any) any {
-	return chat.NewMessage().
+func (n *mockNotification) ToChat(_ any) any {
+	return notification.NewChatMessage().
 		WithText(n.content)
 }
 
-func (n *mockNotification) ToDatabase(notifiable any) map[string]any {
+func (n *mockNotification) ToDatabase(_ any) map[string]any {
 	return map[string]any{
 		"message": n.content,
 		"status":  "unread",
 	}
 }
 
-func (n *mockNotification) ToRealtime(notifiable any) realtime.Message {
-	return realtime.Message{
+func (n *mockNotification) ToRealtime(_ any) notification.RealtimeMessage {
+	return notification.RealtimeMessage{
 		Event: "notification.created",
 		Data:  map[string]any{"content": n.content},
 	}
@@ -150,35 +144,35 @@ func TestChannelFormatting(t *testing.T) {
 	require.Error(t, err)
 
 	// 2. Mail 渠道格式化
-	mailCh := mail.NewChannel(nil)
+	mailCh := notification.NewMailChannel(nil)
 	mailPayload, err := mailCh.Format(notif, user)
 	require.NoError(t, err)
-	mailMsg, ok := mailPayload.(*mail.Message)
+	mailMsg, ok := mailPayload.(*notification.MailMessage)
 	require.True(t, ok)
 	assert.Equal(t, "测试邮件", mailMsg.Subject)
 	assert.Equal(t, "系统升级维护提醒", mailMsg.Text)
 
 	// 3. SMS 渠道格式化
-	smsCh := sms.NewChannel("mock")
+	smsCh := notification.NewSMSChannel("mock")
 	smsPayload, err := smsCh.Format(notif, user)
 	require.NoError(t, err)
-	smsMsg, ok := smsPayload.(*sms.Message)
+	smsMsg, ok := smsPayload.(*notification.SMSMessage)
 	require.True(t, ok)
 	assert.Equal(t, "系统升级维护提醒", smsMsg.Content)
 
 	// 4. Chat 渠道格式化
-	chatCh := chat.NewChannel("telegram")
+	chatCh := notification.NewChatChannel("telegram")
 	chatPayload, err := chatCh.Format(notif, user)
 	require.NoError(t, err)
-	chatMsg, ok := chatPayload.(*chat.Message)
+	chatMsg, ok := chatPayload.(*notification.ChatMessage)
 	require.True(t, ok)
 	assert.Equal(t, "系统升级维护提醒", chatMsg.Text)
 
 	// 5. Realtime 渠道格式化
-	rtCh := realtime.NewChannel(nil)
+	rtCh := notification.NewRealtimeChannel(nil)
 	rtPayload, err := rtCh.Format(notif, user)
 	require.NoError(t, err)
-	rtMsg, ok := rtPayload.(*realtime.Message)
+	rtMsg, ok := rtPayload.(*notification.RealtimeMessage)
 	require.True(t, ok)
 	assert.Equal(t, "notification.created", rtMsg.Event)
 }
@@ -189,14 +183,14 @@ type mockChannel struct {
 }
 
 func (m *mockChannel) Name() string { return "test_mock" }
-func (m *mockChannel) Send(ctx context.Context, notifiable any, message any) error {
+func (m *mockChannel) Send(_ context.Context, _ any, _ any) error {
 	m.sentCount.Add(1)
 	return nil
 }
 
 type singleChannelNotification struct{}
 
-func (s *singleChannelNotification) Via(notifiable any) []string {
+func (s *singleChannelNotification) Via(_ any) []string {
 	return []string{"test_mock"}
 }
 
@@ -249,41 +243,37 @@ func TestAsyncNotificationQueue(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestNotifiableContract 验证 contract.ToNotifiable 智能适配机制。
+// TestNotifiableContract 验证 notification.ToNotifiable 智能适配机制。
 func TestNotifiableContract(t *testing.T) {
 	// 1. 已实现 Notifiable
 	u := &mockNotifiable{ID: "custom_id"}
-	adapted := contract.ToNotifiable(u)
+	adapted := notification.ToNotifiable(u)
 	require.NotNil(t, adapted)
 	assert.Equal(t, "custom_id", adapted.GetNotifiableID())
 
 	// 2. 纯标量 ID（string）自动转为 GenericNotifiable
-	strAdapted := contract.ToNotifiable("scalar-user-123")
+	strAdapted := notification.ToNotifiable("scalar-user-123")
 	require.NotNil(t, strAdapted)
 	assert.Equal(t, "scalar-user-123", strAdapted.GetNotifiableID())
-	assert.Equal(t, contract.DefaultNotifiableType, strAdapted.GetNotifiableType())
+	assert.Equal(t, notification.DefaultNotifiableType, strAdapted.GetNotifiableType())
 
 	// 3. nil 实体处理
-	nilAdapted := contract.ToNotifiable(nil)
+	nilAdapted := notification.ToNotifiable(nil)
 	assert.Nil(t, nilAdapted)
 }
 
 // TestAsyncPoolConcurrentSubmitAndClose 验证并发提交与关闭不会 panic，且不再接受新任务。
-//
-// 关闭在写锁下置位并关闭队列，提交只在读锁下发送，因此不存在
-// 「向已关闭通道发送」的窗口。竞态窗口较窄，故多轮重复以提升命中概率。
 func TestAsyncPoolConcurrentSubmitAndClose(t *testing.T) {
 	ctx := t.Context()
 
 	for range 50 {
-		pool := async.New(2, 4)
+		pool := notification.NewPool(2, 4)
 
 		var wg sync.WaitGroup
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
 			for range 100 {
-				// 队列满或池已关闭都会返回错误，调用方自行决定降级策略。
 				_ = pool.Submit(ctx, func(context.Context) {})
 			}
 		}()
@@ -293,16 +283,15 @@ func TestAsyncPoolConcurrentSubmitAndClose(t *testing.T) {
 		}()
 		wg.Wait()
 
-		require.ErrorIs(t, pool.Submit(ctx, func(context.Context) {}), async.ErrPoolClosed,
+		require.ErrorIs(t, pool.Submit(ctx, func(context.Context) {}), notification.ErrPoolClosed,
 			"关闭后不得再接受新任务")
 	}
 }
 
 // TestAsyncPoolCloseDrainsBufferedTasks 验证关闭会排空已入队任务而不是将其丢弃。
 func TestAsyncPoolCloseDrainsBufferedTasks(t *testing.T) {
-	pool := async.New(1, 8)
+	pool := notification.NewPool(1, 8)
 
-	// 先占住唯一 worker，迫使后续任务滞留在缓冲区里。
 	blocked := make(chan struct{})
 	require.NoError(t, pool.Submit(t.Context(), func(context.Context) { <-blocked }))
 
@@ -330,7 +319,7 @@ func TestAsyncPoolCloseDrainsBufferedTasks(t *testing.T) {
 
 // TestAsyncPoolReportsFullQueue 验证队列满时以错误回传，交由调用方降级。
 func TestAsyncPoolReportsFullQueue(t *testing.T) {
-	pool := async.New(1, 1)
+	pool := notification.NewPool(1, 1)
 
 	blocked := make(chan struct{})
 	defer func() {
@@ -338,8 +327,6 @@ func TestAsyncPoolReportsFullQueue(t *testing.T) {
 		pool.Close()
 	}()
 
-	// 所有任务都阻塞在同一 channel 上，因此吞吐恒为 0：持续提交必然在有限次内撞满队列。
-	// 不预设"第几次成功、第几次失败"，避免依赖 worker 抢包的时序。
 	var submitErr error
 	for range 10 {
 		submitErr = pool.Submit(t.Context(), func(context.Context) { <-blocked })
@@ -348,14 +335,14 @@ func TestAsyncPoolReportsFullQueue(t *testing.T) {
 		}
 	}
 
-	require.ErrorIs(t, submitErr, async.ErrQueueFull,
+	require.ErrorIs(t, submitErr, notification.ErrQueueFull,
 		"队列满时必须显式回传错误，而不是静默丢弃或另起 goroutine")
 }
 
 // TestAsyncPoolPreservesContextMetadata 验证异步任务仍能拿到提交方上下文的元数据，
 // 但不会被提交方请求的取消信号中断。
 func TestAsyncPoolPreservesContextMetadata(t *testing.T) {
-	pool := async.New(1, 8)
+	pool := notification.NewPool(1, 8)
 	defer pool.Close()
 
 	requestCtx, cancel := context.WithCancel(context.WithValue(t.Context(), asyncTestKey{}, "trace-123"))
@@ -367,7 +354,6 @@ func TestAsyncPoolPreservesContextMetadata(t *testing.T) {
 		assert.NoError(t, asyncCtx.Err(), "异步任务不应继承提交方的取消信号")
 	}))
 
-	// 提交后立刻取消请求上下文，任务仍须照常执行完成。
 	cancel()
 
 	select {
@@ -377,28 +363,23 @@ func TestAsyncPoolPreservesContextMetadata(t *testing.T) {
 	}
 }
 
-// asyncTestKey 是异步池测试专用的上下文键。
 type asyncTestKey struct{}
 
-// 声明自定义频控通知
 type rateLimitedMockNotif struct {
 	key string
 }
 
-func (r *rateLimitedMockNotif) Via(target any) []string { return []string{"test_mock"} }
-func (r *rateLimitedMockNotif) RateLimitKey(channel string, target any) string {
+func (r *rateLimitedMockNotif) Via(_ any) []string { return []string{"test_mock"} }
+func (r *rateLimitedMockNotif) RateLimitKey(_ string, _ any) string {
 	return r.key
 }
 
-// 声明幂等通知
 type idempotentMockNotif struct {
 	key string
 }
 
-func (d *idempotentMockNotif) Via(target any) []string { return []string{"test_mock"} }
-func (d *idempotentMockNotif) IdempotentKey(target any) string {
-	return d.key
-}
+func (d *idempotentMockNotif) Via(_ any) []string         { return []string{"test_mock"} }
+func (d *idempotentMockNotif) IdempotentKey(_ any) string { return d.key }
 
 func TestNotificationRateLimitMiddleware(t *testing.T) {
 	ctx := t.Context()
@@ -410,32 +391,26 @@ func TestNotificationRateLimitMiddleware(t *testing.T) {
 
 	mockCh := &mockChannel{}
 	notifier.Extend("test_mock", mockCh)
-
-	// 配置频控中间件：最多允许 2 次，窗口 1 分钟
 	notifier.Use(notification.RateLimitMiddleware(memStore, 2, time.Minute))
 
 	user := &mockNotifiable{ID: "user_rate_1"}
 
-	// 1. 测试常规通知根据 target ID 自动限流
 	notif := &singleChannelNotification{}
 	require.NoError(t, notifier.Send(ctx, user, notif))
 	require.NoError(t, notifier.Send(ctx, user, notif))
 
-	// 第 3 次应当被限流
 	err := notifier.Send(ctx, user, notif)
-	require.ErrorIs(t, err, contract.ErrRateLimited)
+	require.ErrorIs(t, err, notification.ErrRateLimited)
 
-	// 换一个用户应当不受影响
 	userOther := &mockNotifiable{ID: "user_rate_2"}
 	require.NoError(t, notifier.Send(ctx, userOther, notif))
 
-	// 2. 测试显式实现 RateLimitedNotification 契约
 	customNotif := &rateLimitedMockNotif{key: "custom_vip_sms"}
 	require.NoError(t, notifier.Send(ctx, user, customNotif))
 	require.NoError(t, notifier.Send(ctx, user, customNotif))
 
 	err = notifier.Send(ctx, user, customNotif)
-	require.ErrorIs(t, err, contract.ErrRateLimited)
+	require.ErrorIs(t, err, notification.ErrRateLimited)
 }
 
 func TestNotificationDeduplicateMiddleware(t *testing.T) {
@@ -448,25 +423,20 @@ func TestNotificationDeduplicateMiddleware(t *testing.T) {
 
 	mockCh := &mockChannel{}
 	notifier.Extend("test_mock", mockCh)
-
-	// 配置防重幂等中间件
 	notifier.Use(notification.DeduplicateMiddleware(memStore, time.Hour))
 
 	user := &mockNotifiable{ID: "user_dedup_1"}
 
-	// 1. 普通通知未声明 IdempotentNotification，多次发送不被拦截
 	normalNotif := &singleChannelNotification{}
 	require.NoError(t, notifier.Send(ctx, user, normalNotif))
 	require.NoError(t, notifier.Send(ctx, user, normalNotif))
 
-	// 2. 幂等通知首次发送成功，重复发送同一 key 被防重拦截
 	dedupNotif := &idempotentMockNotif{key: "msg_evt_order_1001"}
 	require.NoError(t, notifier.Send(ctx, user, dedupNotif))
 
 	err := notifier.Send(ctx, user, dedupNotif)
-	require.ErrorIs(t, err, contract.ErrDeduplicated)
+	require.ErrorIs(t, err, notification.ErrDeduplicated)
 
-	// 不同的幂等 key 应当成功
 	dedupNotif2 := &idempotentMockNotif{key: "msg_evt_order_1002"}
 	require.NoError(t, notifier.Send(ctx, user, dedupNotif2))
 }
@@ -474,13 +444,13 @@ func TestNotificationDeduplicateMiddleware(t *testing.T) {
 type panicChannel struct{}
 
 func (p *panicChannel) Name() string { return "panic_ch" }
-func (p *panicChannel) Send(ctx context.Context, notifiable any, message any) error {
+func (p *panicChannel) Send(_ context.Context, _ any, _ any) error {
 	panic("unexpected internal panic in panicChannel")
 }
 
 type panicNotification struct{}
 
-func (p *panicNotification) Via(notifiable any) []string { return []string{"panic_ch"} }
+func (p *panicNotification) Via(_ any) []string { return []string{"panic_ch"} }
 
 func TestNotificationRecoveryMiddleware(t *testing.T) {
 	ctx := t.Context()
@@ -488,8 +458,6 @@ func TestNotificationRecoveryMiddleware(t *testing.T) {
 	defer func() { _ = notifier.Close() }()
 
 	notifier.Extend("panic_ch", &panicChannel{})
-
-	// 注入 RecoveryMiddleware 捕获异常
 	notifier.Use(notification.RecoveryMiddleware())
 
 	user := &mockNotifiable{ID: "user_panic"}
@@ -513,13 +481,13 @@ type queuedNotification struct {
 	taskName string
 }
 
-func (q *queuedNotification) Via(target any) []string { return []string{"test_mock"} }
-func (q *queuedNotification) ShouldQueue() bool       { return true }
-func (q *queuedNotification) QueueName() string       { return "priority_high" }
-func (q *queuedNotification) MaxRetries() int         { return 5 }
-func (q *queuedNotification) Delay() time.Duration    { return 15 * time.Second }
-func (q *queuedNotification) TaskName() string        { return q.taskName }
-func (q *queuedNotification) Handle(ctx context.Context) error {
+func (q *queuedNotification) Via(_ any) []string   { return []string{"test_mock"} }
+func (q *queuedNotification) ShouldQueue() bool    { return true }
+func (q *queuedNotification) QueueName() string    { return "priority_high" }
+func (q *queuedNotification) MaxRetries() int      { return 5 }
+func (q *queuedNotification) Delay() time.Duration { return 15 * time.Second }
+func (q *queuedNotification) TaskName() string     { return q.taskName }
+func (q *queuedNotification) Handle(_ context.Context) error {
 	return nil
 }
 

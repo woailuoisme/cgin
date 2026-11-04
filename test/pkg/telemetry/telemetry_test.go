@@ -18,13 +18,16 @@ func TestTelemetry_Disabled(t *testing.T) {
 		Enabled: false,
 	}
 
-	shutdown, err := telemetry.Init(context.Background(), cfg, "cgin", "test", "v1.0.0")
+	tp, err := telemetry.New(context.Background(), cfg, "test", "v1.0.0")
 	require.NoError(t, err)
-	require.NotNil(t, shutdown)
-
+	require.NotNil(t, tp)
+	assert.False(t, tp.Enabled())
 	assert.False(t, telemetry.IsInitialized())
 
-	err = shutdown(context.Background())
+	hook := tp.ZerologHook("cgin", zerolog.InfoLevel)
+	assert.Nil(t, hook)
+
+	err = tp.Shutdown(context.Background())
 	require.NoError(t, err)
 
 	tr := telemetry.Tracer("test")
@@ -32,42 +35,47 @@ func TestTelemetry_Disabled(t *testing.T) {
 
 	meter := telemetry.Meter("test")
 	assert.NotNil(t, meter)
-
-	hook := telemetry.NewZerologHook("cgin", zerolog.InfoLevel)
-	assert.Nil(t, hook)
 }
 
-func TestTelemetryConfig_Helpers(t *testing.T) {
-	t.Run("EffectiveServiceName", func(t *testing.T) {
+func TestTelemetryConfig_NormalizeAndValidate(t *testing.T) {
+	t.Run("NormalizeServiceName", func(t *testing.T) {
 		cfg := config.TelemetryConfig{ServiceName: "custom-service"}
-		assert.Equal(t, "custom-service", cfg.EffectiveServiceName("fallback"))
+		cfg.Normalize("fallback")
+		assert.Equal(t, "custom-service", cfg.ServiceName)
 
 		emptyCfg := config.TelemetryConfig{}
-		assert.Equal(t, "fallback", emptyCfg.EffectiveServiceName("fallback"))
-		assert.Equal(t, "cgin", emptyCfg.EffectiveServiceName(""))
+		emptyCfg.Normalize("fallback")
+		assert.Equal(t, "fallback", emptyCfg.ServiceName)
+
+		defaultCfg := config.TelemetryConfig{}
+		defaultCfg.Normalize("")
+		assert.Equal(t, "cgin", defaultCfg.ServiceName)
 	})
 
-	t.Run("EffectiveEndpoint", func(t *testing.T) {
+	t.Run("NormalizeEndpoint", func(t *testing.T) {
 		cfg := config.TelemetryConfig{Endpoint: "collector:4317"}
-		assert.Equal(t, "collector:4317", cfg.EffectiveEndpoint())
+		cfg.Normalize("")
+		assert.Equal(t, "collector:4317", cfg.Endpoint)
 
 		emptyCfg := config.TelemetryConfig{}
-		assert.Equal(t, "http://127.0.0.1:4317", emptyCfg.EffectiveEndpoint())
+		emptyCfg.Normalize("")
+		assert.Equal(t, "http://127.0.0.1:4317", emptyCfg.Endpoint)
 	})
 
-	t.Run("EffectiveSampleRatio", func(t *testing.T) {
-		cfg := config.TelemetryConfig{SampleRatio: 0.5}
-		assert.InDelta(t, 0.5, cfg.EffectiveSampleRatio(), 0.0001)
+	t.Run("ValidateSampleRatio", func(t *testing.T) {
+		cfg := config.TelemetryConfig{Enabled: true, SampleRatio: 0.5}
+		require.NoError(t, cfg.Validate())
 
-		negCfg := config.TelemetryConfig{SampleRatio: -0.1}
-		assert.InDelta(t, 0.0, negCfg.EffectiveSampleRatio(), 0.0001)
+		negCfg := config.TelemetryConfig{Enabled: true, SampleRatio: -0.1}
+		require.Error(t, negCfg.Validate())
 
-		overCfg := config.TelemetryConfig{SampleRatio: 1.5}
-		assert.InDelta(t, 1.0, overCfg.EffectiveSampleRatio(), 0.0001)
+		overCfg := config.TelemetryConfig{Enabled: true, SampleRatio: 1.5}
+		require.Error(t, overCfg.Validate())
 	})
 
 	t.Run("MetricInterval", func(t *testing.T) {
 		cfg := config.TelemetryConfig{MetricInterval: 30 * time.Second}
+		cfg.Normalize("")
 		assert.Equal(t, 30*time.Second, cfg.MetricInterval)
 	})
 }

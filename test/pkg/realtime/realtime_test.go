@@ -143,7 +143,7 @@ func TestManagerPublish(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := &config.CentrifugoConfig{
+	cfg := &config.RealtimeConfig{
 		Enabled: true,
 		URL:     server.URL + "/api",
 		APIKey:  "test-api-key",
@@ -180,7 +180,7 @@ func TestManagerPublish(t *testing.T) {
 
 // TestManagerDisabled 验证未启用时的降级行为：发布静默跳过、探针显式报错。
 func TestManagerDisabled(t *testing.T) {
-	gw := realtime.NewManager(&config.CentrifugoConfig{Enabled: false}, nil)
+	gw := realtime.NewManager(&config.RealtimeConfig{Enabled: false}, nil)
 
 	assert.False(t, gw.Enabled())
 	require.NoError(t, gw.DispatchContext(t.Context(), "ch", "event", nil))

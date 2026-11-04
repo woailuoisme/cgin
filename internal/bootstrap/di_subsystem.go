@@ -6,7 +6,6 @@ import (
 
 	"cgin/internal/config"
 	"cgin/internal/database"
-	"cgin/internal/dto"
 	"cgin/internal/listener"
 	"cgin/internal/notification/store"
 	"cgin/internal/realtime"
@@ -100,7 +99,6 @@ var SubsystemPackage = do.Package(
 		disk := do.MustInvoke[storage.Disk](i)
 		engine := media.NewEngine(cfg.Media, cfg.Storage, disk)
 		media.SetDefaultEngine(engine)
-		dto.SetDefaultEngine(engine)
 		return engine, nil
 	}),
 
@@ -108,6 +106,6 @@ var SubsystemPackage = do.Package(
 	do.Lazy(func(i do.Injector) (*payment.Manager, error) {
 		cfg := do.MustInvoke[*config.Config](i)
 		log := do.MustInvoke[*zerolog.Logger](i)
-		return payment.NewManager(cfg, log)
+		return payment.NewManager(cfg.Payment, log)
 	}),
 )

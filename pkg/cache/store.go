@@ -1,4 +1,4 @@
-// Package cache 提供高性能缓存存储、双级自失效缓存与分布式互斥锁支持。
+// Package cache 提供高性能缓存存储、泛型防击穿/防穿透辅助与分布式互斥锁契约。
 package cache
 
 import (
@@ -24,13 +24,17 @@ const (
 var (
 	// ErrNotFound 表示键不存在。
 	ErrNotFound = errors.New("cache: key not found")
+	// ErrNotLocked 表示在非阻塞模式下尝试获取锁失败（已被其它协程/节点抢占）。
+	ErrNotLocked = errors.New("cache: not locked")
+	// ErrLockerClosed 表示锁管理器已关闭，无法继续加锁。
+	ErrLockerClosed = errors.New("cache: locker closed")
 	// errClosed 表示缓存存储已关闭。
 	errClosed = errors.New("cache: store is closed")
 )
 
-// Store 统一缓存存储契约接口（支持分布式、纯内存与双级缓存实现，符合 ISP 与 DIP 原则）。
+// Store 统一缓存存储契约接口（支持分布式 Valkey/Redis 与纯内存实现）。
 type Store interface {
-	// Driver 返回当前底层驱动标识（例如 "valkey", "memory", "tiered"）。
+	// Driver 返回当前底层驱动标识（例如 "valkey", "memory"）。
 	Driver() string
 	// Ping 探测缓存服务连通性。
 	Ping(ctx context.Context) error
@@ -38,7 +42,7 @@ type Store interface {
 	Get(ctx context.Context, key string) (string, error)
 	// Set 写入一个带过期时间的键。ttl 必须为正数。
 	Set(ctx context.Context, key, value string, ttl time.Duration) error
-	// SetNX 仅在键不存在时写入，返回是否写入成功（用于分布式抢占/互斥锁）。
+	// SetNX 仅在键不存在时写入，返回是否写入成功（用于分布式抢占/幂等控制）。
 	SetNX(ctx context.Context, key, value string, ttl time.Duration) (bool, error)
 	// Exists 判断键是否存在。
 	Exists(ctx context.Context, key string) (bool, error)
@@ -48,21 +52,49 @@ type Store interface {
 	TTL(ctx context.Context, key string) (time.Duration, error)
 	// Delete 删除若干键，返回实际删除数量。
 	Delete(ctx context.Context, keys ...string) (int64, error)
-	// DeleteIfMatch 仅当键的值与 expected 匹配时原子删除，常用于安全释放分布式互斥锁。
-	DeleteIfMatch(ctx context.Context, key, expected string) (bool, error)
 	// Remember 防击穿回源读取或计算写入。
 	Remember(ctx context.Context, key string, ttl time.Duration, load func(context.Context) (string, error)) (string, error)
 	// Close 释放连接或清理资源。
 	Close() error
 }
 
-// LockProvider 声明缓存存储可选暴露的互斥锁管理器能力（遵循 ISP 接口隔离原则）。
+// Locker 统一互斥锁契约接口（支持分布式 rueidislock 与纯内存实现）。
+type Locker interface {
+	// Lock 阻塞等待并获取指定名称的互斥锁，成功时返回派生的锁生命周期上下文与释放函数。
+	Lock(ctx context.Context, name string) (context.Context, context.CancelFunc, error)
+	// TryLock 尝试非阻塞获取指定名称的互斥锁，若已被占用则立即返回 ErrNotLocked。
+	TryLock(ctx context.Context, name string) (context.Context, context.CancelFunc, error)
+	// Close 释放锁管理器关联的资源或后台连接。
+	Close() error
+}
+
+// LockProvider 声明缓存存储可选暴露的互斥锁管理器能力。
 type LockProvider interface {
 	// Locker 返回与当前存储后端关联的互斥锁管理器。
 	Locker() Locker
 }
 
-// Key 拼接带应用命名空间的缓存键（例如 Key("jwt", "revoked", jti) -> cgin:jwt:revoked:<jti>）。
+// DoWithLock 在阻塞获取互斥锁成功后执行业务函数，并在退出时自动安全释放锁。
+func DoWithLock(ctx context.Context, locker Locker, name string, fn func(ctx context.Context) error) error {
+	lockedCtx, cancel, err := locker.Lock(ctx, name)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+	return fn(lockedCtx)
+}
+
+// DoTryLock 在非阻塞抢占互斥锁成功后执行业务函数，并在退出时自动安全释放锁；若未抢到锁返回 ErrNotLocked。
+func DoTryLock(ctx context.Context, locker Locker, name string, fn func(ctx context.Context) error) error {
+	lockedCtx, cancel, err := locker.TryLock(ctx, name)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+	return fn(lockedCtx)
+}
+
+// Key 拼接带应用命名空间的缓存键（例如 Key("jwt", "revoked", jti) -> cfiber:jwt:revoked:<jti>）。
 func Key(parts ...string) string {
 	if len(parts) == 0 {
 		return namespace
@@ -97,7 +129,6 @@ func SetJSON[T any](ctx context.Context, s Store, key string, value T, ttl time.
 }
 
 // RememberJSON 实现泛型对象的 cache-aside 模式，结合 singleflight 防止高并发缓存击穿。
-// 对实际执行回源 load 的协程直接返回原对象，消除冗余的二次 json.Unmarshal 开销。
 func RememberJSON[T any](
 	ctx context.Context,
 	s Store,
@@ -109,7 +140,6 @@ func RememberJSON[T any](
 }
 
 // RememberJSONAllowMissing 在 RememberJSON 基础上增加防缓存穿透（Anti-Penetration）负缓存支持。
-// 当回源函数返回 ErrNotFound 且 missingTTL > 0 时，自动写入短 TTL 的负缓存哨兵，拦截针对不存在键的高频恶意查询。
 func RememberJSONAllowMissing[T any](
 	ctx context.Context,
 	s Store,
@@ -165,8 +195,7 @@ func RememberJSONAllowMissing[T any](
 	return result, nil
 }
 
-// JitterTTL 在基础 TTL 上叠加 [-jitterRatio, +jitterRatio] 范围的随机抖动，防止大批量键同时过期引发缓存雪崩。
-// jitterRatio 合法区间为 (0, 0.9]，超出范围时会被安全截断或原样返回 ttl。
+// JitterTTL 在基础 TTL 上叠加 [-jitterRatio, +jitterRatio] 范围的随机抖动，防止缓存雪崩。
 func JitterTTL(ttl time.Duration, jitterRatio float64) time.Duration {
 	if ttl <= 0 || jitterRatio <= 0 {
 		return ttl

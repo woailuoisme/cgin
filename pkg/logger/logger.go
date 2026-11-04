@@ -467,13 +467,13 @@ func NewWithOptions(opts ...Option) *zerolog.Logger {
 }
 
 // New 按配置构建日志器，内部转发至 NewWithOptions。
-func New(cfg *config.Config, opts ...Option) *zerolog.Logger {
+func New(cfg config.LogConfig, opts ...Option) *zerolog.Logger {
 	allOpts := make([]Option, 0, 4+len(opts))
 	allOpts = append(allOpts,
-		WithLevel(cfg.Log.Level),
-		WithChannel(cfg.Log.Channel),
-		WithServiceName(cfg.App.Name),
-		func(o *Options) { o.Env = cfg.App.Env },
+		WithLevel(cfg.Level),
+		WithChannel(cfg.Channel),
+		WithServiceName(cfg.ServiceName),
+		func(o *Options) { o.Env = cfg.Env },
 	)
 	allOpts = append(allOpts, opts...)
 	return NewWithOptions(allOpts...)

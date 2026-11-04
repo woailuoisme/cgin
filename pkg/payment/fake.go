@@ -9,7 +9,6 @@ import (
 	"github.com/samber/lo"
 
 	"cgin/pkg/errs"
-	"cgin/pkg/payment/enum"
 )
 
 // Fake 注入操作名常量，用于按操作注入故障。
@@ -32,7 +31,7 @@ const (
 type FakeProvider struct {
 	mu sync.RWMutex
 
-	channel     enum.PaymentChannel
+	channel     Channel
 	application string
 
 	instruction   *Instruction
@@ -52,7 +51,7 @@ type FakeProvider struct {
 var _ FullProvider = (*FakeProvider)(nil)
 
 // NewFakeProvider 创建绑定到指定渠道与应用的 Fake Provider。
-func NewFakeProvider(channel enum.PaymentChannel, application string) *FakeProvider {
+func NewFakeProvider(channel Channel, application string) *FakeProvider {
 	return &FakeProvider{
 		channel:     channel,
 		application: application,
@@ -63,14 +62,14 @@ func NewFakeProvider(channel enum.PaymentChannel, application string) *FakeProvi
 }
 
 // Channel 返回 Fake 绑定的支付渠道。
-func (f *FakeProvider) Channel() enum.PaymentChannel { return f.channel }
+func (f *FakeProvider) Channel() Channel { return f.channel }
 
 // Application 返回 Fake 绑定的应用标识。
 func (f *FakeProvider) Application() string { return f.application }
 
 // Scenes 声明 Fake 支持指定渠道下的全部合法场景。
-func (f *FakeProvider) Scenes() []enum.PaymentScene {
-	return lo.Filter(enum.PaymentSceneValues(), func(scene enum.PaymentScene, _ int) bool {
+func (f *FakeProvider) Scenes() []Scene {
+	return lo.Filter(SceneValues(), func(scene Scene, _ int) bool {
 		return scene.Channel() == f.channel
 	})
 }
@@ -102,8 +101,8 @@ func (f *FakeProvider) MarkPaid(outTradeNo string, amount int64) {
 	f.SetPaymentResult(outTradeNo, &PaymentResult{
 		OutTradeNo:     outTradeNo,
 		ChannelTradeNo: "fake-trade-" + outTradeNo,
-		Status:         enum.PaymentStatusSucceeded,
-		ChannelState:   string(enum.PaymentStatusSucceeded),
+		Status:         StatusSucceeded,
+		ChannelState:   string(StatusSucceeded),
 		PaidAmount:     amount,
 		PaidAt:         &paidAt,
 	})
@@ -115,8 +114,8 @@ func (f *FakeProvider) MarkRefundSucceeded(outRefundNo string, amount int64) {
 	f.SetRefundResult(outRefundNo, &RefundResult{
 		OutRefundNo:     outRefundNo,
 		ChannelRefundNo: "fake-refund-" + outRefundNo,
-		Status:          enum.PaymentRefundStatusSucceeded,
-		ChannelState:    string(enum.PaymentRefundStatusSucceeded),
+		Status:          RefundStatusSucceeded,
+		ChannelState:    string(RefundStatusSucceeded),
 		RefundAmount:    amount,
 		RefundedAt:      &refundedAt,
 	})
@@ -246,7 +245,7 @@ func (f *FakeProvider) Create(_ context.Context, req CreateRequest) (*Instructio
 
 	return &Instruction{
 		Scene:  req.Scene,
-		Action: enum.PaymentInstructionQRCode,
+		Action: InstructionQRCode,
 		Value:  "fake://pay/" + req.OutTradeNo,
 	}, nil
 }
@@ -268,8 +267,8 @@ func (f *FakeProvider) Query(_ context.Context, req QueryRequest) (*PaymentResul
 
 	return &PaymentResult{
 		OutTradeNo:   req.OutTradeNo,
-		Status:       enum.PaymentStatusPending,
-		ChannelState: string(enum.PaymentStatusPending),
+		Status:       StatusPending,
+		ChannelState: string(StatusPending),
 	}, nil
 }
 
@@ -304,8 +303,8 @@ func (f *FakeProvider) Refund(_ context.Context, req RefundRequest) (*RefundResu
 	return &RefundResult{
 		OutRefundNo:  req.OutRefundNo,
 		OutTradeNo:   req.OutTradeNo,
-		Status:       enum.PaymentRefundStatusPending,
-		ChannelState: string(enum.PaymentRefundStatusPending),
+		Status:       RefundStatusPending,
+		ChannelState: string(RefundStatusPending),
 		RefundAmount: req.EffectiveRefundAmount(),
 	}, nil
 }
@@ -327,8 +326,8 @@ func (f *FakeProvider) QueryRefund(_ context.Context, req QueryRefundRequest) (*
 
 	return &RefundResult{
 		OutRefundNo:  req.OutRefundNo,
-		Status:       enum.PaymentRefundStatusPending,
-		ChannelState: string(enum.PaymentRefundStatusPending),
+		Status:       RefundStatusPending,
+		ChannelState: string(RefundStatusPending),
 	}, nil
 }
 

@@ -7,13 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+
+	"cgin/internal/config"
 )
 
 // ErrDisabled 表示全文搜索未启用或未配置服务地址。
 var ErrDisabled = errors.New("search engine is disabled or not configured")
 
 // New 根据配置智能装配具体的底层驱动客户端（支持 meilisearch、noop 及注册的第三方驱动）。
-func New(cfg Config) (Client, error) {
+func New(cfg config.SearchConfig) (Client, error) {
 	return createDriver(cfg)
 }
 

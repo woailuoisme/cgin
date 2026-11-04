@@ -26,18 +26,6 @@ import (
 	"cgin/pkg/validator"
 )
 
-// telemetryResource 包装遥测优雅停机回调，满足 do.ShutdownerWithContextAndError 契约。
-type telemetryResource struct {
-	shutdown func(context.Context) error
-}
-
-func (t *telemetryResource) Shutdown(ctx context.Context) error {
-	if t != nil && t.shutdown != nil {
-		return t.shutdown(ctx)
-	}
-	return nil
-}
-
 // InfraPackage 声明系统基础设施层核心组件（配置、日志、连接池、缓存、邮件、存储等）。
 var InfraPackage = do.Package(
 	// 1. 强类型环境配置
@@ -51,27 +39,27 @@ var InfraPackage = do.Package(
 		return cfg, nil
 	}),
 
-	// 2. 遥测提供商
-	do.Lazy(func(i do.Injector) (*telemetryResource, error) {
+	// 2. 遥测提供商（原生实现 Shutdown(context.Context) error 契约）
+	do.Lazy(func(i do.Injector) (*telemetry.Provider, error) {
 		cfg := do.MustInvoke[*config.Config](i)
-		shutdown, err := telemetry.Init(context.Background(), cfg.Telemetry, cfg.App.Name, cfg.App.Env, "")
+		tp, err := telemetry.New(context.Background(), cfg.Telemetry, cfg.App.Env, "")
 		if err != nil {
 			return nil, fmt.Errorf("init telemetry failed: %w", err)
 		}
-		return &telemetryResource{shutdown: shutdown}, nil
+		return tp, nil
 	}),
 
 	// 3. Zerolog 结构化日志记录器
 	do.Lazy(func(i do.Injector) (*zerolog.Logger, error) {
 		cfg := do.MustInvoke[*config.Config](i)
-		_ = do.MustInvoke[*telemetryResource](i)
+		tp := do.MustInvoke[*telemetry.Provider](i)
 
 		var loggerOpts []logger.Option
-		if hook := telemetry.NewZerologHook(cfg.Telemetry.EffectiveServiceName(cfg.App.Name), logger.ParseLevel(cfg.Log.Level)); hook != nil {
+		if hook := tp.ZerologHook(cfg.Telemetry.ServiceName, logger.ParseLevel(cfg.Log.Level)); hook != nil {
 			loggerOpts = append(loggerOpts, logger.WithHook(hook))
 		}
 
-		return logger.New(cfg, loggerOpts...), nil
+		return logger.New(cfg.Log, loggerOpts...), nil
 	}),
 
 	// 4. PostgreSQL 数据连接入口与连接池
@@ -133,7 +121,7 @@ var InfraPackage = do.Package(
 	// 9. 多语言翻译门面
 	do.Lazy(func(i do.Injector) (i18n.Translator, error) {
 		cfg := do.MustInvoke[*config.Config](i)
-		return i18n.New(cfg)
+		return i18n.New(cfg.I18n)
 	}),
 
 	// 10. 国际化参数校验器

@@ -539,7 +539,6 @@ func TestDomainCategorization(t *testing.T) {
 		{errs.CodeAuthInvalidCredentials, "auth"},
 		{errs.CodeExcelOpenError, "excel"},
 		{errs.CodeEmptySheets, "excel"},
-		{errs.CodeCSVWriteError, "excel"},
 		{errs.CodeNotificationRateLimited, "notification"},
 		{errs.CodeMailMissingRecipient, "mail"},
 		{errs.CodeSMSMissingPhone, "sms"},

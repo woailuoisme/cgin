@@ -2,12 +2,11 @@
 package telemetry
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -32,32 +31,36 @@ import (
 
 const defaultShutdownTimeout = 5 * time.Second
 
-var (
-	mu          sync.RWMutex
-	initialized bool
-	tracerProv  *sdktrace.TracerProvider
-	meterProv   *sdkmetric.MeterProvider
-	loggerProv  *sdklog.LoggerProvider
-)
+// initialized 记录全局 OpenTelemetry 基础设施是否已激活，支持中间件零锁快速判定。
+var initialized atomic.Bool
 
-// Init 依据配置初始化 OpenTelemetry TracerProvider、MeterProvider 与运行时指标采集。
-// 若未开启（cfg.Enabled 为 false），则保持静默未初始化状态，返回空操作清理函数。
-func Init(
+// Provider 持有 OpenTelemetry 链路追踪、指标度量与日志导出实例，
+// 原生实现 Shutdown(context.Context) error 契约供 DI 容器直接托管生命周期。
+type Provider struct {
+	enabled    atomic.Bool
+	tracerProv *sdktrace.TracerProvider
+	meterProv  *sdkmetric.MeterProvider
+	loggerProv *sdklog.LoggerProvider
+}
+
+// New 依据配置构建并初始化 OpenTelemetry Provider（TracerProvider、MeterProvider、LoggerProvider 与运行时指标采集）。
+// 若未开启（cfg.Enabled 为 false），返回静默的空操作 Provider 实例。
+func New(
 	ctx context.Context,
 	cfg config.TelemetryConfig,
-	appName, appEnv, appVersion string,
-) (func(context.Context) error, error) {
+	appEnv, appVersion string,
+) (*Provider, error) {
 	if !cfg.Enabled {
-		return func(context.Context) error { return nil }, nil
+		return &Provider{}, nil
 	}
 
-	serviceName := cfg.EffectiveServiceName(appName)
-	endpoint, insecure := parseEndpoint(cfg.EffectiveEndpoint(), cfg.Insecure)
+	cfg.Normalize("")
+	endpoint, insecure := parseEndpoint(cfg.Endpoint, cfg.Insecure)
 
 	// 1. 构建标准语义资源描述 (Resource)
 	attrs := []resource.Option{
 		resource.WithAttributes(
-			semconv.ServiceNameKey.String(serviceName),
+			semconv.ServiceNameKey.String(cfg.ServiceName),
 			semconv.DeploymentEnvironmentKey.String(appEnv),
 		),
 		resource.WithProcess(),
@@ -86,10 +89,8 @@ func Init(
 		return nil, fmt.Errorf("telemetry: init trace exporter failed: %w", err)
 	}
 
-	sampler := resolveSampler(cfg.EffectiveSampleRatio())
-
 	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithSampler(sampler),
+		sdktrace.WithSampler(resolveSampler(cfg.SampleRatio)),
 		sdktrace.WithBatcher(traceExporter),
 		sdktrace.WithResource(res),
 	)
@@ -115,8 +116,7 @@ func Init(
 		return nil, fmt.Errorf("telemetry: init metric exporter failed: %w", err)
 	}
 
-	interval := cmp.Or(cfg.MetricInterval, 15*time.Second)
-
+	interval := cfg.MetricInterval
 	reader := sdkmetric.NewPeriodicReader(metricExporter, sdkmetric.WithInterval(interval))
 	mp := sdkmetric.NewMeterProvider(
 		sdkmetric.WithReader(reader),
@@ -149,21 +149,70 @@ func Init(
 		return nil, fmt.Errorf("telemetry: init log exporter failed: %w", err)
 	}
 
-	processor := sdklog.NewBatchProcessor(logExporter)
 	lp := sdklog.NewLoggerProvider(
-		sdklog.WithProcessor(processor),
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
 		sdklog.WithResource(res),
 	)
 	otel.SetLoggerProvider(lp)
 
-	mu.Lock()
-	defer mu.Unlock()
-	initialized = true
-	tracerProv = tp
-	meterProv = mp
-	loggerProv = lp
+	p := &Provider{
+		tracerProv: tp,
+		meterProv:  mp,
+		loggerProv: lp,
+	}
+	p.enabled.Store(true)
+	initialized.Store(true)
+	return p, nil
+}
 
-	return Shutdown, nil
+// Enabled 返回当前 Provider 是否已启用遥测采集。
+func (p *Provider) Enabled() bool {
+	return p != nil && p.enabled.Load()
+}
+
+// ZerologHook 构建将 Zerolog 结构化日志桥接导出至 OpenTelemetry 的 zerolog.Hook。
+// 若未开启 Telemetry，返回 nil。
+func (p *Provider) ZerologHook(serviceName string, minLevel zerolog.Level) zerolog.Hook {
+	if !p.Enabled() || p.loggerProv == nil {
+		return nil
+	}
+	return &zerologHook{
+		logger:   p.loggerProv.Logger(serviceName),
+		minLevel: minLevel,
+	}
+}
+
+// Shutdown 优雅停机并冲刷所有待发送的链路追踪、指标度量与日志批处理缓冲区。
+func (p *Provider) Shutdown(ctx context.Context) error {
+	if p == nil || !p.enabled.CompareAndSwap(true, false) {
+		return nil
+	}
+	initialized.Store(false)
+
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), defaultShutdownTimeout)
+		defer cancel()
+	}
+
+	var errs []error
+	if p.tracerProv != nil {
+		if err := p.tracerProv.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("shutdown tracer provider: %w", err))
+		}
+	}
+	if p.meterProv != nil {
+		if err := p.meterProv.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("shutdown meter provider: %w", err))
+		}
+	}
+	if p.loggerProv != nil {
+		if err := p.loggerProv.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("shutdown logger provider: %w", err))
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 // parseEndpoint 解析 OTLP 目标端点地址，去除协议前缀并推导是否使用明文传输。
@@ -187,9 +236,7 @@ func resolveSampler(ratio float64) sdktrace.Sampler {
 
 // IsInitialized 检查 OpenTelemetry 基础设施是否已成功加载并就绪。
 func IsInitialized() bool {
-	mu.RLock()
-	defer mu.RUnlock()
-	return initialized
+	return initialized.Load()
 }
 
 // Tracer 返回指定命名空间的全局 Tracer。若未就绪，返回默认 Noop/全局兜底 Tracer。
@@ -202,48 +249,6 @@ func Meter(name string) metric.Meter {
 	return otel.GetMeterProvider().Meter(name)
 }
 
-// Shutdown 优雅停机并冲刷所有待发送的链路追踪、指标度量与日志批处理缓冲区。
-func Shutdown(ctx context.Context) error {
-	mu.Lock()
-	if !initialized {
-		mu.Unlock()
-		return nil
-	}
-	tp := tracerProv
-	mp := meterProv
-	lp := loggerProv
-	tracerProv = nil
-	meterProv = nil
-	loggerProv = nil
-	initialized = false
-	mu.Unlock()
-
-	if ctx == nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), defaultShutdownTimeout)
-		defer cancel()
-	}
-
-	var errs []error
-	if tp != nil {
-		if err := tp.Shutdown(ctx); err != nil {
-			errs = append(errs, fmt.Errorf("shutdown tracer provider: %w", err))
-		}
-	}
-	if mp != nil {
-		if err := mp.Shutdown(ctx); err != nil {
-			errs = append(errs, fmt.Errorf("shutdown meter provider: %w", err))
-		}
-	}
-	if lp != nil {
-		if err := lp.Shutdown(ctx); err != nil {
-			errs = append(errs, fmt.Errorf("shutdown logger provider: %w", err))
-		}
-	}
-
-	return errors.Join(errs...)
-}
-
 // zerologHook 将 Zerolog 事件桥接导出至 OpenTelemetry 日志记录器。
 type zerologHook struct {
 	logger   otellog.Logger
@@ -252,7 +257,7 @@ type zerologHook struct {
 
 var _ zerolog.Hook = (*zerologHook)(nil)
 
-func (h *zerologHook) Run(e *zerolog.Event, level zerolog.Level, msg string) {
+func (h *zerologHook) Run(_ *zerolog.Event, level zerolog.Level, msg string) {
 	if level < h.minLevel || level == zerolog.NoLevel {
 		return
 	}
@@ -282,20 +287,5 @@ func toOTelSeverity(lvl zerolog.Level) otellog.Severity {
 		return otellog.SeverityFatal2
 	default:
 		return otellog.SeverityUndefined
-	}
-}
-
-// NewZerologHook 构建将 Zerolog 结构化日志桥接导出至 OpenTelemetry 的 zerolog.Hook。
-// 若未开启 Telemetry 或未就绪，返回 nil。
-func NewZerologHook(serviceName string, minLevel zerolog.Level) zerolog.Hook {
-	mu.RLock()
-	defer mu.RUnlock()
-	if !initialized || loggerProv == nil {
-		return nil
-	}
-	otelLogger := loggerProv.Logger(serviceName)
-	return &zerologHook{
-		logger:   otelLogger,
-		minLevel: minLevel,
 	}
 }

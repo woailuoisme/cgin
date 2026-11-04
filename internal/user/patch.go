@@ -1,14 +1,37 @@
 package user
 
 import (
+	"cmp"
 	"strings"
 	"time"
 
 	"github.com/aarondl/opt/omitnull"
+	govalidator "github.com/go-playground/validator/v10"
 
 	"cgin/internal/database/sqlc"
 	"cgin/internal/enum"
+	"cgin/pkg/validator"
 )
+
+// sortColumns 是允许排序的字段白名单。
+var sortColumns = map[string]bool{
+	"createdAt":   true,
+	"updatedAt":   true,
+	"email":       true,
+	"name":        true,
+	"lastLoginAt": true,
+}
+
+// defaultSort 保证分页遍历的确定性顺序，对应 api.md 6.2。
+const defaultSort = "-createdAt"
+
+// likeReplacer 预编译 SQL LIKE 通配符转义替换器。
+var likeReplacer = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// ValidationOptions 返回用户模块贡献给校验器的规则。
+func ValidationOptions() []validator.Option {
+	return []validator.Option{validator.WithRule("usersort", ValidateSort, "oneof")}
+}
 
 // FieldSet 是客户端与后台管理共用的可更新档案字段集合。
 type FieldSet struct {
@@ -20,9 +43,6 @@ type FieldSet struct {
 }
 
 // AdminFieldSet 承载管理端具备完整权限的用户模型局部更新字段集合。
-//
-// 字段逐项声明而不是嵌入 FieldSet：嵌入会让“哪些字段可被管理端写入”
-// 这件事取决于另一个类型的演化。
 type AdminFieldSet struct {
 	Name            omitnull.Val[string]
 	AvatarPath      omitnull.Val[string]
@@ -89,7 +109,6 @@ func PatchFromFieldSet(fields FieldSet) (Patch, error) {
 		value, clear := textField(fields.Username)
 		patch.Username = value
 		patch.ClearUsername = clear
-		// 用户名与展示名同属一套登录标识：清空用户名时联动清空展示名。
 		if clear && fields.DisplayUsername.IsUnset() {
 			patch.ClearDisplayName = true
 		}
@@ -146,9 +165,6 @@ func PatchFromAdminFieldSet(fields AdminFieldSet) (Patch, error) {
 	return patch.reconciled(), nil
 }
 
-// reconciled 返回封禁布尔值与账号状态相互协同后的补丁副本。
-//
-// Patch 是值语义：全部方法共用值接收者，避免同一个类型混用两种接收者。
 func (p Patch) reconciled() Patch {
 	if p.Status != nil && *p.Status == enum.StatusBanned {
 		banned := true
@@ -192,7 +208,6 @@ func (p Patch) Params(id string) sqlc.UpdateUserParams {
 	return params
 }
 
-// textField 处理可空文本三态：未提供表示不改，null/纯空白表示清空，其余为设置值。
 func textField(value omitnull.Val[string]) (*string, bool) {
 	if value.IsUnset() {
 		return nil, false
@@ -205,4 +220,105 @@ func textField(value omitnull.Val[string]) (*string, bool) {
 		return nil, true
 	}
 	return &trimmed, false
+}
+
+// ListFilter 是用户列表查询的过滤条件。
+type ListFilter struct {
+	Search   string
+	Status   enum.Status
+	Role     enum.Role
+	SortKey  string
+	SortDesc bool
+}
+
+// NewListFilter 归一化过滤条件与排序表达式。
+func NewListFilter(search string, status enum.Status, role enum.Role, sort string) ListFilter {
+	key, desc := NormaliseSort(sort)
+	return ListFilter{
+		Search:   strings.TrimSpace(search),
+		Status:   status,
+		Role:     role,
+		SortKey:  key,
+		SortDesc: desc,
+	}
+}
+
+// ListParams 生成分页查询参数。
+func (f ListFilter) ListParams(page, pageSize int) sqlc.ListUsersParams {
+	return sqlc.ListUsersParams{
+		Status:     optionalText(f.Status),
+		Role:       optionalText(f.Role),
+		Search:     f.searchPattern(),
+		SortKey:    f.SortKey,
+		SortDesc:   f.SortDesc,
+		PageLimit:  int64(pageSize),
+		PageOffset: int64(page-1) * int64(pageSize),
+	}
+}
+
+// AfterParams 生成键集分块参数：以主键游标推进，不依赖偏移量。
+func (f ListFilter) AfterParams(afterID string, limit int) sqlc.ListUsersAfterParams {
+	return sqlc.ListUsersAfterParams{
+		Status:    optionalText(f.Status),
+		Role:      optionalText(f.Role),
+		Search:    f.searchPattern(),
+		AfterID:   afterID,
+		PageLimit: int64(limit),
+	}
+}
+
+func (f ListFilter) searchPattern() *string {
+	if f.Search == "" {
+		return nil
+	}
+	pattern := "%" + EscapeLike(f.Search) + "%"
+	return &pattern
+}
+
+func optionalText[T ~string](value T) *string {
+	if value == "" {
+		return nil
+	}
+	text := string(value)
+	return &text
+}
+
+// ValidateSort 校验用户列表的排序字段，支持以逗号分隔的复合排序以及 - 降序前缀。
+func ValidateSort(field govalidator.FieldLevel) bool {
+	raw := field.Field().String()
+	if raw == "" {
+		return true
+	}
+	for part := range strings.SplitSeq(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return false
+		}
+		if !sortColumns[strings.TrimPrefix(part, "-")] {
+			return false
+		}
+	}
+	return true
+}
+
+// NormaliseSort 把排序表达式归一为单一排序键与方向。
+func NormaliseSort(raw string) (string, bool) {
+	raw = cmp.Or(strings.TrimSpace(raw), defaultSort)
+	for part := range strings.SplitSeq(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		descending := strings.HasPrefix(part, "-")
+		key := strings.TrimPrefix(part, "-")
+		if sortColumns[key] {
+			return key, descending
+		}
+	}
+	return "createdAt", true
+}
+
+// EscapeLike 转义 SQL LIKE 特殊通配符，避免用户输入被当作模式语法。
+func EscapeLike(value string) string {
+	return likeReplacer.Replace(value)
 }

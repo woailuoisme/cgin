@@ -11,11 +11,10 @@ import (
 	"cgin/pkg/cache"
 	"cgin/pkg/errs"
 	"cgin/pkg/logger"
-	"cgin/pkg/notification/contract"
 )
 
 // SendFunc 定义通知投递管道处理函数契约。
-type SendFunc func(ctx context.Context, target any, notif contract.Notification, channel string) error
+type SendFunc func(ctx context.Context, target any, notif Notification, channel string) error
 
 // Middleware 定义通知管道中间件。
 type Middleware func(next SendFunc) SendFunc
@@ -33,7 +32,7 @@ func WrapMiddleware(handler SendFunc, middlewares ...Middleware) SendFunc {
 // RecoveryMiddleware 捕获管道中的 panic 并在日志中记录，返回结构化错误。
 func RecoveryMiddleware() Middleware {
 	return func(next SendFunc) SendFunc {
-		return func(ctx context.Context, target any, notif contract.Notification, channel string) (err error) {
+		return func(ctx context.Context, target any, notif Notification, channel string) (err error) {
 			defer func() {
 				if r := recover(); r != nil {
 					logger.FromContext(ctx).Error().
@@ -54,18 +53,18 @@ func RecoveryMiddleware() Middleware {
 // 若 limit <= 0 或 window <= 0 则跳过频控检测。
 func RateLimitMiddleware(store cache.Store, limit int, window time.Duration) Middleware {
 	return func(next SendFunc) SendFunc {
-		return func(ctx context.Context, target any, notif contract.Notification, channel string) error {
+		return func(ctx context.Context, target any, notif Notification, channel string) error {
 			if store == nil || limit <= 0 || window <= 0 {
 				return next(ctx, target, notif, channel)
 			}
 
 			var rateKey string
-			if rl, ok := notif.(contract.RateLimitedNotification); ok {
+			if rl, ok := notif.(RateLimitedNotification); ok {
 				rateKey = rl.RateLimitKey(channel, target)
 			}
 
 			if rateKey == "" {
-				notifiable := contract.ToNotifiable(target)
+				notifiable := ToNotifiable(target)
 				targetID := notifiable.GetNotifiableID()
 				if targetID != "" {
 					rateKey = cache.Key("notification", "ratelimit", channel, targetID)
@@ -80,7 +79,7 @@ func RateLimitMiddleware(store cache.Store, limit int, window time.Duration) Mid
 						With("key", rateKey).
 						With("count", count).
 						With("limit", limit).
-						Wrap(contract.ErrRateLimited)
+						Wrap(ErrRateLimited)
 				}
 			}
 
@@ -93,12 +92,12 @@ func RateLimitMiddleware(store cache.Store, limit int, window time.Duration) Mid
 // 若未获取到唯一键或 ttl <= 0 则跳过防重检测。
 func DeduplicateMiddleware(store cache.Store, defaultTTL time.Duration) Middleware {
 	return func(next SendFunc) SendFunc {
-		return func(ctx context.Context, target any, notif contract.Notification, channel string) error {
+		return func(ctx context.Context, target any, notif Notification, channel string) error {
 			if store == nil || defaultTTL <= 0 {
 				return next(ctx, target, notif, channel)
 			}
 
-			idempotent, ok := notif.(contract.IdempotentNotification)
+			idempotent, ok := notif.(IdempotentNotification)
 			if !ok {
 				return next(ctx, target, notif, channel)
 			}
@@ -120,7 +119,7 @@ func DeduplicateMiddleware(store cache.Store, defaultTTL time.Duration) Middlewa
 				return oops.Code(errs.CodeNotificationDeduplicated).
 					With("channel", channel).
 					With("key", dedupKey).
-					Wrap(contract.ErrDeduplicated)
+					Wrap(ErrDeduplicated)
 			}
 
 			return next(ctx, target, notif, channel)

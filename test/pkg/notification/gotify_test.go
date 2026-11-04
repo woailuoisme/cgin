@@ -1,12 +1,14 @@
-// Package notification_test 针对 Gotify 渠道、模型、HTTP 驱动与 Mock 驱动进行全方位单元契约测试。
+// Package notification_test 针对 Gotify 渠道、模型与 HTTP 驱动进行全方位单元契约测试。
 package notification_test
 
 import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,16 +17,54 @@ import (
 
 	"cgin/internal/config"
 	"cgin/pkg/notification"
-	"cgin/pkg/notification/channel/gotify"
-	gotifyHTTP "cgin/pkg/notification/channel/gotify/http"
-	gotifyMock "cgin/pkg/notification/channel/gotify/mock"
 )
+
+// mockGotifyDriver 测试专用内存 Gotify 驱动。
+type mockGotifyDriver struct {
+	mu       sync.RWMutex
+	messages []*notification.GotifyMessage
+}
+
+func newMockGotifyDriver() *mockGotifyDriver {
+	return &mockGotifyDriver{}
+}
+
+func (d *mockGotifyDriver) Name() string { return "mock" }
+
+func (d *mockGotifyDriver) Send(_ context.Context, msg *notification.GotifyMessage) error {
+	if msg == nil {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	copied := *msg
+	if msg.Extras != nil {
+		copied.Extras = maps.Clone(msg.Extras)
+	}
+	d.messages = append(d.messages, &copied)
+	return nil
+}
+
+func (d *mockGotifyDriver) GetLastMessage() *notification.GotifyMessage {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	if len(d.messages) == 0 {
+		return nil
+	}
+	return d.messages[len(d.messages)-1]
+}
+
+func (d *mockGotifyDriver) Clear() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.messages = nil
+}
 
 // TestGotifyMessage_FluentAPIs 验证 Gotify 消息模型的链式构建与高级特性。
 func TestGotifyMessage_FluentAPIs(t *testing.T) {
 	t.Parallel()
 
-	msg := gotify.NewMessage("Database backup completed").
+	msg := notification.NewGotifyMessage("Database backup completed").
 		WithTitle("System Alert").
 		HighPriority().
 		Markdown().
@@ -40,12 +80,12 @@ func TestGotifyMessage_FluentAPIs(t *testing.T) {
 	assert.Equal(t, "https://gotify.custom.net", msg.ServerURL)
 
 	// 验证 Markdown 扩展
-	display, ok := msg.Extras[gotify.ExtraKeyClientDisplay].(map[string]any)
+	display, ok := msg.Extras[notification.GotifyExtraKeyClientDisplay].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "text/markdown", display["contentType"])
 
 	// 验证 ClickURL 扩展
-	notif, ok := msg.Extras[gotify.ExtraKeyClientNotification].(map[string]any)
+	notif, ok := msg.Extras[notification.GotifyExtraKeyClientNotification].(map[string]any)
 	require.True(t, ok)
 	click, ok := notif["click"].(map[string]any)
 	require.True(t, ok)
@@ -61,11 +101,11 @@ func TestGotifyMessage_FluentAPIs(t *testing.T) {
 
 	// 验证清除 Markdown
 	msg.WithMarkdown(false)
-	assert.Nil(t, msg.Extras[gotify.ExtraKeyClientDisplay])
+	assert.Nil(t, msg.Extras[notification.GotifyExtraKeyClientDisplay])
 
 	// 验证清除 ClickURL
 	msg.WithClickURL("")
-	assert.Nil(t, msg.Extras[gotify.ExtraKeyClientNotification])
+	assert.Nil(t, msg.Extras[notification.GotifyExtraKeyClientNotification])
 }
 
 type mockGotifyNotification struct {
@@ -78,7 +118,7 @@ func (n *mockGotifyNotification) Via(_ any) []string {
 }
 
 func (n *mockGotifyNotification) ToGotify(_ any) any {
-	return gotify.NewMessage(n.content).
+	return notification.NewGotifyMessage(n.content).
 		WithTitle(n.title).
 		UrgentPriority()
 }
@@ -87,14 +127,14 @@ func (n *mockGotifyNotification) ToGotify(_ any) any {
 func TestGotifyChannel_FormatAndDispatch(t *testing.T) {
 	t.Parallel()
 
-	mockDriver := gotifyMock.NewDriver()
-	ch := gotify.NewChannel("mock").
+	mockDriver := newMockGotifyDriver()
+	ch := notification.NewGotifyChannel("mock").
 		WithDefaults("https://gotify.example.com", "default-app-token", 5)
 	ch.RegisterDriver("mock", mockDriver)
 
 	ctx := context.Background()
 
-	t.Run("实现 gotify.Notification 契约格式化与发送", func(t *testing.T) {
+	t.Run("实现 GotifyNotification 契约格式化与发送", func(t *testing.T) {
 		mockDriver.Clear()
 		notif := &mockGotifyNotification{
 			title:   "磁盘空间不足",
@@ -123,7 +163,7 @@ func TestGotifyChannel_FormatAndDispatch(t *testing.T) {
 		routeUser := notification.NewRecipient("u-1", "user").
 			WithRoute("gotify", "https://gotify.user.io/message?token=user-specific-token")
 
-		msg := gotify.NewMessage("User specific message")
+		msg := notification.NewGotifyMessage("User specific message")
 		err := ch.Send(ctx, routeUser, msg)
 		require.NoError(t, err)
 
@@ -137,7 +177,7 @@ func TestGotifyChannel_FormatAndDispatch(t *testing.T) {
 		routeTokenUser := notification.NewRecipient("u-2", "user").
 			WithRoute("gotify", "pure-token-666")
 
-		msg2 := gotify.NewMessage("Token message")
+		msg2 := notification.NewGotifyMessage("Token message")
 		err = ch.Send(ctx, routeTokenUser, msg2)
 		require.NoError(t, err)
 
@@ -148,7 +188,7 @@ func TestGotifyChannel_FormatAndDispatch(t *testing.T) {
 
 		// 3. Message 显式覆盖优先级最高
 		mockDriver.Clear()
-		msg3 := gotify.NewMessage("Explicit override").
+		msg3 := notification.NewGotifyMessage("Explicit override").
 			WithServerURL("https://override.net").
 			WithToken("override-token")
 
@@ -205,7 +245,7 @@ func TestGotifyHTTPDriver_Send(t *testing.T) {
 
 	ctx := context.Background()
 
-	driver, err := gotifyHTTP.NewDriver(gotifyHTTP.Config{
+	driver, err := notification.NewGotifyHTTPDriver(notification.GotifyHTTPConfig{
 		ServerURL: server.URL,
 		AppToken:  "valid-token",
 		Priority:  5,
@@ -215,11 +255,11 @@ func TestGotifyHTTPDriver_Send(t *testing.T) {
 	assert.Equal(t, "http", driver.Name())
 
 	t.Run("正常推送发送", func(t *testing.T) {
-		msg := gotify.NewMessage("Hello from cgin!").
+		msg := notification.NewGotifyMessage("Hello from cfiber!").
 			WithTitle("Greeting").
 			HighPriority().
 			Markdown().
-			WithClickURL("https://cgin.dev")
+			WithClickURL("https://cfiber.dev")
 
 		err := driver.Send(ctx, msg)
 		require.NoError(t, err)
@@ -227,7 +267,7 @@ func TestGotifyHTTPDriver_Send(t *testing.T) {
 		assert.Equal(t, "valid-token", receivedAuthToken)
 		assert.Equal(t, "/message", receivedPath)
 		assert.Equal(t, "Greeting", receivedBody["title"])
-		assert.Equal(t, "Hello from cgin!", receivedBody["message"])
+		assert.Equal(t, "Hello from cfiber!", receivedBody["message"])
 		assert.InDelta(t, 8.0, receivedBody["priority"], 0.001)
 
 		extras, ok := receivedBody["extras"].(map[string]any)
@@ -237,32 +277,32 @@ func TestGotifyHTTPDriver_Send(t *testing.T) {
 	})
 
 	t.Run("Token 错误导致 401 失败", func(t *testing.T) {
-		invalidDriver, _ := gotifyHTTP.NewDriver(gotifyHTTP.Config{
+		invalidDriver, _ := notification.NewGotifyHTTPDriver(notification.GotifyHTTPConfig{
 			ServerURL: server.URL,
 			AppToken:  "wrong-token",
 		})
 
-		msg := gotify.NewMessage("Fail test")
+		msg := notification.NewGotifyMessage("Fail test")
 		err := invalidDriver.Send(ctx, msg)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "gotify notification delivery failed")
 	})
 
 	t.Run("缺少必填参数校验拦截", func(t *testing.T) {
-		emptyDriver, _ := gotifyHTTP.NewDriver(gotifyHTTP.Config{})
+		emptyDriver, _ := notification.NewGotifyHTTPDriver(notification.GotifyHTTPConfig{})
 
 		// 缺少 ServerURL
-		err := emptyDriver.Send(ctx, gotify.NewMessage("Test"))
+		err := emptyDriver.Send(ctx, notification.NewGotifyMessage("Test"))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "server_url is required")
 
 		// 缺少 Token
-		err = emptyDriver.Send(ctx, gotify.NewMessage("Test").WithServerURL("https://gotify.net"))
+		err = emptyDriver.Send(ctx, notification.NewGotifyMessage("Test").WithServerURL("https://gotify.net"))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "app_token is required")
 
 		// 缺少 Message 内容
-		err = emptyDriver.Send(ctx, gotify.NewMessage("").WithServerURL("https://gotify.net").WithToken("tok"))
+		err = emptyDriver.Send(ctx, notification.NewGotifyMessage("").WithServerURL("https://gotify.net").WithToken("tok"))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "message text is required")
 	})

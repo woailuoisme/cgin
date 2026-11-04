@@ -16,9 +16,7 @@ import (
 func newTranslator(t *testing.T, defaultLanguage string) i18n.Translator {
 	t.Helper()
 
-	translator, err := i18n.New(&config.Config{
-		I18n: config.I18nConfig{DefaultLanguage: defaultLanguage},
-	})
+	translator, err := i18n.New(config.I18nConfig{DefaultLanguage: defaultLanguage})
 	require.NoError(t, err)
 	return translator
 }
@@ -58,7 +56,7 @@ func TestFallbackLanguageIsConfigurable(t *testing.T) {
 
 // TestNewRejectsUnknownDefaultLanguage 校验默认语言必须在语言包中存在。
 func TestNewRejectsUnknownDefaultLanguage(t *testing.T) {
-	_, err := i18n.New(&config.Config{I18n: config.I18nConfig{DefaultLanguage: "fr"}})
+	_, err := i18n.New(config.I18nConfig{DefaultLanguage: "fr"})
 	assert.Error(t, err)
 }
 

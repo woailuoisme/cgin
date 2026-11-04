@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"cgin/pkg/notification"
-	"cgin/pkg/notification/contract"
 )
 
 const defaultAuthOTPExpiry = 10 * time.Minute
@@ -100,8 +99,8 @@ func (n *PhoneOTPNotification) ToSMS(_ any) any {
 
 // 静态断言通知契约实现。
 var (
-	_ contract.Notification         = (*AuthOTPNotification)(nil)
+	_ notification.Notification     = (*AuthOTPNotification)(nil)
 	_ notification.MailNotification = (*AuthOTPNotification)(nil)
-	_ contract.Notification         = (*PhoneOTPNotification)(nil)
+	_ notification.Notification     = (*PhoneOTPNotification)(nil)
 	_ notification.SMSNotification  = (*PhoneOTPNotification)(nil)
 )

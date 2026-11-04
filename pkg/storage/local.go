@@ -11,10 +11,35 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"cgin/pkg/errs"
 )
+
+const copyBufferSize = 64 * 1024 // 64KB 高性能流复制缓冲
+
+// copyBufferPool 提供统一复用的字节切片缓冲区，避免高并发大文件上传时产生大量短生命周期分配与 GC 压力。
+var copyBufferPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, copyBufferSize)
+		return &b
+	},
+}
+
+func getCopyBuffer() *[]byte {
+	if b, ok := copyBufferPool.Get().(*[]byte); ok {
+		return b
+	}
+	buf := make([]byte, copyBufferSize)
+	return &buf
+}
+
+func putCopyBuffer(b *[]byte) {
+	if b != nil && len(*b) == copyBufferSize {
+		copyBufferPool.Put(b)
+	}
+}
 
 // localDisk 用操作系统文件系统实现 Disk。
 //

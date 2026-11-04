@@ -39,7 +39,7 @@ func TestServiceIssueToken(t *testing.T) {
 
 	t.Run("未启用时返回错误", func(t *testing.T) {
 		cfg := &config.Config{
-			Realtime: config.CentrifugoConfig{
+			Realtime: config.RealtimeConfig{
 				Enabled: false,
 			},
 		}
@@ -53,7 +53,7 @@ func TestServiceIssueToken(t *testing.T) {
 
 	t.Run("正常启用时成功生成 Token", func(t *testing.T) {
 		cfg := &config.Config{
-			Realtime: config.CentrifugoConfig{
+			Realtime: config.RealtimeConfig{
 				Enabled: true,
 				URL:     "http://127.0.0.1:8000/api",
 				Secret:  "test-secret-key-12345",
@@ -74,7 +74,7 @@ func TestServiceIssueToken(t *testing.T) {
 // TestServiceAuthorizeSubscribe 验证服务层频道订阅鉴权调度。
 func TestServiceAuthorizeSubscribe(t *testing.T) {
 	cfg := &config.Config{
-		Realtime: config.CentrifugoConfig{
+		Realtime: config.RealtimeConfig{
 			Enabled: true,
 			Secret:  "secret-123",
 		},
@@ -127,7 +127,7 @@ func TestHandlerHTTP(t *testing.T) {
 	secret := "centrifugo-secret-hmac-test"
 
 	cfg := &config.Config{
-		Realtime: config.CentrifugoConfig{
+		Realtime: config.RealtimeConfig{
 			Enabled: true,
 			URL:     "http://127.0.0.1:8000/api",
 			Secret:  secret,

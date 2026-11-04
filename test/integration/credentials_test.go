@@ -20,9 +20,7 @@ import (
 func TestRegisterCreatesUserAndCredential(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
-	h := hasher.New()
-	service := appuser.MustNewService(db, h)
-	provider := appuser.MustNewProvider(db, h)
+	service := appuser.MustNewService(db, hasher.New())
 
 	email := strings.ToUpper(uniqueEmail())
 	username := strings.ToUpper(uniqueUsername())
@@ -45,7 +43,7 @@ func TestRegisterCreatesUserAndCredential(t *testing.T) {
 	require.NotNil(t, created.DisplayUsername)
 	assert.Equal(t, strings.ToLower(username), *created.DisplayUsername)
 
-	matched, err := provider.VerifyPassword(ctx, created.ID, "Password123!")
+	matched, err := service.VerifyPassword(ctx, created.ID, "Password123!")
 	require.NoError(t, err)
 	assert.True(t, matched)
 
@@ -65,9 +63,7 @@ func TestRegisterCreatesUserAndCredential(t *testing.T) {
 func TestCredentialLifecycle(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
-	h := hasher.New()
-	service := appuser.MustNewService(db, h)
-	provider := appuser.MustNewProvider(db, h)
+	service := appuser.MustNewService(db, hasher.New())
 
 	created, err := service.Register(ctx, appuser.RegisterParams{
 		Name:     "Credential Tester",
@@ -78,40 +74,40 @@ func TestCredentialLifecycle(t *testing.T) {
 	t.Cleanup(func() { cleanupUser(db, created.ID, "") })
 
 	t.Run("错误口令校验失败", func(t *testing.T) {
-		matched, err := provider.VerifyPassword(ctx, created.ID, "WrongPass123!")
+		matched, err := service.VerifyPassword(ctx, created.ID, "WrongPass123!")
 		require.NoError(t, err)
 		assert.False(t, matched)
 	})
 
 	t.Run("改密需校验当前口令", func(t *testing.T) {
-		err := provider.ChangePassword(ctx, created.ID, "WrongPass123!", "NewPassword456!")
+		err := service.ChangePassword(ctx, created.ID, "WrongPass123!", "NewPassword456!")
 		require.Error(t, err)
 		_, body := errs.Map(err)
 		assert.Equal(t, string(errs.CodeAuthPasswordMismatch), body.Code)
 	})
 
 	t.Run("改密后旧口令失效", func(t *testing.T) {
-		require.NoError(t, provider.ChangePassword(ctx, created.ID, "Password123!", "NewPassword456!"))
+		require.NoError(t, service.ChangePassword(ctx, created.ID, "Password123!", "NewPassword456!"))
 
-		matched, err := provider.VerifyPassword(ctx, created.ID, "Password123!")
+		matched, err := service.VerifyPassword(ctx, created.ID, "Password123!")
 		require.NoError(t, err)
 		assert.False(t, matched)
 
-		matched, err = provider.VerifyPassword(ctx, created.ID, "NewPassword456!")
+		matched, err = service.VerifyPassword(ctx, created.ID, "NewPassword456!")
 		require.NoError(t, err)
 		assert.True(t, matched)
 	})
 
 	t.Run("重置口令无需当前口令", func(t *testing.T) {
-		require.NoError(t, provider.ResetPassword(ctx, created.ID, "ResetPassword789!"))
+		require.NoError(t, service.ResetPassword(ctx, created.ID, "ResetPassword789!"))
 
-		matched, err := provider.VerifyPassword(ctx, created.ID, "ResetPassword789!")
+		matched, err := service.VerifyPassword(ctx, created.ID, "ResetPassword789!")
 		require.NoError(t, err)
 		assert.True(t, matched)
 	})
 
 	t.Run("弱口令被拒绝", func(t *testing.T) {
-		err := provider.ResetPassword(ctx, created.ID, "short")
+		err := service.ResetPassword(ctx, created.ID, "short")
 		require.Error(t, err)
 		_, body := errs.Map(err)
 		assert.Equal(t, string(errs.CodeAuthPasswordTooWeak), body.Code)
@@ -122,8 +118,7 @@ func TestCredentialLifecycle(t *testing.T) {
 func TestCredentialMissing(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
-	h := hasher.New()
-	provider := appuser.MustNewProvider(db, h)
+	service := appuser.MustNewService(db, hasher.New())
 
 	row, err := db.Queries(ctx).CreateUser(ctx, sqlc.CreateUserParams{
 		Name:   "No Credential",
@@ -134,13 +129,13 @@ func TestCredentialMissing(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { cleanupUser(db, row.ID, "") })
 
-	matched, err := provider.VerifyPassword(ctx, row.ID, "Password123!")
+	matched, err := service.VerifyPassword(ctx, row.ID, "Password123!")
 	require.NoError(t, err)
 	assert.False(t, matched, "凭据缺失不应泄漏账号状态")
 
-	err = provider.ChangePassword(ctx, row.ID, "Password123!", "NewPassword456!")
+	err = service.ChangePassword(ctx, row.ID, "Password123!", "NewPassword456!")
 	require.ErrorIs(t, err, appuser.ErrNoCredential)
 
-	err = provider.ResetPassword(ctx, row.ID, "NewPassword456!")
+	err = service.ResetPassword(ctx, row.ID, "NewPassword456!")
 	require.ErrorIs(t, err, appuser.ErrNoCredential)
 }

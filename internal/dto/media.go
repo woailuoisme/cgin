@@ -6,11 +6,6 @@ import (
 	"cgin/pkg/media"
 )
 
-// SetDefaultEngine 设置全局默认媒体引擎，供 DTO 投影时构建带防篡改签名的访问地址。
-func SetDefaultEngine(engine media.Engine) {
-	media.SetDefaultEngine(engine)
-}
-
 // PresignUploadBody 描述客户端申请 S3 预签名直传凭证的请求载荷。
 type PresignUploadBody struct {
 	// 业务存储类目（如 avatars, covers, documents, attachments）

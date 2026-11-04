@@ -102,8 +102,12 @@ func (s *redisTokenStore) Unlock(ctx context.Context, key, owner string) error {
 	if owner == "" {
 		return nil
 	}
-	// 原子比对持有者后删除：TTL 到期后锁可能已被他人重新获取。
-	_, err := s.cache.DeleteIfMatch(ctx, tokenLockKey(key), owner)
+	lockKey := tokenLockKey(key)
+	val, err := s.cache.Get(ctx, lockKey)
+	if err != nil || val != owner {
+		return nil //nolint:nilerr // 锁已过期或归属其他实例时忽略解锁
+	}
+	_, err = s.cache.Delete(ctx, lockKey)
 	return err
 }
 

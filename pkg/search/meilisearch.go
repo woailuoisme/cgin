@@ -12,6 +12,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/samber/oops"
 
+	"cgin/internal/config"
 	"cgin/pkg/errs"
 	"cgin/pkg/resilience"
 )
@@ -42,7 +43,7 @@ func NewMeilisearchClient(manager meilisearch.ServiceManager, prefix ...string) 
 }
 
 // NewClientFromConfig 根据配置创建 Meilisearch 官方客户端适配门面。
-func NewClientFromConfig(cfg Config) (Client, error) {
+func NewClientFromConfig(cfg config.SearchConfig) (Client, error) {
 	host := strings.TrimSpace(cfg.Meilisearch.Host)
 	apiKey := strings.TrimSpace(cfg.Meilisearch.APIKey)
 	if !cfg.Enabled() || host == "" {

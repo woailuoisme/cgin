@@ -17,8 +17,7 @@ import (
 	"cgin/pkg/errs"
 	"cgin/pkg/eventbus"
 	"cgin/pkg/logger"
-	platformPayment "cgin/pkg/payment"
-	"cgin/pkg/payment/enum"
+	"cgin/pkg/payment"
 )
 
 const (
@@ -44,9 +43,9 @@ type notificationKeyPurpose string
 // 验签只能证明报文来自渠道，不能证明金额与本地订单一致。
 type CallbackHandler interface {
 	// OnPaymentSuccess 处理支付成功回调通知。返回 nil 代表业务成功消费，由网关向渠道返回成功 ACK。
-	OnPaymentSuccess(ctx context.Context, result *platformPayment.PaymentResult) error
+	OnPaymentSuccess(ctx context.Context, result *payment.PaymentResult) error
 	// OnRefundSuccess 处理退款成功或状态变更通知。返回 nil 代表业务成功消费。
-	OnRefundSuccess(ctx context.Context, result *platformPayment.RefundResult) error
+	OnRefundSuccess(ctx context.Context, result *payment.RefundResult) error
 }
 
 // defaultCallbackHandler 是未接入业务处理器时的兜底实现。
@@ -57,7 +56,7 @@ type defaultCallbackHandler struct{}
 
 var _ CallbackHandler = (*defaultCallbackHandler)(nil)
 
-func (d *defaultCallbackHandler) OnPaymentSuccess(ctx context.Context, result *platformPayment.PaymentResult) error {
+func (d *defaultCallbackHandler) OnPaymentSuccess(ctx context.Context, result *payment.PaymentResult) error {
 	logger.FromContext(ctx).Error().
 		Str("out_trade_no", result.OutTradeNo).
 		Str("channel_trade_no", result.ChannelTradeNo).
@@ -66,7 +65,7 @@ func (d *defaultCallbackHandler) OnPaymentSuccess(ctx context.Context, result *p
 	return errs.Internal(errors.New("payment callback handler is not configured"))
 }
 
-func (d *defaultCallbackHandler) OnRefundSuccess(ctx context.Context, result *platformPayment.RefundResult) error {
+func (d *defaultCallbackHandler) OnRefundSuccess(ctx context.Context, result *payment.RefundResult) error {
 	logger.FromContext(ctx).Error().
 		Str("out_trade_no", result.OutTradeNo).
 		Str("out_refund_no", result.OutRefundNo).
@@ -79,7 +78,7 @@ func (d *defaultCallbackHandler) OnRefundSuccess(ctx context.Context, result *pl
 
 // PaymentService 负责协调支付回调的分布式幂等防重与业务事件分发。
 type PaymentService struct {
-	gateway   platformPayment.Gateway
+	gateway   payment.Gateway
 	cache     cache.Store
 	cfg       *config.Config
 	publisher eventbus.Publisher
@@ -88,7 +87,7 @@ type PaymentService struct {
 
 // NewPaymentService 构造支付回调协调服务。publisher 允许为 nil，表示不向外广播领域事件。
 func NewPaymentService(
-	gateway platformPayment.Gateway,
+	gateway payment.Gateway,
 	cacheClient cache.Store,
 	cfg *config.Config,
 	publisher eventbus.Publisher,
@@ -103,7 +102,7 @@ func NewPaymentService(
 }
 
 // Gateway 暴露底层支付网关接口。
-func (s *PaymentService) Gateway() platformPayment.Gateway {
+func (s *PaymentService) Gateway() payment.Gateway {
 	if s == nil {
 		return nil
 	}
@@ -120,16 +119,16 @@ func (s *PaymentService) SetCallbackHandler(handler CallbackHandler) {
 // ProcessNotification 统一处理已通过传输层验签解析的支付/退款异步通知。
 func (s *PaymentService) ProcessNotification(
 	ctx context.Context,
-	channel enum.PaymentChannel,
-	notification *platformPayment.Notification,
-) (platformPayment.NotificationAck, error) {
+	channel payment.Channel,
+	notification *payment.Notification,
+) (payment.NotificationAck, error) {
 	log := logger.FromContext(ctx)
 
 	if !channel.IsValid() {
-		return platformPayment.FailureAck(channel), errs.BadRequest(MsgUnsupportedChannel)
+		return payment.FailureAck(channel), errs.BadRequest(MsgUnsupportedChannel)
 	}
 	if notification == nil {
-		return platformPayment.FailureAck(channel), errs.BadRequest("notification payload is nil")
+		return payment.FailureAck(channel), errs.BadRequest("notification payload is nil")
 	}
 
 	key := notificationKey{
@@ -142,17 +141,17 @@ func (s *PaymentService) ProcessNotification(
 	//    同一订单的支付与退款通知必须各算一次，否则退款会被支付的去重标记吞掉）
 	consumed, releaseLock, lockErr := s.acquireLockOrConsumed(ctx, key)
 	if lockErr != nil {
-		return platformPayment.FailureAck(channel), lockErr
+		return payment.FailureAck(channel), lockErr
 	}
 	if consumed {
-		return platformPayment.SuccessAck(channel), nil
+		return payment.SuccessAck(channel), nil
 	}
 	defer releaseLock()
 
 	// 2. 分发到具体业务处理器与发布领域事件
 	handleErr := s.dispatchNotification(ctx, channel, notification)
 	if handleErr != nil {
-		return platformPayment.FailureAck(channel), oops.
+		return payment.FailureAck(channel), oops.
 			Code(errs.CodeInternal).
 			With("channel", key.channel.String()).
 			With("kind", key.kind).
@@ -165,7 +164,7 @@ func (s *PaymentService) ProcessNotification(
 	// 3. 写入持久化去重标记（在 defer releaseLock 释放处理锁之前完成写入）
 	s.recordConsumed(ctx, key)
 
-	return platformPayment.SuccessAck(channel), nil
+	return payment.SuccessAck(channel), nil
 }
 
 // notificationKey 是支付通知的三段幂等标识：渠道 + 通知类型 + 单号。
@@ -173,7 +172,7 @@ func (s *PaymentService) ProcessNotification(
 // 三者总是一起出行（缓存键、日志、错误上下文），因此收进一个类型，
 // 避免每个下游 helper 都摊开三个参数、且任何一处漏传一段就退化成串号。
 type notificationKey struct {
-	channel enum.PaymentChannel
+	channel payment.Channel
 	kind    string
 	tradeNo string
 }
@@ -213,15 +212,15 @@ func (s *PaymentService) acquireLockOrConsumed(ctx context.Context, key notifica
 	release := func() {
 		unlockCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
-		_, _ = s.cache.DeleteIfMatch(unlockCtx, lockKey, lockToken)
+		_, _ = s.cache.Delete(unlockCtx, lockKey)
 	}
 	return false, release, nil
 }
 
 // dispatchNotification 将通知派发给业务处理器并向事件总线广播领域事件。
-func (s *PaymentService) dispatchNotification(ctx context.Context, channel enum.PaymentChannel, n *platformPayment.Notification) error {
+func (s *PaymentService) dispatchNotification(ctx context.Context, channel payment.Channel, n *payment.Notification) error {
 	switch n.Kind {
-	case enum.PaymentNotificationKindPayment:
+	case payment.NotificationKindPayment:
 		if n.Payment == nil {
 			return errs.BadRequest("payment notification payload is missing")
 		}
@@ -235,7 +234,7 @@ func (s *PaymentService) dispatchNotification(ctx context.Context, channel enum.
 		})
 		return nil
 
-	case enum.PaymentNotificationKindRefund:
+	case payment.NotificationKindRefund:
 		if n.Refund == nil {
 			return errs.BadRequest("refund notification payload is missing")
 		}
@@ -286,7 +285,7 @@ func (s *PaymentService) BuildAlipayReturnURL(outTradeNo string) string {
 }
 
 // extractTradeNo 提取用于并发排重的交易标识号。
-func (s *PaymentService) extractTradeNo(n *platformPayment.Notification) string {
+func (s *PaymentService) extractTradeNo(n *payment.Notification) string {
 	if n == nil {
 		return ""
 	}

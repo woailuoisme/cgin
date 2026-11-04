@@ -5,7 +5,6 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/gin-contrib/authz"
 	"github.com/gin-gonic/gin"
 
 	"cgin/pkg/authentication"
@@ -35,16 +34,7 @@ func (m *Middleware) Auth(guardNames ...string) gin.HandlerFunc {
 			return
 		}
 
-		if m.authz != nil {
-			reqCtx = authentication.WithGate(reqCtx, m.authz)
-		}
 		c.Request = c.Request.WithContext(reqCtx)
-
-		// 将已认证的角色信息注入 BasicAuth，使 gin-contrib/authz 原生自动提取 subject
-		if id, ok := authentication.FromContext(reqCtx); ok && id.Role != "" {
-			c.Request.SetBasicAuth(id.Role, "")
-		}
-
 		c.Next()
 	}
 }
@@ -56,11 +46,7 @@ func (m *Middleware) authenticateWithManager(ctx context.Context, raw string, gu
 		if err != nil {
 			return nil, errs.Internal(err)
 		}
-		newCtx, _, authErr := guard.AuthenticateToken(ctx, raw)
-		if authErr != nil {
-			return nil, authErr
-		}
-		return newCtx, nil
+		return guard.Authenticate(ctx, raw)
 	}
 
 	var lastErr error
@@ -71,7 +57,7 @@ func (m *Middleware) authenticateWithManager(ctx context.Context, raw string, gu
 			continue
 		}
 
-		newCtx, _, authErr := guard.AuthenticateToken(ctx, raw)
+		newCtx, authErr := guard.Authenticate(ctx, raw)
 		if authErr == nil {
 			return newCtx, nil
 		}
@@ -84,16 +70,7 @@ func (m *Middleware) authenticateWithManager(ctx context.Context, raw string, gu
 	return nil, lastErr
 }
 
-// Authz 【路由/组中间件】基于官方 gin-contrib/authz 执行 Casbin RESTful 路径与 HTTP 方法访问控制。
-func (m *Middleware) Authz() gin.HandlerFunc {
-	if m.authz == nil {
-		return func(c *gin.Context) { c.Next() }
-	}
-	return authz.NewAuthorizer(m.authz.CasbinEnforcer())
-}
-
-// Can 按资源+动作做 Casbin 资源级鉴权。
-// 官方 authz 只支持 URL+Method，无法表达资源语义，故保留自建（路径级鉴权由 Authz 承担）。
+// Can 按资源+动作做 Casbin RBAC 资源级鉴权。
 func (m *Middleware) Can(resource, action string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if _, ok := authentication.FromContext(c.Request.Context()); !ok {

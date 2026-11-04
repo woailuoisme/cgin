@@ -6,7 +6,6 @@ import (
 	"cgin/internal/notification/store"
 	"cgin/pkg/mailer"
 	"cgin/pkg/notification"
-	"cgin/pkg/notification/contract"
 )
 
 // SecurityAlertNotification 多渠道账号安全事件通知（邮件 + 数据库站内信 + 实时广播）。
@@ -54,7 +53,7 @@ func (n *SecurityAlertNotification) ToDatabase(_ any) map[string]any {
 // ToRealtime 生成 Centrifugo / WebSocket 实时广播数据（实现 notification.RealtimeNotification）。
 func (n *SecurityAlertNotification) ToRealtime(notifiable any) notification.RealtimeMessage {
 	channel := "notifications"
-	if notif, ok := notifiable.(contract.Notifiable); ok {
+	if notif, ok := notifiable.(notification.Notifiable); ok {
 		channel = cmp.Or(notif.RouteNotificationFor("realtime"), channel)
 	}
 	return notification.RealtimeMessage{
@@ -69,7 +68,7 @@ func (n *SecurityAlertNotification) ToRealtime(notifiable any) notification.Real
 
 // 静态断言通知契约实现。
 var (
-	_ contract.Notification             = (*SecurityAlertNotification)(nil)
+	_ notification.Notification         = (*SecurityAlertNotification)(nil)
 	_ notification.MailNotification     = (*SecurityAlertNotification)(nil)
 	_ store.Notification                = (*SecurityAlertNotification)(nil)
 	_ notification.RealtimeNotification = (*SecurityAlertNotification)(nil)

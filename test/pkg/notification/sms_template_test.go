@@ -11,17 +11,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"cgin/pkg/notification/channel/sms"
-	"cgin/pkg/notification/channel/sms/aliyun"
-	"cgin/pkg/notification/channel/sms/smsbao"
-	"cgin/pkg/notification/channel/sms/tencent"
+	"cgin/pkg/notification"
 )
 
-// TestSMSMessage_FluentTemplateAPIs 验证 Message 提供的多厂商模板链式 API 与解析优先级。
+// TestSMSMessage_FluentTemplateAPIs 验证 SMSMessage 提供的多厂商模板链式 API 与解析优先级。
 func TestSMSMessage_FluentTemplateAPIs(t *testing.T) {
 	t.Parallel()
 
-	msg := sms.NewMessage().
+	msg := notification.NewSMSMessage().
 		WithPhone("13800138000").
 		WithSignName("CommonSign").
 		WithTemplate("COMMON_TPL_001").
@@ -33,7 +30,6 @@ func TestSMSMessage_FluentTemplateAPIs(t *testing.T) {
 	assert.Equal(t, "SMS_ALI_99999", msg.ResolveTemplate("aliyun", "FALLBACK_TPL"))
 	assert.Equal(t, "TC_88888", msg.ResolveTemplate("tencent", "FALLBACK_TPL"))
 	assert.Equal(t, "【{sign}】您的验证码为{code}，请于{time}分钟内使用。", msg.ResolveTemplate("smsbao", "FALLBACK_TPL"))
-	// 未指定专属模板的驱动，回退到通用模板
 	assert.Equal(t, "COMMON_TPL_001", msg.ResolveTemplate("other_driver", "FALLBACK_TPL"))
 
 	// 2. 验证签名解析优先级
@@ -48,7 +44,7 @@ func TestSMSMessage_ResolveTencentParamSet(t *testing.T) {
 	t.Parallel()
 
 	t.Run("显式 ParamSet 优先", func(t *testing.T) {
-		msg := sms.NewMessage().
+		msg := notification.NewSMSMessage().
 			WithParam("code", "1234").
 			WithParamSet("9999", "30")
 
@@ -56,7 +52,7 @@ func TestSMSMessage_ResolveTencentParamSet(t *testing.T) {
 	})
 
 	t.Run("配置 ParamOrder 指定提取顺序", func(t *testing.T) {
-		msg := sms.NewMessage().
+		msg := notification.NewSMSMessage().
 			WithParam("expire", "10").
 			WithParam("code", "4321").
 			WithParam("action", "login").
@@ -66,15 +62,15 @@ func TestSMSMessage_ResolveTencentParamSet(t *testing.T) {
 	})
 
 	t.Run("单参数 code/otp 自动提取", func(t *testing.T) {
-		msg1 := sms.NewMessage().WithParam("code", "666888")
+		msg1 := notification.NewSMSMessage().WithParam("code", "666888")
 		assert.Equal(t, []string{"666888"}, msg1.ResolveTencentParamSet())
 
-		msg2 := sms.NewMessage().WithParam("otp", "777999")
+		msg2 := notification.NewSMSMessage().WithParam("otp", "777999")
 		assert.Equal(t, []string{"777999"}, msg2.ResolveTencentParamSet())
 	})
 
 	t.Run("纯数字键按数值升序提取", func(t *testing.T) {
-		msg := sms.NewMessage().
+		msg := notification.NewSMSMessage().
 			WithParam("2", "second").
 			WithParam("1", "first").
 			WithParam("10", "tenth")
@@ -83,7 +79,7 @@ func TestSMSMessage_ResolveTencentParamSet(t *testing.T) {
 	})
 
 	t.Run("自然字典序兜底提取", func(t *testing.T) {
-		msg := sms.NewMessage().
+		msg := notification.NewSMSMessage().
 			WithParam("b_arg", "val_b").
 			WithParam("a_arg", "val_a").
 			WithParam("c_arg", "val_c")
@@ -92,7 +88,7 @@ func TestSMSMessage_ResolveTencentParamSet(t *testing.T) {
 	})
 
 	t.Run("空参数安全返回", func(t *testing.T) {
-		msg := sms.NewMessage()
+		msg := notification.NewSMSMessage()
 		assert.Nil(t, msg.ResolveTencentParamSet())
 	})
 }
@@ -101,7 +97,7 @@ func TestSMSMessage_ResolveTencentParamSet(t *testing.T) {
 func TestSMSMessage_RenderContent(t *testing.T) {
 	t.Parallel()
 
-	msg := sms.NewMessage().
+	msg := notification.NewSMSMessage().
 		WithParam("code", "8888").
 		WithParam("time", "15").
 		WithParamSet("8888", "15")
@@ -124,11 +120,11 @@ func TestSMSBao_DriverTemplateAndFallback(t *testing.T) {
 	var receivedContent string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedContent = r.URL.Query().Get("c")
-		_, _ = w.Write([]byte("0")) // 0 表示短信宝发送成功
+		_, _ = w.Write([]byte("0"))
 	}))
 	defer server.Close()
 
-	driver, err := smsbao.NewDriver(smsbao.Config{
+	driver, err := notification.NewSMSBaoDriver(notification.SMSBaoConfig{
 		Username: "test_user",
 		APIKey:   "d41d8cd98f00b204e9800998ecf8427e",
 		SignName: "默认签名",
@@ -141,7 +137,7 @@ func TestSMSBao_DriverTemplateAndFallback(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("使用配置默认模板渲染发送", func(t *testing.T) {
-		msg := sms.NewMessage().
+		msg := notification.NewSMSMessage().
 			WithPhone("13900000000").
 			WithParam("code", "123456")
 
@@ -151,7 +147,7 @@ func TestSMSBao_DriverTemplateAndFallback(t *testing.T) {
 	})
 
 	t.Run("使用消息级专属模板渲染覆盖", func(t *testing.T) {
-		msg := sms.NewMessage().
+		msg := notification.NewSMSMessage().
 			WithPhone("13900000000").
 			WithSignName("自定义APP").
 			WithSMSBaoTemplate("【{sign}】正在登录系统，动态码：{code}。").
@@ -163,7 +159,7 @@ func TestSMSBao_DriverTemplateAndFallback(t *testing.T) {
 	})
 
 	t.Run("显式 Content 优先级高于模板", func(t *testing.T) {
-		msg := sms.NewMessage().
+		msg := notification.NewSMSMessage().
 			WithPhone("13900000000").
 			WithSMSBaoTemplate("【{sign}】模板内容").
 			WithContent("【直接内容】完全定制的纯文本短信")
@@ -184,7 +180,6 @@ func TestTencent_DriverTemplateResolution(t *testing.T) {
 		n, _ := r.Body.Read(buf)
 		reqBody = string(buf[:n])
 
-		// 模拟腾讯云成功响应
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"Response": {
@@ -197,7 +192,7 @@ func TestTencent_DriverTemplateResolution(t *testing.T) {
 	}))
 	defer server.Close()
 
-	driver, err := tencent.NewDriver(tencent.Config{
+	driver, err := notification.NewTencentSMSDriver(notification.TencentSMSConfig{
 		SecretID:   "AKIDtest123",
 		SecretKey:  "SecretKeyTest123",
 		AppID:      "1400000001",
@@ -210,8 +205,7 @@ func TestTencent_DriverTemplateResolution(t *testing.T) {
 
 	ctx := context.Background()
 
-	// 传入包含厂商专属模板与有序多参数的消息
-	msg := sms.NewMessage().
+	msg := notification.NewSMSMessage().
 		WithPhone("13800000000").
 		WithTencentTemplate("99999", "7788", "10").
 		WithDriverSign("tencent", "专属腾讯签名")
@@ -219,7 +213,6 @@ func TestTencent_DriverTemplateResolution(t *testing.T) {
 	err = driver.Send(ctx, msg)
 	require.NoError(t, err)
 
-	// 验证请求报文中包含正确的 TemplateId、SignName 与 TemplateParamSet
 	assert.Contains(t, reqBody, `"TemplateId":"99999"`)
 	assert.Contains(t, reqBody, `"SignName":"专属腾讯签名"`)
 	assert.Contains(t, reqBody, `"TemplateParamSet":["7788","10"]`)
@@ -244,7 +237,7 @@ func TestAliyun_DriverTemplateResolution(t *testing.T) {
 	}))
 	defer server.Close()
 
-	driver, err := aliyun.NewDriver(aliyun.Config{
+	driver, err := notification.NewAliyunSMSDriver(notification.AliyunSMSConfig{
 		AccessKeyID:     "ak_aliyun_test",
 		AccessKeySecret: "secret_aliyun_test",
 		SignName:        "阿里默认签名",
@@ -256,7 +249,7 @@ func TestAliyun_DriverTemplateResolution(t *testing.T) {
 
 	ctx := context.Background()
 
-	msg := sms.NewMessage().
+	msg := notification.NewSMSMessage().
 		WithPhone("13800000000").
 		WithAliyunTemplate("SMS_CUSTOM_888", map[string]string{
 			"code": "112233",
