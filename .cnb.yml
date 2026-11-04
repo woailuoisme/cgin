@@ -27,7 +27,7 @@ main:
   # 网页按钮 2：一键独立发布 Helm Chart（对齐 .cnb/web_trigger.yml 中的 web_trigger_helm）
   web_trigger_helm:
     - docker:
-        image: alpine/helm:3.17.1
+        image: alpine/helm:4
       stages:
         - name: Package and push Helm chart to CNB
           script: |
@@ -45,7 +45,7 @@ main:
 chart-v*:
   tag_push:
     - docker:
-        image: alpine/helm:3.17.1
+        image: alpine/helm:4
       stages:
         - name: Package and push Helm chart to CNB
           script: |
@@ -80,7 +80,7 @@ v*:
               --push .
 
     - docker:
-        image: alpine/helm:3.17.1
+        image: alpine/helm:4
       stages:
         - name: Package and push Helm chart to CNB
           script: |
