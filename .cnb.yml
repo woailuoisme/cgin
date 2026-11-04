@@ -2,14 +2,14 @@
 # 项目: cgin (Go Gin RESTful Web API)
 # Go 版本: 1.27.3 | 入口: ./cmd/api | 二进制: cgin
 # Dockerfile 位于仓库根，基于 Alpine 极简镜像构建与运行
-# ── main 分支：代码推送与手动触发 ────────────────────────────────────
+
+# ── main 分支：仅保留网页手动触发，常规 push 不触发构建 ──────────────
 main:
-  # 推送 main 自动触发：构建并推送 Alpine (linux/amd64) 镜像与构建缓存
-  push: &docker_build
+  web_trigger:
     - services:
         - docker
       stages:
-        - name: Docker build and push
+        - name: Manual Docker build and push
           script: |
             set -euo pipefail
             REGISTRY="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"
@@ -20,12 +20,8 @@ main:
               -t "${REGISTRY}:latest" \
               --push .
 
-  # 网页手动触发：与 main 推送流水线保持一致
-  web_trigger: *docker_build
-
-# ── 版本发布：仅在推送 v* 标签时执行 ──────────────────────────────────
+# ── 版本发布：仅在推送标签 (tag_push) 时自动执行 ────────────────────
 $:
-  # 推送 v* 标签：复用 main 缓存，构建并推送版本镜像
   tag_push:
     - services:
         - docker
