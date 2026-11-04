@@ -5,8 +5,8 @@
 
 # ── main 分支：网页手动触发（常规 push 不触发构建）──────────────────
 main:
-  # 网页按钮 1：手动构建并推送 Docker 镜像
-  web_trigger:
+  # 网页按钮 1：手动构建并推送 Docker 镜像（对齐 .cnb/web_trigger.yml 中的 web_trigger_amd64）
+  web_trigger_amd64: &docker_build
     - services:
         - docker
       stages:
@@ -21,7 +21,10 @@ main:
               -t "${REGISTRY}:latest" \
               --push .
 
-  # 网页按钮 2：一键独立发布 Helm Chart（秒级推送，无需构建镜像）
+  # 兼容默认网页触发
+  web_trigger: *docker_build
+
+  # 网页按钮 2：一键独立发布 Helm Chart（对齐 .cnb/web_trigger.yml 中的 web_trigger_helm）
   web_trigger_helm:
     - stages:
         - name: Package and push Helm chart to CNB

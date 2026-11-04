@@ -6,3 +6,6 @@ branch:
       - name: Docker build (Alpine amd64)
         description: Build and push Alpine image (linux/amd64 only)
         event: web_trigger_amd64
+      - name: Publish Helm Chart
+        description: Package and push Helm chart to CNB OCI registry (helm.cnb.cool)
+        event: web_trigger_helm
