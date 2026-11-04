@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cgin.fullname" . }}-config
+  labels:
+    {{- include "cgin.labels" (dict "context" . "component" "config") | nindent 4 }}
+data:
+  APP_NAME: {{ .Values.config.APP_NAME | quote }}
+  APP_ENV: {{ .Values.config.APP_ENV | quote }}
+  APP_PORT: {{ .Values.config.APP_PORT | quote }}
+  APP_HOST: {{ .Values.config.APP_HOST | quote }}
+  TZ: {{ .Values.config.TZ | quote }}
+  DB_HOST: {{ .Values.config.DB_HOST | quote }}
+  DB_PORT: {{ .Values.config.DB_PORT | quote }}
+  DB_NAME: {{ .Values.config.DB_NAME | quote }}
+  DB_USER: {{ .Values.config.DB_USER | quote }}
+  DB_SSLMODE: {{ .Values.config.DB_SSLMODE | quote }}
+  VALKEY_HOST: {{ .Values.config.VALKEY_HOST | quote }}
+  VALKEY_PORT: {{ .Values.config.VALKEY_PORT | quote }}
+  VALKEY_DB: {{ .Values.config.VALKEY_DB | quote }}
+  STORAGE_DRIVER: {{ .Values.config.STORAGE_DRIVER | quote }}
+  MAILER_DRIVER: {{ .Values.config.MAILER_DRIVER | quote }}
+  MAILER_HOST: {{ .Values.config.MAILER_HOST | quote }}
+  MAILER_PORT: {{ .Values.config.MAILER_PORT | quote }}
+  QUEUE_CONCURRENCY: {{ .Values.config.QUEUE_CONCURRENCY | quote }}
+  {{- range $key, $val := .Values.config.extraEnv }}
+  {{ $key }}: {{ $val | quote }}
+  {{- end }}
+

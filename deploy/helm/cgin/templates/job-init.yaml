@@ -1,0 +1,46 @@
+{{- if .Values.initJob.enabled -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "cgin.fullname" . }}-init-{{ randAlphaNum 5 | lower }}
+  labels:
+    {{- include "cgin.labels" (dict "context" . "component" "init-job") | nindent 4 }}
+  annotations:
+    {{- with .Values.initJob.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      name: {{ include "cgin.fullname" . }}-init
+      labels:
+        {{- include "cgin.labels" (dict "context" . "component" "init-job") | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "cgin.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: init
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ if .Values.image.registry }}{{ .Values.image.registry }}/{{ end }}{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.initJob.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.initJob.resources | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "cgin.fullname" . }}-config
+            - secretRef:
+                name: {{ include "cgin.secretName" . }}
+{{- end }}
+

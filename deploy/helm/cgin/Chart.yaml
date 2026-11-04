@@ -1,0 +1,15 @@
+apiVersion: v2
+name: cgin
+description: Production-grade Helm chart for cgin RESTful Web API and Asynq Worker
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+icon: https://raw.githubusercontent.com/gin-gonic/logo/master/color.png
+keywords:
+  - golang
+  - gin
+  - sqlc
+  - postgres
+  - asynq
+maintainers:
+  - name: seaside
