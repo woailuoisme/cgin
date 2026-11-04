@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aarondl/opt/omitnull"
 	govalidator "github.com/go-playground/validator/v10"
 
 	"cgin/internal/database/sqlc"
 	"cgin/internal/enum"
+	"cgin/pkg/opt"
 	"cgin/pkg/validator"
 )
 
@@ -35,26 +35,26 @@ func ValidationOptions() []validator.Option {
 
 // FieldSet 是客户端与后台管理共用的可更新档案字段集合。
 type FieldSet struct {
-	Name            omitnull.Val[string]
-	AvatarPath      omitnull.Val[string]
-	Username        omitnull.Val[string]
-	DisplayUsername omitnull.Val[string]
-	PhoneNumber     omitnull.Val[string]
+	Name            opt.Field[string]
+	AvatarPath      opt.Field[string]
+	Username        opt.Field[string]
+	DisplayUsername opt.Field[string]
+	PhoneNumber     opt.Field[string]
 }
 
 // AdminFieldSet 承载管理端具备完整权限的用户模型局部更新字段集合。
 type AdminFieldSet struct {
-	Name            omitnull.Val[string]
-	AvatarPath      omitnull.Val[string]
-	Username        omitnull.Val[string]
-	DisplayUsername omitnull.Val[string]
-	PhoneNumber     omitnull.Val[string]
-	EmailVerified   omitnull.Val[bool]
-	Role            omitnull.Val[enum.Role]
-	Status          omitnull.Val[enum.Status]
-	Banned          omitnull.Val[bool]
-	BanReason       omitnull.Val[string]
-	BanExpires      omitnull.Val[time.Time]
+	Name            opt.Field[string]
+	AvatarPath      opt.Field[string]
+	Username        opt.Field[string]
+	DisplayUsername opt.Field[string]
+	PhoneNumber     opt.Field[string]
+	EmailVerified   opt.Field[bool]
+	Role            opt.Field[enum.Role]
+	Status          opt.Field[enum.Status]
+	Banned          opt.Field[bool]
+	BanReason       opt.Field[string]
+	BanExpires      opt.Field[time.Time]
 }
 
 // Patch 把三态字段归一为单条 UPDATE 所需的显式设置/清空意图。
@@ -208,7 +208,7 @@ func (p Patch) Params(id string) sqlc.UpdateUserParams {
 	return params
 }
 
-func textField(value omitnull.Val[string]) (*string, bool) {
+func textField(value opt.Field[string]) (*string, bool) {
 	if value.IsUnset() {
 		return nil, false
 	}

@@ -4,11 +4,11 @@ import (
 	"context"
 	"strings"
 
-	"github.com/aarondl/opt/omitnull"
 	"github.com/samber/oops"
 
 	"cgin/internal/user"
 	"cgin/pkg/errs"
+	"cgin/pkg/opt"
 )
 
 // userProfiles 声明本人档案所需的读写能力，由本包按需定义最小契约。
@@ -77,7 +77,7 @@ func (s *ProfileService) UpdateAvatar(ctx context.Context, userID string, avatar
 	oldProfile, _ := s.users.GetProfile(ctx, userID)
 
 	updated, err := s.users.UpdateProfile(ctx, userID, user.FieldSet{
-		AvatarPath: omitnull.From(cleanPath),
+		AvatarPath: opt.From(cleanPath),
 	}, user.ScopeClient)
 	if err != nil {
 		return user.Profile{}, err

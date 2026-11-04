@@ -414,7 +414,7 @@ test/                           # 外部测试包（测试代码与业务逻辑�
 - ⚠️ **`swag` 跨包类型解析缺陷与别名避坑**：
   - **现象**：`swag` 在解析跨包结构体引用（如跨包直接声明 `{object} user.Profile`）时存在编译器缺陷，极易偶发报 `cannot find type definition` 导致 `just docs` 失败。
   - **强制规则**：涉及跨包引用的结构体，必须在当前 handler 包内定义一层本地同名类型别名（例如在 [internal/dto/profile.go](file:///Users/seaside/Projects/backend/go/gin-sqlc/internal/dto/profile.go) 中显式声明 `type ProfileResource = user.Profile`）。修改或重构相关代码时**严禁误删此类类型别名**！
-- **三态字段 Swagger 类型修正**：使用三态值容器 `omitnull.Val[T]` (`aarondl/opt`) 的字段必须显式附加 `swaggertype:"string" extensions:"x-nullable"`（或对应基础标量类型），防止泛型容器被展开为 `{state, val}`。
+- **三态字段 Swagger 类型修正**：使用三态值容器 `opt.Field[T]` (`pkg/opt`) 的字段必须显式附加 `swaggertype:"string" extensions:"x-nullable"`（或对应基础标量类型），防止泛型容器被展开为 `{state, val}`。
 
 ---
 

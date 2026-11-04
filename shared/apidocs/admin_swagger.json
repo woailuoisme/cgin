@@ -581,11 +581,11 @@
                 "role"
             ],
             "properties": {
-                "avatarPath": {
-                    "description": "用户头像在对象存储中的相对路径",
+                "avatar_path": {
+                    "description": "用户头像在对象存储中的相对路径（Key）",
                     "type": "string",
-                    "maxLength": 2048,
-                    "example": "uploads/avatar/20261031/uuid.webp"
+                    "maxLength": 512,
+                    "example": "uploads/avatars/20261031/uuid.png"
                 },
                 "email": {
                     "description": "用户电子邮箱",
@@ -835,12 +835,12 @@
         "admindto.UpdateUserBody": {
             "type": "object",
             "properties": {
-                "avatarPath": {
-                    "description": "用户头像在对象存储中的相对路径",
+                "avatar_path": {
+                    "description": "用户头像在对象存储中的相对路径（Key）",
                     "type": "string",
-                    "maxLength": 2048,
+                    "maxLength": 512,
                     "x-nullable": true,
-                    "example": "uploads/avatar/20261031/uuid.webp"
+                    "example": "uploads/avatars/20261031/uuid.png"
                 },
                 "banExpires": {
                     "description": "封禁到期时间 (ISO 8601 UTC)",
@@ -944,7 +944,7 @@
             "type": "object",
             "properties": {
                 "avatar": {
-                    "description": "用户头像多规格衍生访问地址",
+                    "description": "用户头像复合对象（包含相对存储路径与 Imgproxy 防篡改签名访问 URL）",
                     "allOf": [
                         {
                             "$ref": "#/definitions/media.ImageVariants"

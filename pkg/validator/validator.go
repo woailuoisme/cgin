@@ -18,7 +18,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/aarondl/opt/omitnull"
 	"github.com/dustin/go-humanize"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
@@ -26,6 +25,7 @@ import (
 
 	"cgin/pkg/errs"
 	"cgin/pkg/i18n"
+	"cgin/pkg/opt"
 )
 
 // Validatable 是支持 DTO 自校验与跨字段复合校验的接口契约。
@@ -58,12 +58,17 @@ func WithRule(tag string, fn govalidator.Func, messageKey string) Option {
 	}
 }
 
-// WithOmitNullTypes 为具体的 omitnull.Val[T] 类型注册三态解包函数。
-func WithOmitNullTypes(types ...any) Option {
+// WithFieldTypes 为具体的 opt.Field[T] 类型注册三态解包函数。
+func WithFieldTypes(types ...any) Option {
 	return func(v *Validator) error {
-		v.engine.RegisterCustomTypeFunc(UnpackOmitNull, types...)
+		v.engine.RegisterCustomTypeFunc(UnpackField, types...)
 		return nil
 	}
+}
+
+// WithOmitNullTypes 为兼容历史别名，推荐使用 WithFieldTypes。
+func WithOmitNullTypes(types ...any) Option {
+	return WithFieldTypes(types...)
 }
 
 // New 构造校验器：先注册内置规则，再依次应用调用方追加的选项。
@@ -157,10 +162,10 @@ func wrapValidationError(err error) error {
 // bindingTags 是字段名提取时依次尝试的结构体标签。
 var bindingTags = [...]string{"json", "form", "uri"}
 
-// UnpackOmitNull 统一从 omitnull.Val[T] 容器提取具体值供验证器校验。
+// UnpackField 统一从 opt.Field[T] 容器提取具体值供验证器校验。
 // 若字段为缺省 (Unset) 或显式置空 (Null)，返回 nil（由 omitempty 标签跳过基础校验规则）；
 // 若包含具体有效值，则解包返回 T 驱动后续标量规则。
-func UnpackOmitNull(field reflect.Value) any {
+func UnpackField(field reflect.Value) any {
 	if !field.IsValid() {
 		return nil
 	}
@@ -180,6 +185,11 @@ func UnpackOmitNull(field reflect.Value) any {
 	return nil
 }
 
+// UnpackOmitNull 兼容历史别名函数。
+func UnpackOmitNull(field reflect.Value) any {
+	return UnpackField(field)
+}
+
 // registerRules 统一注册 json/form/uri 标签名解析与基础校验规则。
 func registerRules(v *govalidator.Validate) error {
 	v.SetTagName("validate")
@@ -195,13 +205,13 @@ func registerRules(v *govalidator.Validate) error {
 		return field.Name
 	})
 
-	v.RegisterCustomTypeFunc(UnpackOmitNull,
-		omitnull.Val[string]{},
-		omitnull.Val[bool]{},
-		omitnull.Val[int]{},
-		omitnull.Val[int64]{},
-		omitnull.Val[float64]{},
-		omitnull.Val[time.Time]{},
+	v.RegisterCustomTypeFunc(UnpackField,
+		opt.Field[string]{},
+		opt.Field[bool]{},
+		opt.Field[int]{},
+		opt.Field[int64]{},
+		opt.Field[float64]{},
+		opt.Field[time.Time]{},
 	)
 
 	rules := []struct {

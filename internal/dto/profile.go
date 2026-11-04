@@ -1,9 +1,8 @@
 package dto
 
 import (
-	"github.com/aarondl/opt/omitnull"
-
 	"cgin/internal/user"
+	"cgin/pkg/opt"
 )
 
 // ProfileResource 为用户内核档案视图的类型别名（供 Swagger 注解直接引用）。
@@ -18,15 +17,15 @@ type UpdateAvatarBody struct {
 // UpdateProfileBody 是 PATCH /v1/users/me 的局部更新请求体。
 type UpdateProfileBody struct {
 	// 用户展示昵称
-	Name omitnull.Val[string] `json:"name" validate:"omitempty,min=1,max=120" swaggertype:"string" extensions:"x-nullable" example:"Alex Mercer"`
+	Name opt.Field[string] `json:"name" validate:"omitempty,min=1,max=120" swaggertype:"string" extensions:"x-nullable" example:"Alex Mercer"`
 	// 用户头像在对象存储中的相对路径（Key）
-	AvatarPath omitnull.Val[string] `json:"avatar_path" validate:"omitempty,max=512" swaggertype:"string" extensions:"x-nullable" example:"uploads/avatars/20261031/uuid.png"`
+	AvatarPath opt.Field[string] `json:"avatar_path" validate:"omitempty,max=512" swaggertype:"string" extensions:"x-nullable" example:"uploads/avatars/20261031/uuid.png"`
 	// 唯一登录用户名 (3-30位)
-	Username omitnull.Val[string] `json:"username" validate:"omitempty,min=3,max=30,usernameslug,notreserved" swaggertype:"string" extensions:"x-nullable" example:"alexmercer"`
+	Username opt.Field[string] `json:"username" validate:"omitempty,min=3,max=30,usernameslug,notreserved" swaggertype:"string" extensions:"x-nullable" example:"alexmercer"`
 	// 用户显示名称
-	DisplayUsername omitnull.Val[string] `json:"displayUsername" validate:"omitempty,min=1,max=120" swaggertype:"string" extensions:"x-nullable" example:"Alex Mercer"`
+	DisplayUsername opt.Field[string] `json:"displayUsername" validate:"omitempty,min=1,max=120" swaggertype:"string" extensions:"x-nullable" example:"Alex Mercer"`
 	// E.164 格式手机号
-	PhoneNumber omitnull.Val[string] `json:"phoneNumber" validate:"omitempty,e164" swaggertype:"string" extensions:"x-nullable" example:"+8613800138000"`
+	PhoneNumber opt.Field[string] `json:"phoneNumber" validate:"omitempty,e164" swaggertype:"string" extensions:"x-nullable" example:"+8613800138000"`
 }
 
 // Validate 实现 Validatable 契约，阻断库层非空字段的显式置空。

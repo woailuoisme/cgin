@@ -11,7 +11,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/aarondl/opt/omitnull"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	govalidator "github.com/go-playground/validator/v10"
@@ -21,6 +20,7 @@ import (
 	"cgin/internal/config"
 	"cgin/pkg/errs"
 	"cgin/pkg/i18n"
+	"cgin/pkg/opt"
 	"cgin/pkg/validator"
 )
 
@@ -32,7 +32,7 @@ var testValidator *validator.Validator
 
 // TestMain 构造并安装校验器，供依赖 gin 绑定的用例使用。
 func TestMain(m *testing.M) {
-	v, err := validator.New(validator.WithOmitNullTypes(omitnull.Val[testRoleType]{}))
+	v, err := validator.New(validator.WithFieldTypes(opt.Field[testRoleType]{}))
 	if err != nil {
 		panic(err)
 	}
@@ -555,13 +555,13 @@ const (
 )
 
 type testPatchBody struct {
-	Name omitnull.Val[string]       `json:"name" validate:"omitempty,min=3,max=20"`
-	Age  omitnull.Val[int]          `json:"age" validate:"omitempty,min=1,max=120"`
-	Role omitnull.Val[testRoleType] `json:"role" validate:"omitempty,oneof=super guest"`
+	Name opt.Field[string]       `json:"name" validate:"omitempty,min=3,max=20"`
+	Age  opt.Field[int]          `json:"age" validate:"omitempty,min=1,max=120"`
+	Role opt.Field[testRoleType] `json:"role" validate:"omitempty,oneof=super guest"`
 }
 
-// TestOmitNullValidation 验证三态 omitnull 容器字段与验证器解包、标量规则联动的准确性。
-func TestOmitNullValidation(t *testing.T) {
+// TestOptFieldValidation 验证三态 opt.Field 容器字段与验证器解包、标量规则联动的准确性。
+func TestOptFieldValidation(t *testing.T) {
 	v, ok := binding.Validator.Engine().(*govalidator.Validate)
 	require.True(t, ok)
 
@@ -572,26 +572,26 @@ func TestOmitNullValidation(t *testing.T) {
 
 	t.Run("显式置空 (Null) 时通过 omitempty 规则", func(t *testing.T) {
 		form := testPatchBody{
-			Name: omitnull.FromPtr[string](nil),
-			Age:  omitnull.FromPtr[int](nil),
+			Name: opt.FromPtr[string](nil),
+			Age:  opt.FromPtr[int](nil),
 		}
 		assert.NoError(t, v.Struct(form))
 	})
 
 	t.Run("包含合法有效值时校验通过", func(t *testing.T) {
 		form := testPatchBody{
-			Name: omitnull.From("alice"),
-			Age:  omitnull.From(25),
-			Role: omitnull.From(roleSuper),
+			Name: opt.From("alice"),
+			Age:  opt.From(25),
+			Role: opt.From(roleSuper),
 		}
 		assert.NoError(t, v.Struct(form))
 	})
 
 	t.Run("包含非法值时触发标量标签规则拦截", func(t *testing.T) {
 		form := testPatchBody{
-			Name: omitnull.From("al"), // < min=3
-			Age:  omitnull.From(200),  // > max=120
-			Role: omitnull.From(testRoleType("invalid_role")),
+			Name: opt.From("al"), // < min=3
+			Age:  opt.From(200),  // > max=120
+			Role: opt.From(testRoleType("invalid_role")),
 		}
 		err := v.Struct(form)
 		require.Error(t, err)

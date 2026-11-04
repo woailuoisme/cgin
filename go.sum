@@ -20,8 +20,6 @@ github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERo
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/ThreeDotsLabs/watermill v1.5.3 h1:GoTR7fW1ZT+itzUv/w3VB6Um1B7oTBrOWjJ8sOA9XqU=
 github.com/ThreeDotsLabs/watermill v1.5.3/go.mod h1:i9/968UriGphWfEbfMuYSD1qFbYRjb0mE0r+rV0FPp4=
-github.com/aarondl/opt v0.0.0-20250607033636-982744e1bd65 h1:lbdPe4LBNmNDzeQFwNhEc88w90841qv737MI4+aXSYU=
-github.com/aarondl/opt v0.0.0-20250607033636-982744e1bd65/go.mod h1:+xKBXrTAUOvrDXO5PRwIr4E1wciHY3Glgl+6OkCXknU=
 github.com/alexliesenfeld/health v0.8.1 h1:wdE3vt+cbJotiR8DGDBZPKHDFoJbAoWEfQTcqrmedUg=
 github.com/alexliesenfeld/health v0.8.1/go.mod h1:TfNP0f+9WQVWMQRzvMUjlws4ceXKEL3WR+6Hp95HUFc=
 github.com/andybalholm/brotli v1.1.1 h1:PR2pgnyFznKEugtsUo0xLdDop5SKXd5Qf5ysW+7XdTA=
@@ -387,8 +385,6 @@ github.com/samber/lo v1.53.0 h1:t975lj2py4kJPQ6haz1QMgtId2gtmfktACxIXArw3HM=
 github.com/samber/lo v1.53.0/go.mod h1:4+MXEGsJzbKGaUEQFKBq2xtfuznW9oz/WrgyzMzRoM0=
 github.com/samber/oops v1.23.2 h1:DIfPsYJ8p+diZKBZEfZsGDsJtl/zkYX3O813sVqJ82w=
 github.com/samber/oops v1.23.2/go.mod h1:34UjnFO2/j7LvV4dCc+Ipe4o1a1HiCdbFFF5N3kh7HM=
-github.com/samber/slog-common v0.21.0 h1:Wo2hTly1Br5RjYqX/BTWJJeDnTE85oWk/7vqlpZuAUc=
-github.com/samber/slog-common v0.21.0/go.mod h1:d/6OaSlzdkl9PFpfRLgn8FwY1OW6EFmPtBpsHX4MrU0=
 github.com/samber/slog-common v0.22.0 h1:WyPxYRg/c5xUmxZJbtd0QgysHlLBhRA+MngKdJieHxE=
 github.com/samber/slog-common v0.22.0/go.mod h1:d/6OaSlzdkl9PFpfRLgn8FwY1OW6EFmPtBpsHX4MrU0=
 github.com/samber/slog-zerolog/v2 v2.9.2 h1:DIFzfzDTxHeRyGlfg/D7b2by7VVzcsBTybRPrzjWF4c=

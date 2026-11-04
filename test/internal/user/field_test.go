@@ -4,19 +4,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aarondl/opt/omitnull"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/enum"
 	"cgin/internal/user"
+	"cgin/pkg/opt"
 )
 
 // TestPatchFromAdminFieldSet 验证封禁布尔状态与账号状态的协同一致性。
 func TestPatchFromAdminFieldSet(t *testing.T) {
 	t.Run("状态为banned时自动设置banned为true", func(t *testing.T) {
 		patch, err := user.PatchFromAdminFieldSet(user.AdminFieldSet{
-			Status: omitnull.From(enum.StatusBanned),
+			Status: opt.From(enum.StatusBanned),
 		})
 		require.NoError(t, err)
 		require.NotNil(t, patch.Banned)
@@ -25,8 +25,8 @@ func TestPatchFromAdminFieldSet(t *testing.T) {
 
 	t.Run("banned为true时自动将状态改为banned", func(t *testing.T) {
 		patch, err := user.PatchFromAdminFieldSet(user.AdminFieldSet{
-			Banned: omitnull.From(true),
-			Status: omitnull.From(enum.StatusActive),
+			Banned: opt.From(true),
+			Status: opt.From(enum.StatusActive),
 		})
 		require.NoError(t, err)
 		require.NotNil(t, patch.Status)
@@ -35,7 +35,7 @@ func TestPatchFromAdminFieldSet(t *testing.T) {
 
 	t.Run("显式null的必填字符串返回校验错误", func(t *testing.T) {
 		_, err := user.PatchFromAdminFieldSet(user.AdminFieldSet{
-			Role: omitnull.FromPtr[enum.Role](nil),
+			Role: opt.Null[enum.Role](),
 		})
 		require.Error(t, err)
 	})
@@ -51,8 +51,8 @@ func TestPatchFromFieldSet(t *testing.T) {
 
 	t.Run("显式null触发清空", func(t *testing.T) {
 		patch, err := user.PatchFromFieldSet(user.FieldSet{
-			AvatarPath: omitnull.FromPtr[string](nil),
-			Username:   omitnull.FromPtr[string](nil),
+			AvatarPath: opt.Null[string](),
+			Username:   opt.Null[string](),
 		})
 		require.NoError(t, err)
 		assert.True(t, patch.ClearAvatarPath)
@@ -62,7 +62,7 @@ func TestPatchFromFieldSet(t *testing.T) {
 
 	t.Run("纯空白视为清空", func(t *testing.T) {
 		patch, err := user.PatchFromFieldSet(user.FieldSet{
-			PhoneNumber: omitnull.From("   "),
+			PhoneNumber: opt.From("   "),
 		})
 		require.NoError(t, err)
 		assert.True(t, patch.ClearPhone)
@@ -71,7 +71,7 @@ func TestPatchFromFieldSet(t *testing.T) {
 	t.Run("有效值写入参数并归一化时间", func(t *testing.T) {
 		expires := time.Date(2026, 10, 1, 12, 0, 0, 0, time.FixedZone("CST", 8*3600))
 		patch, err := user.PatchFromAdminFieldSet(user.AdminFieldSet{
-			BanExpires: omitnull.From(expires),
+			BanExpires: opt.From(expires),
 		})
 		require.NoError(t, err)
 		params := patch.Params("usr_1")

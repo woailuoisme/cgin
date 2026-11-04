@@ -4,7 +4,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aarondl/opt/omitnull"
 	"github.com/samber/lo"
 
 	"cgin/internal/database"
@@ -12,6 +11,7 @@ import (
 	"cgin/internal/enum"
 	"cgin/internal/user"
 	"cgin/pkg/media"
+	"cgin/pkg/opt"
 	"cgin/pkg/response"
 	"cgin/pkg/validator"
 )
@@ -19,7 +19,7 @@ import (
 // ValidationOptions 返回用户管理模块贡献给校验器的自定义类型解包函数。
 func ValidationOptions() []validator.Option {
 	return []validator.Option{
-		validator.WithOmitNullTypes(omitnull.Val[Role]{}, omitnull.Val[Status]{}),
+		validator.WithFieldTypes(opt.Field[Role]{}, opt.Field[Status]{}),
 	}
 }
 
@@ -78,27 +78,27 @@ type CreateUserBody struct {
 // UpdateUserBody 是 PATCH /v1/admin/users/:id 的请求体。
 type UpdateUserBody struct {
 	// 用户展示昵称
-	Name omitnull.Val[string] `json:"name" validate:"omitempty,min=1,max=120" swaggertype:"string" extensions:"x-nullable" example:"Alex Mercer"`
+	Name opt.Field[string] `json:"name" validate:"omitempty,min=1,max=120" swaggertype:"string" extensions:"x-nullable" example:"Alex Mercer"`
 	// 用户头像在对象存储中的相对路径（Key）
-	AvatarPath omitnull.Val[string] `json:"avatar_path" validate:"omitempty,max=512" swaggertype:"string" extensions:"x-nullable" example:"uploads/avatars/20261031/uuid.png"`
+	AvatarPath opt.Field[string] `json:"avatar_path" validate:"omitempty,max=512" swaggertype:"string" extensions:"x-nullable" example:"uploads/avatars/20261031/uuid.png"`
 	// 唯一登录用户名 (3-30位)
-	Username omitnull.Val[string] `json:"username" validate:"omitempty,min=3,max=30,usernameslug,notreserved" swaggertype:"string" extensions:"x-nullable" example:"alexmercer"`
+	Username opt.Field[string] `json:"username" validate:"omitempty,min=3,max=30,usernameslug,notreserved" swaggertype:"string" extensions:"x-nullable" example:"alexmercer"`
 	// 用户显示名称
-	DisplayUsername omitnull.Val[string] `json:"displayUsername" validate:"omitempty,min=1,max=120" swaggertype:"string" extensions:"x-nullable" example:"Alex Mercer"`
+	DisplayUsername opt.Field[string] `json:"displayUsername" validate:"omitempty,min=1,max=120" swaggertype:"string" extensions:"x-nullable" example:"Alex Mercer"`
 	// E.164 格式手机号
-	PhoneNumber omitnull.Val[string] `json:"phoneNumber" validate:"omitempty,e164" swaggertype:"string" extensions:"x-nullable" example:"+8613800138000"`
+	PhoneNumber opt.Field[string] `json:"phoneNumber" validate:"omitempty,e164" swaggertype:"string" extensions:"x-nullable" example:"+8613800138000"`
 	// 邮箱是否已验证
-	EmailVerified omitnull.Val[bool] `json:"emailVerified" swaggertype:"boolean" extensions:"x-nullable" example:"true"`
+	EmailVerified opt.Field[bool] `json:"emailVerified" swaggertype:"boolean" extensions:"x-nullable" example:"true"`
 	// 用户权限角色 (user: 普通用户, admin: 系统管理员)
-	Role omitnull.Val[Role] `json:"role" validate:"omitempty,oneof=user admin" swaggertype:"string" extensions:"x-nullable" example:"admin" enums:"user,admin"`
+	Role opt.Field[Role] `json:"role" validate:"omitempty,oneof=user admin" swaggertype:"string" extensions:"x-nullable" example:"admin" enums:"user,admin"`
 	// 账号状态 (active: 正常活跃, inactive: 未激活, banned: 已封禁)
-	Status omitnull.Val[Status] `json:"status" validate:"omitempty,oneof=active inactive banned" swaggertype:"string" extensions:"x-nullable" example:"active" enums:"active,inactive,banned"`
+	Status opt.Field[Status] `json:"status" validate:"omitempty,oneof=active inactive banned" swaggertype:"string" extensions:"x-nullable" example:"active" enums:"active,inactive,banned"`
 	// 是否封禁
-	Banned omitnull.Val[bool] `json:"banned" swaggertype:"boolean" extensions:"x-nullable" example:"false"`
+	Banned opt.Field[bool] `json:"banned" swaggertype:"boolean" extensions:"x-nullable" example:"false"`
 	// 封禁原因
-	BanReason omitnull.Val[string] `json:"banReason" validate:"omitempty,max=500" swaggertype:"string" extensions:"x-nullable" example:"违规发布广告"`
+	BanReason opt.Field[string] `json:"banReason" validate:"omitempty,max=500" swaggertype:"string" extensions:"x-nullable" example:"违规发布广告"`
 	// 封禁到期时间 (ISO 8601 UTC)
-	BanExpires omitnull.Val[time.Time] `json:"banExpires" swaggertype:"string" extensions:"x-nullable" example:"2026-10-01T00:00:00Z"`
+	BanExpires opt.Field[time.Time] `json:"banExpires" swaggertype:"string" extensions:"x-nullable" example:"2026-10-01T00:00:00Z"`
 }
 
 var _ validator.Validatable = UpdateUserBody{}

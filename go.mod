@@ -8,7 +8,6 @@ require (
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/ThreeDotsLabs/watermill v1.5.3
-	github.com/aarondl/opt v0.0.0-20250607033636-982744e1bd65
 	github.com/alexliesenfeld/health v0.8.1
 	github.com/brianvoe/gofakeit/v7 v7.18.1
 	github.com/caarlos0/env/v11 v11.4.2
