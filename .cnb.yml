@@ -3,8 +3,9 @@
 # Go 版本: 1.27.3 | 入口: ./cmd/api | 二进制: cgin
 # Dockerfile 位于仓库根，基于 Alpine 极简镜像构建与运行
 
-# ── main 分支：仅保留网页手动触发，常规 push 不触发构建 ──────────────
+# ── main 分支：网页手动触发（常规 push 不触发构建）──────────────────
 main:
+  # 网页按钮 1：手动构建并推送 Docker 镜像
   web_trigger:
     - services:
         - docker
@@ -20,8 +21,60 @@ main:
               -t "${REGISTRY}:latest" \
               --push .
 
-# ── 版本发布：仅在推送标签 (tag_push) 时自动执行 ────────────────────
-$:
+  # 网页按钮 2：一键独立发布 Helm Chart（秒级推送，无需构建镜像）
+  web_trigger_helm:
+    - stages:
+        - name: Package and push Helm chart to CNB
+          script: |
+            set -euo pipefail
+            CHART_VERSION=$(grep '^version:' deploy/helm/cgin/Chart.yaml | awk '{print $2}')
+            APP_VERSION=$(grep '^appVersion:' deploy/helm/cgin/Chart.yaml | awk '{print $2}' | tr -d '"')
+            HELM_REGISTRY="${CNB_HELM_REGISTRY:-helm.cnb.cool}"
+
+            docker run --rm \
+              -v "$(pwd):/apps" \
+              -w /apps \
+              -e CNB_TOKEN="${CNB_TOKEN}" \
+              -e CNB_TOKEN_USER_NAME="${CNB_TOKEN_USER_NAME:-cnb}" \
+              -e HELM_REGISTRY="${HELM_REGISTRY}" \
+              -e CNB_REPO_SLUG_LOWERCASE="${CNB_REPO_SLUG_LOWERCASE}" \
+              -e CHART_VERSION="${CHART_VERSION}" \
+              -e APP_VERSION="${APP_VERSION}" \
+              alpine/helm:latest sh -euo pipefail -c '
+                echo "${CNB_TOKEN}" | helm registry login "${HELM_REGISTRY}" -u "${CNB_TOKEN_USER_NAME}" --password-stdin
+                helm package deploy/helm/cgin --version "${CHART_VERSION}" --app-version "${APP_VERSION}" -d /apps
+                helm push "/apps/cgin-${CHART_VERSION}.tgz" "oci://${HELM_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"
+              '
+
+# ── 独立 Chart 标签发布 (chart-v*)：仅发布 Helm Chart ────────────────
+chart-v*:
+  tag_push:
+    - stages:
+        - name: Package and push Helm chart to CNB
+          script: |
+            set -euo pipefail
+            TAG_NAME="${CNB_BRANCH##*/}"
+            CHART_VERSION="${TAG_NAME#chart-v}"
+            APP_VERSION=$(grep '^appVersion:' deploy/helm/cgin/Chart.yaml | awk '{print $2}' | tr -d '"')
+            HELM_REGISTRY="${CNB_HELM_REGISTRY:-helm.cnb.cool}"
+
+            docker run --rm \
+              -v "$(pwd):/apps" \
+              -w /apps \
+              -e CNB_TOKEN="${CNB_TOKEN}" \
+              -e CNB_TOKEN_USER_NAME="${CNB_TOKEN_USER_NAME:-cnb}" \
+              -e HELM_REGISTRY="${HELM_REGISTRY}" \
+              -e CNB_REPO_SLUG_LOWERCASE="${CNB_REPO_SLUG_LOWERCASE}" \
+              -e CHART_VERSION="${CHART_VERSION}" \
+              -e APP_VERSION="${APP_VERSION}" \
+              alpine/helm:latest sh -euo pipefail -c '
+                echo "${CNB_TOKEN}" | helm registry login "${HELM_REGISTRY}" -u "${CNB_TOKEN_USER_NAME}" --password-stdin
+                helm package deploy/helm/cgin --version "${CHART_VERSION}" --app-version "${APP_VERSION}" -d /apps
+                helm push "/apps/cgin-${CHART_VERSION}.tgz" "oci://${HELM_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"
+              '
+
+# ── 正式全量发版 (v*)：镜像与 Chart 原子化联动自动发布 ───────────────
+v*:
   tag_push:
     - services:
         - docker
@@ -46,7 +99,6 @@ $:
             CHART_VERSION="${VERSION#v}"
             HELM_REGISTRY="${CNB_HELM_REGISTRY:-helm.cnb.cool}"
 
-            # 借助 alpine/helm 容器打包并发布 OCI Chart 到 CNB 制品库
             docker run --rm \
               -v "$(pwd):/apps" \
               -w /apps \
