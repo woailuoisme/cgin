@@ -1,8 +1,6 @@
 package dto
 
 import (
-	"github.com/samber/lo"
-
 	"cgin/pkg/media"
 )
 
@@ -36,6 +34,13 @@ type PresignUploadResource struct {
 type ImageVariantResource = media.ImageVariants
 
 // BuildAvatar 根据存储相对路径构建复合头像对象；路径为空时安全返回 nil。
-func BuildAvatar(path *string, engine ...media.Engine) *ImageVariantResource {
-	return media.BuildImageVariants(lo.FromPtr(path), engine...)
+func BuildAvatar(path *string, signer ...media.Signer) *ImageVariantResource {
+	if path == nil || *path == "" {
+		return nil
+	}
+	var s media.Signer
+	if len(signer) > 0 {
+		s = signer[0]
+	}
+	return media.BuildImageVariants(*path, s)
 }

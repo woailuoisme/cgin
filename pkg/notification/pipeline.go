@@ -3,6 +3,7 @@ package notification
 
 import (
 	"context"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -35,10 +36,10 @@ func RecoveryMiddleware() Middleware {
 		return func(ctx context.Context, target any, notif Notification, channel string) (err error) {
 			defer func() {
 				if r := recover(); r != nil {
-					logger.FromContext(ctx).Error().
-						Any("panic", r).
-						Str("channel", channel).
-						Msg("panic recovered in notification pipeline")
+					logger.FromContext(ctx).ErrorContext(ctx, "panic recovered in notification pipeline",
+						slog.Any("panic", r),
+						slog.String("channel", channel),
+					)
 					err = oops.Code(errs.CodeNotificationPanic).
 						With("channel", channel).
 						Errorf("notification panic: %v", r)
@@ -110,11 +111,11 @@ func DeduplicateMiddleware(store cache.Store, defaultTTL time.Duration) Middlewa
 			dedupKey := cache.Key("notification", "idempotent", channel, key)
 			acquired, err := store.SetNX(ctx, dedupKey, "1", defaultTTL)
 			if err != nil {
-				logger.FromContext(ctx).Warn().
-					Err(err).
-					Str("channel", channel).
-					Str("key", dedupKey).
-					Msg("failed to verify notification idempotency, proceeding")
+				logger.FromContext(ctx).WarnContext(ctx, "failed to verify notification idempotency, proceeding",
+					slog.Any("error", err),
+					slog.String("channel", channel),
+					slog.String("key", dedupKey),
+				)
 			} else if !acquired {
 				return oops.Code(errs.CodeNotificationDeduplicated).
 					With("channel", channel).

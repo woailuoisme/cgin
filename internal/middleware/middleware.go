@@ -6,12 +6,12 @@ package middleware
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog"
 
 	"cgin/internal/config"
 	"cgin/pkg/authentication"
 	"cgin/pkg/authorization"
 	"cgin/pkg/cache"
+	"cgin/pkg/logger"
 )
 
 // Deps 是路由/组中间件所需的依赖，由 bootstrap 装配后注入。
@@ -19,7 +19,7 @@ type Deps struct {
 	AuthManager *authentication.Manager
 	Cache       cache.Store
 	Authz       *authorization.Enforcer
-	Logger      *zerolog.Logger
+	Logger      *logger.Logger
 	Limiter     config.LimiterConfig
 	SigningKey  string
 }
@@ -30,7 +30,7 @@ type Middleware struct {
 	cache        cache.Store
 	limiterStore RateLimiterStore
 	authz        *authorization.Enforcer
-	logger       *zerolog.Logger
+	logger       *logger.Logger
 	limiter      config.LimiterConfig
 	signingKey   string
 }

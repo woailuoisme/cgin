@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog"
 
 	"cgin/internal/config"
 	"cgin/pkg/cache"
@@ -23,7 +22,7 @@ import (
 // Deps 描述全局中间件所需的全部外部依赖。
 type Deps struct {
 	Cache      cache.Store
-	Logger     *zerolog.Logger
+	Logger     *logger.Logger
 	CORS       config.CORSConfig
 	Production bool
 	Translator i18n.Translator
@@ -39,7 +38,7 @@ type Deps struct {
 // Middleware 承载全局传输层中间件的实例依赖。
 type Middleware struct {
 	cache          cache.Store
-	logger         *zerolog.Logger
+	logger         *logger.Logger
 	cors           config.CORSConfig
 	production     bool
 	translator     i18n.Translator

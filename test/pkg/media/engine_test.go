@@ -1,4 +1,4 @@
-// Package media_test 针对统一深度媒体引擎 media.Engine 进行契约与单元测试。
+// Package media_test 针对 Uploader 预签名上传协调器与 Signer 签名引擎进行契约测试。
 package media_test
 
 import (
@@ -18,56 +18,62 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"cgin/internal/config"
 	"cgin/pkg/media"
 	"cgin/pkg/storage"
 )
 
-// fakeDisk 实现了 storage.Disk，专用于内存测试。
 type fakeDisk struct {
 	files   map[string][]byte
-	deleted []string
+	deleted map[string]bool
+}
+
+func newFakeDisk() *fakeDisk {
+	return &fakeDisk{
+		files:   make(map[string][]byte),
+		deleted: make(map[string]bool),
+	}
 }
 
 var _ storage.Disk = (*fakeDisk)(nil)
+var _ storage.Presigner = (*fakeDisk)(nil)
 
-func newFakeDisk() *fakeDisk {
-	return &fakeDisk{files: make(map[string][]byte)}
+func (d *fakeDisk) Put(_ context.Context, path string, contents []byte) error {
+	d.files[path] = contents
+	delete(d.deleted, path)
+	return nil
+}
+
+func (d *fakeDisk) PutStream(_ context.Context, path string, reader io.Reader) error {
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return err
+	}
+	d.files[path] = data
+	delete(d.deleted, path)
+	return nil
+}
+
+func (d *fakeDisk) PutMultipart(_ context.Context, _ string, _ *multipart.FileHeader) error {
+	return nil
 }
 
 func (d *fakeDisk) Get(_ context.Context, path string) ([]byte, error) {
-	if b, ok := d.files[path]; ok {
-		return b, nil
+	if data, ok := d.files[path]; ok {
+		return data, nil
 	}
 	return nil, storage.ErrNoPublicURL
 }
 
 func (d *fakeDisk) GetStream(_ context.Context, path string) (io.ReadCloser, error) {
-	if b, ok := d.files[path]; ok {
-		return io.NopCloser(bytes.NewReader(b)), nil
+	if data, ok := d.files[path]; ok {
+		return io.NopCloser(bytes.NewReader(data)), nil
 	}
 	return nil, storage.ErrNoPublicURL
 }
 
-func (d *fakeDisk) Put(_ context.Context, path string, contents []byte) error {
-	d.files[path] = contents
-	return nil
-}
-
-func (d *fakeDisk) PutStream(_ context.Context, path string, r io.Reader) error {
-	b, _ := io.ReadAll(r)
-	d.files[path] = b
-	return nil
-}
-
-func (d *fakeDisk) PutMultipart(_ context.Context, path string, _ *multipart.FileHeader) error {
-	d.files[path] = []byte("multipart")
-	return nil
-}
-
 func (d *fakeDisk) Delete(_ context.Context, path string) error {
-	d.deleted = append(d.deleted, path)
 	delete(d.files, path)
+	d.deleted[path] = true
 	return nil
 }
 
@@ -77,10 +83,10 @@ func (d *fakeDisk) Exists(_ context.Context, path string) (bool, error) {
 }
 
 func (d *fakeDisk) Size(_ context.Context, path string) (int64, error) {
-	if b, ok := d.files[path]; ok {
-		return int64(len(b)), nil
+	if data, ok := d.files[path]; ok {
+		return int64(len(data)), nil
 	}
-	return 0, nil
+	return 0, storage.ErrNoPublicURL
 }
 
 func (d *fakeDisk) LastModified(_ context.Context, _ string) (time.Time, error) {
@@ -111,18 +117,26 @@ func (d *fakeDisk) Driver() string {
 	return "memory-mock"
 }
 
-func setupTestEngine(t *testing.T) (media.Engine, *fakeDisk) {
+func setupTestUploader(t *testing.T) (media.Uploader, *fakeDisk) {
 	t.Helper()
+	disk := newFakeDisk()
+	v := media.NewValidator()
+	v.MaxFileSize = 20 * 1024 * 1024
+	v.AllowedExtensions = []string{"png", "jpg", "jpeg", "webp"}
+	v.AllowedMimeTypes = []string{"image/png", "image/jpeg", "image/webp"}
 
+	uploader := media.NewUploader(disk, media.WithValidator(v))
+	require.NotNil(t, uploader)
+	return uploader, disk
+}
+
+func setupTestSigner(t *testing.T) media.Signer {
+	t.Helper()
 	keyHex := hex.EncodeToString([]byte("test-key-123456789012345678901234"))
 	saltHex := hex.EncodeToString([]byte("test-salt-12345678901234567890123"))
 
-	mediaCfg := config.MediaConfig{
-		MaxFileSize:       20 * 1024 * 1024,
-		AllowedExtensions: []string{"png", "jpg", "jpeg", "webp"},
-		AllowedMimeTypes:  []string{"image/png", "image/jpeg", "image/webp"},
-		Imgproxy: config.ImgproxyConfig{
-			Enabled:        true,
+	cfg := media.SignerConfig{
+		Imgproxy: media.ImgproxyConfig{
 			BaseURL:        "https://img.example.com",
 			Key:            keyHex,
 			Salt:           saltHex,
@@ -130,24 +144,18 @@ func setupTestEngine(t *testing.T) (media.Engine, *fakeDisk) {
 			DefaultFormat:  "webp",
 			DefaultQuality: 85,
 		},
+		StorageType: "s3",
+		S3Bucket:    "my-bucket",
 	}
-	storageCfg := config.StorageConfig{
-		Driver: "memory-mock",
-	}
-	disk := newFakeDisk()
-
-	engine := media.NewEngine(mediaCfg, storageCfg, disk)
-	require.NotNil(t, engine)
-
-	return engine, disk
+	return media.NewSigner(cfg)
 }
 
-func TestEngine_Presign(t *testing.T) {
+func TestUploader_Presign(t *testing.T) {
 	ctx := t.Context()
-	engine, _ := setupTestEngine(t)
+	uploader, _ := setupTestUploader(t)
 
 	t.Run("有效参数成功签发预签名凭证", func(t *testing.T) {
-		res, err := engine.Presign(ctx, media.PresignRequest{
+		res, err := uploader.Presign(ctx, media.PresignRequest{
 			Category: "avatars",
 			FileName: "my_avatar.png",
 			FileSize: 1024 * 1024,
@@ -163,7 +171,7 @@ func TestEngine_Presign(t *testing.T) {
 	})
 
 	t.Run("空文件名被拒绝", func(t *testing.T) {
-		_, err := engine.Presign(ctx, media.PresignRequest{
+		_, err := uploader.Presign(ctx, media.PresignRequest{
 			Category: "avatars",
 			FileName: "",
 			FileSize: 1024,
@@ -174,7 +182,7 @@ func TestEngine_Presign(t *testing.T) {
 	})
 
 	t.Run("非法扩展名被拒绝", func(t *testing.T) {
-		_, err := engine.Presign(ctx, media.PresignRequest{
+		_, err := uploader.Presign(ctx, media.PresignRequest{
 			Category: "avatars",
 			FileName: "hack.sh",
 			FileSize: 1024,
@@ -183,9 +191,9 @@ func TestEngine_Presign(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("超出文件配额被拒绝", func(t *testing.T) {
-		_, err := engine.Presign(ctx, media.PresignRequest{
-			Category: "avatars",
+	t.Run("超出全局文件配额被拒绝", func(t *testing.T) {
+		_, err := uploader.Presign(ctx, media.PresignRequest{
+			Category: "covers",
 			FileName: "huge.png",
 			FileSize: 30 * 1024 * 1024, // 30MB > 20MB
 			MimeType: "image/png",
@@ -193,25 +201,25 @@ func TestEngine_Presign(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("Disk 未配置时安全返回错误而非 Panic", func(t *testing.T) {
-		nilDiskEngine := media.NewEngine(config.MediaConfig{}, config.StorageConfig{}, nil)
-		_, err := nilDiskEngine.Presign(ctx, media.PresignRequest{
+	t.Run("Presigner 为 nil 时安全返回错误而非 Panic", func(t *testing.T) {
+		nilUploader := media.NewUploader(nil)
+		_, err := nilUploader.Presign(ctx, media.PresignRequest{
 			Category: "avatars",
 			FileName: "test.png",
 			FileSize: 1024,
 			MimeType: "image/png",
 		})
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "storage disk is not configured")
+		assert.Contains(t, err.Error(), "storage: driver does not support presigned URLs")
 	})
 }
 
-func TestEngine_SignAndVariants(t *testing.T) {
-	engine, _ := setupTestEngine(t)
+func TestSigner_SignAndVariants(t *testing.T) {
+	signer := setupTestSigner(t)
 	testPath := "uploads/avatars/20261031/uuid.png"
 
 	t.Run("Sign 生成防篡改 URL", func(t *testing.T) {
-		url := engine.Sign(testPath, media.PresetAvatarLarge)
+		url := signer.Sign(testPath, media.PresetAvatarLarge)
 		assert.True(t, strings.HasPrefix(url, "https://img.example.com/"))
 		assert.Contains(t, url, "/rs:fill:256:256:")
 		assert.Contains(t, url, "/g:fp:0:0/")
@@ -219,7 +227,7 @@ func TestEngine_SignAndVariants(t *testing.T) {
 	})
 
 	t.Run("Variants 生成复合变体集", func(t *testing.T) {
-		variants := engine.Variants(testPath)
+		variants := signer.Variants(testPath)
 		require.NotNil(t, variants)
 		assert.Equal(t, testPath, variants.Path)
 		assert.True(t, strings.HasPrefix(variants.URL, "https://img.example.com/"))
@@ -227,24 +235,29 @@ func TestEngine_SignAndVariants(t *testing.T) {
 		assert.Contains(t, variants.ThumbURL, "/rs:fill:64:64:")
 	})
 
-	t.Run("DefaultEngine 注册后 BuildImageVariants 自动签名", func(t *testing.T) {
-		media.SetDefaultEngine(engine)
-		defer media.SetDefaultEngine(nil)
-
-		variants := media.BuildImageVariants(testPath)
+	t.Run("BuildImageVariants 使用 Signer 生成变体", func(t *testing.T) {
+		variants := media.BuildImageVariants(testPath, signer)
 		require.NotNil(t, variants)
 		assert.Equal(t, testPath, variants.Path)
 		assert.True(t, strings.HasPrefix(variants.URL, "https://img.example.com/"))
 		assert.True(t, strings.HasPrefix(variants.ThumbURL, "https://img.example.com/"))
 	})
 
+	t.Run("BuildImageVariants 不传 Signer 时仅保留 Path", func(t *testing.T) {
+		variants := media.BuildImageVariants(testPath, nil)
+		require.NotNil(t, variants)
+		assert.Equal(t, testPath, variants.Path)
+		assert.Equal(t, testPath, variants.URL)
+		assert.Equal(t, testPath, variants.ThumbURL)
+	})
+
 	t.Run("空路径 Variants 返回 nil", func(t *testing.T) {
-		assert.Nil(t, engine.Variants(""))
-		assert.Nil(t, engine.Variants("   "))
+		assert.Nil(t, signer.Variants(""))
+		assert.Nil(t, signer.Variants("   "))
 	})
 
 	t.Run("SignWithOptions 针对自定义选项构建 URL", func(t *testing.T) {
-		url, err := engine.SignWithOptions(testPath,
+		url, err := signer.SignWithOptions(testPath,
 			media.WithResizingType(media.ResizeFill),
 			media.WithResize(100, 100),
 		)
@@ -253,8 +266,8 @@ func TestEngine_SignAndVariants(t *testing.T) {
 	})
 }
 
-func TestEngine_Inspect(t *testing.T) {
-	engine, _ := setupTestEngine(t)
+func TestSigner_Inspect(t *testing.T) {
+	signer := setupTestSigner(t)
 
 	t.Run("有效 PNG 字节切片成功解析元数据", func(t *testing.T) {
 		img := image.NewRGBA(image.Rect(0, 0, 120, 80))
@@ -262,7 +275,7 @@ func TestEngine_Inspect(t *testing.T) {
 		err := png.Encode(&buf, img)
 		require.NoError(t, err)
 
-		meta, err := engine.Inspect(buf.Bytes())
+		meta, err := signer.Inspect(buf.Bytes())
 		require.NoError(t, err)
 		require.NotNil(t, meta)
 		assert.Equal(t, 120, meta.Width)
@@ -272,17 +285,17 @@ func TestEngine_Inspect(t *testing.T) {
 	})
 
 	t.Run("空字节流返回错误", func(t *testing.T) {
-		_, err := engine.Inspect(nil)
+		_, err := signer.Inspect(nil)
 		require.Error(t, err)
 	})
 }
 
-func TestEngine_CategoryPolicy(t *testing.T) {
+func TestUploader_CategoryPolicy(t *testing.T) {
 	ctx := t.Context()
-	engine, _ := setupTestEngine(t)
+	uploader, _ := setupTestUploader(t)
 
 	t.Run("Avatar 类目超出 5MB 上限被拦截", func(t *testing.T) {
-		_, err := engine.Presign(ctx, media.PresignRequest{
+		_, err := uploader.Presign(ctx, media.PresignRequest{
 			Category: "avatars",
 			FileName: "avatar.png",
 			FileSize: 6 * 1024 * 1024, // 6MB > 5MB
@@ -293,7 +306,7 @@ func TestEngine_CategoryPolicy(t *testing.T) {
 	})
 
 	t.Run("Avatar 类目非允许扩展名被拦截", func(t *testing.T) {
-		_, err := engine.Presign(ctx, media.PresignRequest{
+		_, err := uploader.Presign(ctx, media.PresignRequest{
 			Category: "avatars",
 			FileName: "script.sh",
 			FileSize: 1024,
@@ -303,7 +316,7 @@ func TestEngine_CategoryPolicy(t *testing.T) {
 	})
 
 	t.Run("Avatar 类目非允许 MIME 被拦截", func(t *testing.T) {
-		_, err := engine.Presign(ctx, media.PresignRequest{
+		_, err := uploader.Presign(ctx, media.PresignRequest{
 			Category: "avatars",
 			FileName: "fake.png",
 			FileSize: 1024,
@@ -314,47 +327,44 @@ func TestEngine_CategoryPolicy(t *testing.T) {
 	})
 }
 
-func TestEngine_ExistsAndDelete(t *testing.T) {
+func TestDisk_ExistsAndDelete(t *testing.T) {
 	ctx := t.Context()
-	engine, disk := setupTestEngine(t)
+	disk := newFakeDisk()
 	testPath := "uploads/avatars/20261031/test.png"
 
 	// 初始状态不存在
-	exists, err := engine.Exists(ctx, testPath)
+	exists, err := disk.Exists(ctx, testPath)
 	require.NoError(t, err)
 	assert.False(t, exists)
 
 	// 写入后存在
 	_ = disk.Put(ctx, testPath, []byte("data"))
-	exists, err = engine.Exists(ctx, testPath)
+	exists, err = disk.Exists(ctx, testPath)
 	require.NoError(t, err)
 	assert.True(t, exists)
 
 	// 删除后不存在
-	err = engine.Delete(ctx, testPath)
+	err = disk.Delete(ctx, testPath)
 	require.NoError(t, err)
-	assert.Contains(t, disk.deleted, testPath)
-	exists, err = engine.Exists(ctx, testPath)
+	assert.True(t, disk.deleted[testPath])
+	exists, err = disk.Exists(ctx, testPath)
 	require.NoError(t, err)
 	assert.False(t, exists)
 }
 
-func TestEngine_Metadata(t *testing.T) {
-	engine, _ := setupTestEngine(t)
-	assert.Equal(t, "imgproxy", engine.Driver())
-
+func TestSigner_Ping(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("imgproxy is running"))
 	}))
 	t.Cleanup(server.Close)
 
-	pingEngine := media.NewEngine(config.MediaConfig{
-		Imgproxy: config.ImgproxyConfig{
-			Enabled:     true,
+	pingSigner := media.NewSigner(media.SignerConfig{
+		Imgproxy: media.ImgproxyConfig{
 			BaseURL:     server.URL,
 			InternalURL: server.URL,
 			Insecure:    true,
 		},
-	}, config.StorageConfig{Driver: "memory-mock"}, nil)
-	require.NoError(t, pingEngine.Ping(t.Context()))
+	})
+	assert.Equal(t, "imgproxy", pingSigner.Driver())
+	require.NoError(t, pingSigner.Ping(t.Context()))
 }

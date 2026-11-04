@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"cgin/internal/config"
 	"cgin/pkg/media"
 )
 
@@ -18,26 +17,28 @@ func TestImgproxyClient_Signature(t *testing.T) {
 	keyHex := hex.EncodeToString([]byte("test-key-123456789012345678901234"))
 	saltHex := hex.EncodeToString([]byte("test-salt-12345678901234567890123"))
 
-	cfg := config.ImgproxyConfig{
-		BaseURL:        "https://img.example.com",
-		Key:            keyHex,
-		Salt:           saltHex,
-		Insecure:       false,
-		DefaultFormat:  "webp",
-		DefaultQuality: 80,
+	cfg := media.SignerConfig{
+		Imgproxy: media.ImgproxyConfig{
+			BaseURL:        "https://img.example.com",
+			Key:            keyHex,
+			Salt:           saltHex,
+			Insecure:       false,
+			DefaultFormat:  "webp",
+			DefaultQuality: 80,
+		},
 	}
 
-	engine := media.NewEngine(config.MediaConfig{Imgproxy: cfg}, config.StorageConfig{Driver: "memory-mock"}, nil)
-	require.NotNil(t, engine)
+	signer := media.NewSigner(cfg)
+	require.NotNil(t, signer)
 
 	t.Run("空输入路径返回错误", func(t *testing.T) {
-		_, err := engine.SignWithOptions("")
+		_, err := signer.SignWithOptions("")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "path cannot be empty")
 	})
 
 	t.Run("缩略图选项生成合法的签名 URL", func(t *testing.T) {
-		thumbURL, err := engine.SignWithOptions("https://storage.example.com/avatars/user.png",
+		thumbURL, err := signer.SignWithOptions("https://storage.example.com/avatars/user.png",
 			media.WithResizingType(media.ResizeFill),
 			media.WithResize(200, 200),
 		)
@@ -51,7 +52,7 @@ func TestImgproxyClient_Signature(t *testing.T) {
 	})
 
 	t.Run("头像选项生成带人脸居中的签名 URL", func(t *testing.T) {
-		avatarURL, err := engine.SignWithOptions("https://storage.example.com/avatars/user.png",
+		avatarURL, err := signer.SignWithOptions("https://storage.example.com/avatars/user.png",
 			media.WithResizingType(media.ResizeFill),
 			media.WithResize(120, 120),
 			media.WithGravity(media.GravityFocusPoint),
@@ -63,12 +64,14 @@ func TestImgproxyClient_Signature(t *testing.T) {
 	})
 
 	t.Run("Insecure 模式生成带 insecure 前缀的 URL", func(t *testing.T) {
-		insecureCfg := config.ImgproxyConfig{
-			BaseURL:  "https://img.example.com",
-			Insecure: true,
+		insecureCfg := media.SignerConfig{
+			Imgproxy: media.ImgproxyConfig{
+				BaseURL:  "https://img.example.com",
+				Insecure: true,
+			},
 		}
-		insecureEngine := media.NewEngine(config.MediaConfig{Imgproxy: insecureCfg}, config.StorageConfig{Driver: "memory-mock"}, nil)
-		urlStr, err := insecureEngine.SignWithOptions("https://example.com/test.jpg",
+		insecureSigner := media.NewSigner(insecureCfg)
+		urlStr, err := insecureSigner.SignWithOptions("https://example.com/test.jpg",
 			media.WithResizingType(media.ResizeFill),
 			media.WithResize(100, 100),
 		)
@@ -79,20 +82,22 @@ func TestImgproxyClient_Signature(t *testing.T) {
 
 func TestImgproxyClient_ReadyContract(t *testing.T) {
 	t.Run("默认配置下驱动为 imgproxy", func(t *testing.T) {
-		cfg := config.ImgproxyConfig{
-			BaseURL: "http://localhost:8088",
-			Enabled: false,
+		cfg := media.SignerConfig{
+			Imgproxy: media.ImgproxyConfig{
+				BaseURL: "http://localhost:8088",
+			},
 		}
-		engine := media.NewEngine(config.MediaConfig{Imgproxy: cfg}, config.StorageConfig{Driver: "memory-mock"}, nil)
-		assert.Equal(t, "imgproxy", engine.Driver())
+		signer := media.NewSigner(cfg)
+		assert.Equal(t, "imgproxy", signer.Driver())
 	})
 
 	t.Run("显式启用后驱动仍为 imgproxy 且具备 Ping 契约", func(t *testing.T) {
-		cfg := config.ImgproxyConfig{
-			BaseURL: "http://localhost:8088",
-			Enabled: true,
+		cfg := media.SignerConfig{
+			Imgproxy: media.ImgproxyConfig{
+				BaseURL: "http://localhost:8088",
+			},
 		}
-		engine := media.NewEngine(config.MediaConfig{Imgproxy: cfg}, config.StorageConfig{Driver: "memory-mock"}, nil)
-		assert.Equal(t, "imgproxy", engine.Driver())
+		signer := media.NewSigner(cfg)
+		assert.Equal(t, "imgproxy", signer.Driver())
 	})
 }

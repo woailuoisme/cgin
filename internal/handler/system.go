@@ -3,11 +3,11 @@ package handler
 import (
 	"cmp"
 	"context"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog"
 
 	"cgin/internal/service"
 	"cgin/pkg/logger"
@@ -21,11 +21,11 @@ const probeTimeout = 2 * time.Second
 // SystemHandler 是探针端点的 HTTP 适配层。
 type SystemHandler struct {
 	svc    *service.SystemService
-	logger *zerolog.Logger
+	logger *logger.Logger
 }
 
 // NewSystemHandler 构造系统探针 SystemHandler，日志器未注入时静默兜底。
-func NewSystemHandler(svc *service.SystemService, log *zerolog.Logger) *SystemHandler {
+func NewSystemHandler(svc *service.SystemService, log *logger.Logger) *SystemHandler {
 	return &SystemHandler{svc: svc, logger: cmp.Or(log, logger.Nop())}
 }
 
@@ -48,7 +48,10 @@ func (h *SystemHandler) Readiness(c *gin.Context) {
 
 	result, errs := h.svc.Check(ctx)
 	for name, err := range errs {
-		h.logger.Warn().Err(err).Str("component", name).Msg("readiness probe failed")
+		h.logger.WarnContext(ctx, "readiness probe failed",
+			slog.Any("error", err),
+			slog.String("component", name),
+		)
 	}
 
 	if result.Status == ready.StatusNotReady {

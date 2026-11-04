@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -47,7 +48,9 @@ func (s *AdminSeeder) Seed(ctx context.Context, db *database.DB) error {
 
 	email := strings.ToLower(strings.TrimSpace(cfg.Seed.AdminEmail))
 	if _, err := db.Queries(ctx).GetUserByEmail(ctx, sqlc.GetUserByEmailParams{Email: email}); err == nil {
-		logger.FromContext(ctx).Warn().Str("email", email).Msg("admin account already exists, skipping seeding")
+		logger.FromContext(ctx).WarnContext(ctx, "admin account already exists, skipping seeding",
+			slog.String("email", email),
+		)
 		return nil
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("admin seeder query existing admin failed: %w", err)
@@ -85,9 +88,9 @@ func (s *AdminSeeder) Seed(ctx context.Context, db *database.DB) error {
 		return fmt.Errorf("admin seeder create account failed: %w", err)
 	}
 
-	logger.FromContext(ctx).Info().
-		Str("id", admin.ID).
-		Str("email", admin.Email).
-		Msg("initial admin user seeded successfully")
+	logger.FromContext(ctx).InfoContext(ctx, "initial admin user seeded successfully",
+		slog.String("id", admin.ID),
+		slog.String("email", admin.Email),
+	)
 	return nil
 }

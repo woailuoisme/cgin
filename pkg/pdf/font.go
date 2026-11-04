@@ -3,13 +3,13 @@ package pdf
 import (
 	"bytes"
 	"cmp"
+	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/johnfercher/maroto/v2/pkg/consts/fontfamily"
 	"github.com/johnfercher/maroto/v2/pkg/consts/fontstyle"
 	"github.com/johnfercher/maroto/v2/pkg/core/entity"
-	"github.com/rs/zerolog"
 )
 
 // FontDefinition 描述自定义字体注册元数据，实现 entity.CustomFont 契约。
@@ -47,7 +47,7 @@ func NewCustomFontFromBytes(family string, style fontstyle.Type, data []byte) en
 }
 
 // ResolveFontConfig 解析并加载字体配置，支持本地文件、内存字节与自动回退。
-func ResolveFontConfig(fontPath, fontFamily string, log *zerolog.Logger) ([]entity.CustomFont, string) {
+func ResolveFontConfig(fontPath, fontFamily string, log *slog.Logger) ([]entity.CustomFont, string) {
 	fontFamily = cmp.Or(fontFamily, "SourceHanSans")
 
 	if fontPath == "" {
@@ -62,10 +62,10 @@ func ResolveFontConfig(fontPath, fontFamily string, log *zerolog.Logger) ([]enti
 	}
 
 	if log != nil {
-		log.Info().
-			Str("family", fontFamily).
-			Str("path", fontPath).
-			Msg("loaded custom PDF font successfully")
+		log.Info("loaded custom PDF font successfully",
+			slog.String("family", fontFamily),
+			slog.String("path", fontPath),
+		)
 	}
 
 	// 注册 Regular / Bold 等基础变体（若单文件则映射到主要样式）

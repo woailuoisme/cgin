@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -466,17 +465,6 @@ func TestNotificationRecoveryMiddleware(t *testing.T) {
 	assert.Contains(t, err.Error(), "unexpected internal panic")
 }
 
-type mockQueueDispatcher struct {
-	dispatchedJob  queue.Job
-	dispatchedOpts []asynq.Option
-}
-
-func (m *mockQueueDispatcher) Dispatch(_ context.Context, job queue.Job, opts ...asynq.Option) error {
-	m.dispatchedJob = job
-	m.dispatchedOpts = opts
-	return nil
-}
-
 type queuedNotification struct {
 	taskName string
 }
@@ -487,17 +475,14 @@ func (q *queuedNotification) QueueName() string    { return "priority_high" }
 func (q *queuedNotification) MaxRetries() int      { return 5 }
 func (q *queuedNotification) Delay() time.Duration { return 15 * time.Second }
 func (q *queuedNotification) TaskName() string     { return q.taskName }
-func (q *queuedNotification) Handle(_ context.Context) error {
-	return nil
-}
 
 func TestNotificationWithQueue(t *testing.T) {
 	ctx := t.Context()
 	notifier := notification.NewNotifier(2, 10)
 	defer func() { _ = notifier.Close() }()
 
-	dispatcher := &mockQueueDispatcher{}
-	notifier.WithQueue(dispatcher)
+	producer := queue.NewMemoryProducer()
+	notifier.WithQueue(producer)
 
 	user := &mockNotifiable{ID: "user_queue"}
 	jobNotif := &queuedNotification{taskName: "notif:user_welcome"}
@@ -505,17 +490,13 @@ func TestNotificationWithQueue(t *testing.T) {
 	err := notifier.Send(ctx, user, jobNotif)
 	require.NoError(t, err)
 
-	require.NotNil(t, dispatcher.dispatchedJob)
-	assert.Equal(t, "notif:user_welcome", dispatcher.dispatchedJob.TaskName())
-	assert.Len(t, dispatcher.dispatchedOpts, 3)
-
-	byType := make(map[asynq.OptionType]any, len(dispatcher.dispatchedOpts))
-	for _, opt := range dispatcher.dispatchedOpts {
-		byType[opt.Type()] = opt.Value()
-	}
-	assert.Equal(t, "priority_high", byType[asynq.QueueOpt])
-	assert.Equal(t, 5, byType[asynq.MaxRetryOpt])
-	assert.Equal(t, 15*time.Second, byType[asynq.ProcessInOpt])
+	require.Equal(t, 1, producer.Count())
+	tasks := producer.Tasks()
+	require.Len(t, tasks, 1)
+	assert.Equal(t, "notif:user_welcome", tasks[0].TaskName)
+	assert.Equal(t, "priority_high", tasks[0].Settings.Queue)
+	assert.Equal(t, 5, tasks[0].Settings.MaxRetry)
+	assert.Equal(t, 15*time.Second, tasks[0].Settings.Delay)
 }
 
 type mockBatchChannel struct {

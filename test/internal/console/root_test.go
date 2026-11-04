@@ -5,7 +5,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/rs/zerolog"
 	"github.com/samber/do/v2"
 	"github.com/samber/lo"
 	"github.com/spf13/cobra"
@@ -66,7 +65,7 @@ type testFactory struct {
 	ConfigErr     error
 	DBValue       *database.DB
 	DBErr         error
-	LoggerValue   *zerolog.Logger
+	LoggerValue   *logger.Logger
 	InjectorValue *do.RootScope
 }
 
@@ -93,7 +92,7 @@ func (f *testFactory) DB(_ context.Context) (*database.DB, error) {
 	return f.DBValue, f.DBErr
 }
 
-func (f *testFactory) Logger() *zerolog.Logger {
+func (f *testFactory) Logger() *logger.Logger {
 	if f.LoggerValue == nil {
 		return logger.Nop()
 	}

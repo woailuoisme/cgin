@@ -5,12 +5,12 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/go-pay/gopay"
 	"github.com/go-pay/gopay/wechat/v3"
-	"github.com/rs/zerolog"
 
 	"cgin/internal/config"
 	"cgin/pkg/errs"
@@ -55,7 +55,7 @@ func newWechatProvider(
 	cfg config.WechatPaymentAppConfig,
 	isProd bool,
 	certsDir string,
-	log *zerolog.Logger,
+	log *slog.Logger,
 ) (*wechatProvider, error) {
 	scenes, err := resolveScenes(cfg.Scenes, ChannelWechat)
 	if err != nil {

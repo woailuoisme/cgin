@@ -77,7 +77,7 @@ func TestTelemetryMiddleware_TraceLogCorrelation(t *testing.T) {
 	var recordedTraceID, recordedSpanID, recordedReqID string
 	engine.GET("/test-trace", func(c *gin.Context) {
 		log := logger.FromContext(c.Request.Context())
-		log.Info().Msg("executing test handler")
+		log.InfoContext(c.Request.Context(), "executing test handler")
 		c.String(http.StatusOK, "ok")
 	})
 

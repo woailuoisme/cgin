@@ -3,6 +3,7 @@ package global
 import (
 	"cmp"
 	"encoding/hex"
+	"log/slog"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -82,31 +83,42 @@ func (m *Middleware) AccessLog() gin.HandlerFunc {
 			return
 		}
 
-		event := baseLog.Info()
+		level := slog.LevelInfo
 		switch {
 		case status >= http.StatusInternalServerError:
-			event = baseLog.Error()
+			level = slog.LevelError
 		case status >= http.StatusBadRequest:
-			event = baseLog.Warn()
+			level = slog.LevelWarn
 		}
 
+		ctx := c.Request.Context()
+		if !baseLog.Enabled(ctx, level) {
+			return
+		}
+
+		attrs := make([]slog.Attr, 0, 8)
 		if rid := requestIDOf(c); rid != "" {
-			event = event.Str("request_id", rid)
+			// 控制台开发模式下，普通 2xx/3xx 访问日志省略冗长 request_id，仅在 4xx/5xx 或出错时输出
+			if m.production || status >= http.StatusBadRequest || len(c.Errors) > 0 {
+				attrs = append(attrs, slog.String("request_id", rid))
+			}
 		}
 		if errMsg := formatErrors(c.Errors); errMsg != "" {
-			event = event.Str("error", errMsg)
+			attrs = append(attrs, slog.String("error", errMsg))
 		}
 		if code := errs.ErrorCodeFromContext(c); code != "" {
-			event = event.Str("code", code)
+			attrs = append(attrs, slog.String("code", code))
 		}
 
-		event.
-			Str("method", c.Request.Method).
-			Str("path", c.Request.URL.Path).
-			Int("status", status).
-			Str("latency", time.Since(start).String()). // 带单位的自描述时长（如 160.625µs）
-			Str("ip", c.ClientIP()).
-			Msg("access")
+		attrs = append(attrs,
+			slog.String("method", c.Request.Method),
+			slog.String("path", c.Request.URL.Path),
+			slog.Int("status", status),
+			slog.Duration("latency", time.Since(start)),
+			slog.String("ip", c.ClientIP()),
+		)
+
+		baseLog.LogAttrs(ctx, level, "access", attrs...)
 	}
 }
 
@@ -152,10 +164,11 @@ func (m *Middleware) Recovery() gin.HandlerFunc {
 				return
 			}
 
-			logger.FromContext(c.Request.Context()).Error().
-				Any("panic", recovered).
-				Str("stack", string(debug.Stack())).
-				Msg("request panic recovered")
+			ctx := c.Request.Context()
+			logger.FromContext(ctx).ErrorContext(ctx, "request panic recovered",
+				slog.Any("panic", recovered),
+				slog.String("stack", string(debug.Stack())),
+			)
 
 			if c.Writer.Written() {
 				c.Abort()

@@ -5,9 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
-
-	"github.com/rs/zerolog"
 
 	"cgin/internal/console"
 	"cgin/pkg/logger"
@@ -48,7 +47,8 @@ var (
 func main() {
 	console.SetVersion(version, commit, date)
 
-	if err := console.Execute(context.Background(), os.Args); err != nil {
+	ctx := context.Background()
+	if err := console.Execute(ctx, os.Args); err != nil {
 		// 用户在交互式控制台中主动选择取消属于正常意图分支，静默以退出码 0 退出，避免产生虚假错误日志
 		if errors.Is(err, console.ErrCanceled) {
 			os.Exit(0)
@@ -63,10 +63,10 @@ func main() {
 
 		log := logger.Default()
 		// 通过结构化日志记录致命退出事件（生产 JSON 模式下供 APM/Loki 搜集）
-		log.Error().Err(err).Msg("process terminated with error")
+		log.Error("process terminated with error", slog.Any("error", err))
 
 		// 在开发控制台终端下输出高亮错误及 oops 调用堆栈，方便开发者直观排查
-		if log.GetLevel() <= zerolog.DebugLevel {
+		if log.Enabled(ctx, slog.LevelDebug) {
 			_, _ = fmt.Fprintf(os.Stderr, "\n\033[1;31m[FATAL ERROR]\033[0m %+v\n\n", err)
 		} else {
 			_, _ = fmt.Fprintf(os.Stderr, "cgin: %v\n", err)

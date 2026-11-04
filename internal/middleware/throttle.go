@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -127,7 +128,7 @@ func ThrottleWithStore(store RateLimiterStore, limit int, window time.Duration, 
 		currCount, err := store.Increment(c.Request.Context(), rateLimitKey(tierName, scope, windowSeconds, bucket), 2*window)
 		if err != nil {
 			// 计数器故障降级放行，避免限流器拖垮业务。
-			logger.FromContext(c.Request.Context()).Error().Err(err).Msg("throttle counter failed, request allowed")
+			logger.FromContext(c.Request.Context()).ErrorContext(c.Request.Context(), "throttle counter failed, request allowed", slog.Any("error", err))
 			c.Next()
 			return
 		}
@@ -206,17 +207,18 @@ func writeExceededHeaders(c *gin.Context, limit int, resetAt, now int64) {
 
 // logRateLimitExceeded 记录限流拒绝的结构化审计日志。
 func logRateLimitExceeded(c *gin.Context, tier, scope string, limit int, windowSeconds, currentCount, estimatedCount int64) {
-	logger.FromContext(c.Request.Context()).Warn().
-		Str("tier", tier).
-		Str("scope", scope).
-		Int("limit", limit).
-		Int64("window_seconds", windowSeconds).
-		Int64("current_count", currentCount).
-		Int64("estimated_count", estimatedCount).
-		Str("path", c.Request.URL.Path).
-		Str("method", c.Request.Method).
-		Str("ip", c.ClientIP()).
-		Msg("rate limit exceeded")
+	ctx := c.Request.Context()
+	logger.FromContext(ctx).WarnContext(ctx, "rate limit exceeded",
+		slog.String("tier", tier),
+		slog.String("scope", scope),
+		slog.Int("limit", limit),
+		slog.Int64("window_seconds", windowSeconds),
+		slog.Int64("current_count", currentCount),
+		slog.Int64("estimated_count", estimatedCount),
+		slog.String("path", c.Request.URL.Path),
+		slog.String("method", c.Request.Method),
+		slog.String("ip", c.ClientIP()),
+	)
 }
 
 // limitFor 按档位读取配额，未知档位回退至未认证配额。

@@ -3,6 +3,7 @@ package payment
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"strings"
@@ -11,7 +12,6 @@ import (
 	"github.com/go-pay/gopay"
 	alipaynotify "github.com/go-pay/gopay/alipay"
 	alipayv3 "github.com/go-pay/gopay/alipay/v3"
-	"github.com/rs/zerolog"
 
 	"cgin/internal/config"
 	"cgin/pkg/errs"
@@ -54,7 +54,7 @@ func newAlipayProvider(
 	cfg config.AlipayPaymentAppConfig,
 	isProd bool,
 	certsDir string,
-	log *zerolog.Logger,
+	log *slog.Logger,
 ) (*alipayProvider, error) {
 	scenes, err := resolveScenes(cfg.Scenes, ChannelAlipay)
 	if err != nil {

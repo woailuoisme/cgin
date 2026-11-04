@@ -11,19 +11,48 @@ import (
 	"strings"
 	"time"
 
-	"cgin/internal/config"
 	"cgin/pkg/errs"
 )
+
+// 存储驱动标识常量。
+const (
+	DriverLocal = "local"
+	DriverS3    = "s3"
+)
+
+// LocalConfig 本地文件系统驱动配置。
+type LocalConfig struct {
+	Root string
+	URL  string
+}
+
+// S3Config S3 兼容对象存储配置。
+type S3Config struct {
+	Endpoint        string
+	Bucket          string
+	Region          string
+	AccessKeyID     string
+	SecretAccessKey string
+	UseSSL          bool
+	PublicURL       string
+}
+
+// Config 统一存储配置。
+type Config struct {
+	Driver string
+	Local  LocalConfig
+	S3     S3Config
+}
 
 // msgFileNotFound 是对象不存在时对外暴露的固定文案。对象键不进响应体，只留在因由里进日志。
 const msgFileNotFound = "The requested file does not exist"
 
-// 驱动能力的边界用哨兵错误表达，便于调用方 errors.Is 判断，而不是靠匹配字符串。
+// 驱动能力的边界用哨兵错误表达，便于调用方 errors.Is 判断。
 var (
 	// ErrNoPublicURL 表示没有配置公开访问地址，因此给不出永久链接。
 	ErrNoPublicURL = errors.New("storage: no public URL configured")
 
-	// ErrPresignUnsupported 表示当前驱动不支持生成预签名 URL。
+	// ErrPresignUnsupported 表示当前存储驱动不支持生成预签名 URL。
 	ErrPresignUnsupported = errors.New("storage: driver does not support presigned URLs")
 )
 
@@ -69,11 +98,11 @@ type PublicURLer interface {
 	URL(path string) (string, error)
 }
 
-// Presigner 定义提供带签名与时效的时效性地址的角色契约。
+// Presigner 定义提供带签名与时效的时效性地址的高级特性契约。
 type Presigner interface {
-	// TemporaryURL 返回带签名与时效的下载地址；驱动不支持时返回 ErrPresignUnsupported。
+	// TemporaryURL 返回带签名与时效的下载地址。
 	TemporaryURL(ctx context.Context, path string, ttl time.Duration) (string, error)
-	// PresignPut 返回带签名与时效的上传地址；驱动不支持时返回 ErrPresignUnsupported。
+	// PresignPut 返回带签名与时效的上传地址。
 	PresignPut(ctx context.Context, path string, ttl time.Duration) (string, error)
 }
 
@@ -83,33 +112,41 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
-// Disk 聚合存储读写、属性探查、公开链接、预签名与健康探测，是对象存储基础设施的完整契约。
+// Disk 聚合存储读写、属性探查、公开链接与健康探测，是通用对象存储基础设施的完整契约。
 type Disk interface {
 	Reader
 	Writer
 	Deleter
 	Inspector
 	PublicURLer
-	Presigner
 	Pinger
-	// Driver 返回当前存储驱动名称（如 local、s3、garage）。
+	// Driver 返回当前存储驱动名称（如 local、s3）。
 	Driver() string
 }
 
+// AsPresigner 探测指定 Disk 是否具备预签名高级特性。
+func AsPresigner(d Disk) (Presigner, bool) {
+	if d == nil {
+		return nil, false
+	}
+	p, ok := d.(Presigner)
+	return p, ok
+}
+
 // Open 根据配置构造存储驱动并执行可用性健康探测。
-func Open(ctx context.Context, cfg config.StorageConfig) (Disk, error) {
+func Open(ctx context.Context, cfg Config) (Disk, error) {
 	var (
 		disk Disk
 		err  error
 	)
 	switch cfg.Driver {
-	case config.StorageDriverLocal:
+	case DriverLocal:
 		disk, err = NewLocalDisk(cfg.Local.Root, cfg.Local.URL)
-	case config.StorageDriverS3:
+	case DriverS3:
 		disk, err = NewS3Disk(cfg.S3)
 	default:
 		return nil, fmt.Errorf("unknown storage driver %q, options: %s / %s",
-			cfg.Driver, config.StorageDriverLocal, config.StorageDriverS3)
+			cfg.Driver, DriverLocal, DriverS3)
 	}
 	if err != nil {
 		return nil, err

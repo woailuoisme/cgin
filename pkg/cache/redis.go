@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/url"
 	"strconv"
@@ -270,10 +271,10 @@ func (c *Client) Remember(
 				return "", err
 			}
 			if err := c.Set(fillCtx, key, loaded, ttl); err != nil {
-				logger.FromContext(fillCtx).Warn().
-					Err(err).
-					Str("key", key).
-					Msg("failed to write origin data to cache")
+				logger.FromContext(fillCtx).WarnContext(fillCtx, "failed to write origin data to cache",
+					slog.Any("error", err),
+					slog.String("key", key),
+				)
 			}
 			return loaded, nil
 		},

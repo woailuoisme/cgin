@@ -9,7 +9,6 @@ require (
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/ThreeDotsLabs/watermill v1.5.3
 	github.com/aarondl/opt v0.0.0-20250607033636-982744e1bd65
-	github.com/adhocore/gronx v1.20.6
 	github.com/alexliesenfeld/health v0.8.1
 	github.com/brianvoe/gofakeit/v7 v7.18.1
 	github.com/caarlos0/env/v11 v11.4.2
@@ -20,7 +19,6 @@ require (
 	github.com/dustin/go-humanize v1.1.0
 	github.com/exaring/otelpgx v0.13.0
 	github.com/failsafe-go/failsafe-go v0.9.8
-	github.com/gin-contrib/authz v1.0.10
 	github.com/gin-contrib/cache v1.4.7
 	github.com/gin-contrib/cors v1.7.10
 	github.com/gin-contrib/graceful v1.2.4
@@ -48,6 +46,8 @@ require (
 	github.com/samber/hot v0.13.1
 	github.com/samber/lo v1.53.0
 	github.com/samber/oops v1.23.2
+	github.com/samber/slog-common v0.22.0
+	github.com/samber/slog-zerolog/v2 v2.9.2
 	github.com/shopspring/decimal v1.6.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1

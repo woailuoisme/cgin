@@ -152,9 +152,9 @@ func TestStreamToHTTP(t *testing.T) {
 
 func TestSaveToStorage(t *testing.T) {
 	ctx := t.Context()
-	disk, err := storage.Open(ctx, config.StorageConfig{
-		Driver: config.StorageDriverLocal,
-		Local:  config.LocalStorageConfig{Root: t.TempDir()},
+	disk, err := storage.Open(ctx, storage.Config{
+		Driver: storage.DriverLocal,
+		Local:  storage.LocalConfig{Root: t.TempDir()},
 	})
 	require.NoError(t, err)
 

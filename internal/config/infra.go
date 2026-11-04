@@ -153,8 +153,9 @@ func (q *QueueConfig) Normalize(fallbackRedisURL string) {
 type EventBusConfig struct {
 	Driver      string `env:"EVENTBUS_DRIVER" envDefault:"go_channel"`
 	TopicPrefix string `env:"EVENTBUS_TOPIC_PREFIX" envDefault:"cgin"`
-	LogLevel    string `env:"EVENTBUS_LOG_LEVEL" envDefault:"warn"`
-	BufferSize  int    `env:"EVENTBUS_BUFFER_SIZE" envDefault:"2048"`
+	// LogLevel 控制事件总线 Watermill 内部日志输出级别（如 "warn"、"error"、"info"），默认 "warn" 以降低路由流水噪音。
+	LogLevel   string `env:"EVENTBUS_LOG_LEVEL" envDefault:"warn"`
+	BufferSize int    `env:"EVENTBUS_BUFFER_SIZE" envDefault:"2048"`
 }
 
 // Normalize 填充事件总线零值默认参数。

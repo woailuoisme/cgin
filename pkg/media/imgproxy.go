@@ -26,7 +26,6 @@ import (
 	"github.com/samber/oops"
 	_ "golang.org/x/image/webp"
 
-	"cgin/internal/config"
 	"cgin/pkg/errs"
 )
 
@@ -46,15 +45,15 @@ const (
 func NormalizeFormat(ext string) Format {
 	clean := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(ext), "."))
 	switch clean {
-	case "webp":
+	case string(FormatWebP):
 		return FormatWebP
-	case "jpg", "jpeg":
+	case string(FormatJPG), string(FormatJPEG):
 		return FormatJPEG
-	case "png":
+	case string(FormatPNG):
 		return FormatPNG
-	case "avif":
+	case string(FormatAVIF):
 		return FormatAVIF
-	case "gif":
+	case string(FormatGIF):
 		return FormatGIF
 	default:
 		return FormatWebP
@@ -183,21 +182,22 @@ func WithSharpen(sigma float64) ProcessOption {
 
 // imgproxyClient 封装 imgproxy 图像签名与健康探测客户端。
 type imgproxyClient struct {
-	baseURL     string
-	internalURL string
-	key         []byte
-	salt        []byte
-	insecure    bool
-	config      config.ImgproxyConfig
-	storageCfg  config.StorageConfig
-	httpClient  *resty.Client
+	baseURL        string
+	internalURL    string
+	key            []byte
+	salt           []byte
+	insecure       bool
+	defaultFormat  string
+	defaultQuality int
+	storageType    string
+	s3Bucket       string
+	httpClient     *resty.Client
 }
 
-// newImgproxyClient 创建带存储配置的 imgproxy 图像服务客户端，用于按存储配置推导资源 URI。
-func newImgproxyClient(imgCfg config.ImgproxyConfig, storageCfg config.StorageConfig) *imgproxyClient {
-	imgCfg.Normalize()
-	keyHex := imgCfg.Key
-	saltHex := imgCfg.Salt
+// NewSigner 创建带存储配置的 imgproxy 图像服务客户端，实现 Signer 契约。
+func NewSigner(cfg SignerConfig) Signer {
+	keyHex := cfg.Imgproxy.Key
+	saltHex := cfg.Imgproxy.Salt
 	keyBytes, _ := hex.DecodeString(keyHex)
 	saltBytes, _ := hex.DecodeString(saltHex)
 
@@ -208,19 +208,28 @@ func newImgproxyClient(imgCfg config.ImgproxyConfig, storageCfg config.StorageCo
 		saltBytes = []byte(saltHex)
 	}
 
+	timeout := cmp.Or(cfg.Imgproxy.Timeout, 2*time.Second)
 	restyClient := resty.New().
-		SetTimeout(2*time.Second).
-		SetHeader("User-Agent", "cgin-imgproxy-client")
+		SetTimeout(timeout).
+		SetHeader("User-Agent", "cfiber-imgproxy-client")
+
+	defaultFormat := cmp.Or(cfg.Imgproxy.DefaultFormat, "webp")
+	defaultQuality := cfg.Imgproxy.DefaultQuality
+	if defaultQuality <= 0 {
+		defaultQuality = 80
+	}
 
 	return &imgproxyClient{
-		baseURL:     imgCfg.BaseURL,
-		internalURL: imgCfg.InternalURL,
-		key:         keyBytes,
-		salt:        saltBytes,
-		insecure:    imgCfg.Insecure || len(keyBytes) == 0 || len(saltBytes) == 0,
-		config:      imgCfg,
-		storageCfg:  storageCfg,
-		httpClient:  restyClient,
+		baseURL:        strings.TrimSuffix(cfg.Imgproxy.BaseURL, "/"),
+		internalURL:    strings.TrimSuffix(cfg.Imgproxy.InternalURL, "/"),
+		key:            keyBytes,
+		salt:           saltBytes,
+		insecure:       cfg.Imgproxy.Insecure || len(keyBytes) == 0 || len(saltBytes) == 0,
+		defaultFormat:  defaultFormat,
+		defaultQuality: defaultQuality,
+		storageType:    cfg.StorageType,
+		s3Bucket:       cfg.S3Bucket,
+		httpClient:     restyClient,
 	}
 }
 
@@ -232,8 +241,8 @@ func (c *imgproxyClient) URL(sourceURI string, opts ...ProcessOption) (string, e
 
 	resolvedURI := c.resolveSourceURI(sourceURI)
 	cfg := &ProcessConfig{
-		Format:  NormalizeFormat(c.config.DefaultFormat),
-		Quality: c.config.DefaultQuality,
+		Format:  NormalizeFormat(c.defaultFormat),
+		Quality: c.defaultQuality,
 	}
 
 	for _, opt := range opts {
@@ -276,10 +285,10 @@ func (c *imgproxyClient) resolveSourceURI(sourcePath string) string {
 	}
 
 	trimmed := strings.TrimPrefix(cleanPath, "/")
-	driver := strings.ToLower(strings.TrimSpace(c.storageCfg.Driver))
+	driver := strings.ToLower(strings.TrimSpace(c.storageType))
 
-	if driver == config.StorageDriverS3 {
-		return lo.Ternary(c.storageCfg.S3.Bucket != "", fmt.Sprintf("s3://%s/%s", c.storageCfg.S3.Bucket, trimmed), "s3://"+trimmed)
+	if driver == "s3" {
+		return lo.Ternary(c.s3Bucket != "", fmt.Sprintf("s3://%s/%s", c.s3Bucket, trimmed), "s3://"+trimmed)
 	}
 
 	return "local://" + trimmed

@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/rs/zerolog"
 	"github.com/samber/do/v2"
 	"github.com/spf13/cobra"
 
@@ -64,7 +63,7 @@ type Factory interface {
 	Prompter() Prompter
 	Config() (*config.Config, error)
 	DB(ctx context.Context) (*database.DB, error)
-	Logger() *zerolog.Logger
+	Logger() *logger.Logger
 	Injector() *do.RootScope
 }
 
@@ -93,8 +92,8 @@ func (f *defaultFactory) DB(_ context.Context) (*database.DB, error) {
 	return do.Invoke[*database.DB](f.injector)
 }
 func (f *defaultFactory) Injector() *do.RootScope { return f.injector }
-func (f *defaultFactory) Logger() *zerolog.Logger {
-	if log, err := do.Invoke[*zerolog.Logger](f.injector); err == nil {
+func (f *defaultFactory) Logger() *logger.Logger {
+	if log, err := do.Invoke[*logger.Logger](f.injector); err == nil {
 		return log
 	}
 	return logger.Nop()

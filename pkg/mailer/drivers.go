@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/url"
 	"strconv"
@@ -13,7 +14,6 @@ import (
 	"time"
 
 	"github.com/resend/resend-go/v4"
-	"github.com/rs/zerolog"
 	"github.com/samber/oops"
 	gomail "github.com/wneessen/go-mail"
 
@@ -26,14 +26,14 @@ import (
 // mailpitDriver 基于 wneessen/go-mail 实现的 Mailpit 本地测试发信驱动。
 type mailpitDriver struct {
 	cfg    config.MailConfig
-	logger *zerolog.Logger
+	logger *slog.Logger
 	client *gomail.Client
 }
 
 var _ Driver = (*mailpitDriver)(nil)
 
 // newMailpitDriver 创建 Mailpit 发信驱动实例。
-func newMailpitDriver(cfg config.MailConfig, log *zerolog.Logger) (*mailpitDriver, error) {
+func newMailpitDriver(cfg config.MailConfig, log *slog.Logger) (*mailpitDriver, error) {
 	log = cmp.Or(log, logger.Nop())
 	host := cmp.Or(strings.TrimSpace(cfg.Mailpit.Host), "127.0.0.1")
 	port := cmp.Or(cfg.Mailpit.Port, 1025)
@@ -61,7 +61,7 @@ func newMailpitDriver(cfg config.MailConfig, log *zerolog.Logger) (*mailpitDrive
 }
 
 // NewMailpitDriver 是 newMailpitDriver 的对外导出版本。
-func NewMailpitDriver(cfg config.MailConfig, log *zerolog.Logger) (Driver, error) {
+func NewMailpitDriver(cfg config.MailConfig, log *slog.Logger) (Driver, error) {
 	return newMailpitDriver(cfg, log)
 }
 
@@ -172,14 +172,14 @@ func (m *mailpitDriver) buildMessage(msg Message) (*gomail.Msg, error) {
 // resendDriver 基于 Resend 官方 SDK 实现的现代化邮件发送驱动。
 type resendDriver struct {
 	cfg    config.MailConfig
-	logger *zerolog.Logger
+	logger *slog.Logger
 	client *resend.Client
 }
 
 var _ Driver = (*resendDriver)(nil)
 
 // newResendDriver 创建基于 Resend 官方 Go SDK 的邮件发送驱动实例。
-func newResendDriver(cfg config.MailConfig, log *zerolog.Logger) (*resendDriver, error) {
+func newResendDriver(cfg config.MailConfig, log *slog.Logger) (*resendDriver, error) {
 	log = cmp.Or(log, logger.Nop())
 	apiKey := strings.TrimSpace(cfg.Resend.APIKey)
 	if apiKey == "" {
@@ -208,7 +208,7 @@ func newResendDriver(cfg config.MailConfig, log *zerolog.Logger) (*resendDriver,
 }
 
 // NewResendDriver 是 newResendDriver 的对外导出版本。
-func NewResendDriver(cfg config.MailConfig, log *zerolog.Logger) (Driver, error) {
+func NewResendDriver(cfg config.MailConfig, log *slog.Logger) (Driver, error) {
 	return newResendDriver(cfg, log)
 }
 

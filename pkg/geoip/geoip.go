@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"os"
 	"strings"
@@ -13,7 +14,6 @@ import (
 	"sync/atomic"
 
 	"github.com/lionsoul2014/ip2region/binding/golang/xdb"
-	"github.com/rs/zerolog"
 	"github.com/samber/oops"
 
 	"cgin/internal/config"
@@ -128,34 +128,40 @@ func (e *xdbEngine) searchIPv4(addr netip.Addr) (*Location, error) {
 
 type service struct {
 	dbPath string
-	log    *zerolog.Logger
+	log    *slog.Logger
 	engine atomic.Pointer[xdbEngine]
 }
 
 // NewService 根据配置初始化 GeoIP 服务；当未启用或数据库文件缺失时自动降级为无锁空实现。
-func NewService(cfg config.GeoIPConfig, log *zerolog.Logger) (Service, error) {
+func NewService(cfg config.GeoIPConfig, log *slog.Logger) (Service, error) {
 	log = cmp.Or(log, logger.Nop())
 	s := &service{
 		dbPath: strings.TrimSpace(cfg.DBPath),
 		log:    log,
 	}
 	if !cfg.Enabled || s.dbPath == "" {
-		log.Debug().Bool("enabled", cfg.Enabled).Msg("geoip disabled, running in noop mode")
+		log.Debug("geoip disabled, running in noop mode", slog.Bool("enabled", cfg.Enabled))
 		return s, nil
 	}
 
 	if _, err := os.Stat(s.dbPath); err != nil {
-		log.Warn().Err(err).Str("db_path", s.dbPath).Msg("geoip xdb file not found, running in degraded noop mode")
+		log.Warn("geoip xdb file not found, running in degraded noop mode",
+			slog.Any("error", err),
+			slog.String("db_path", s.dbPath),
+		)
 		return s, nil
 	}
 
 	eng, err := loadXDBEngine(s.dbPath)
 	if err != nil {
-		log.Warn().Err(err).Str("db_path", s.dbPath).Msg("failed to load geoip xdb, running in degraded noop mode")
+		log.Warn("failed to load geoip xdb, running in degraded noop mode",
+			slog.Any("error", err),
+			slog.String("db_path", s.dbPath),
+		)
 		return s, nil
 	}
 	s.engine.Store(eng)
-	log.Info().Str("db_path", s.dbPath).Msg("geoip xdb buffer loaded into memory")
+	log.Info("geoip xdb buffer loaded into memory", slog.String("db_path", s.dbPath))
 	return s, nil
 }
 
@@ -219,7 +225,7 @@ func (s *service) Reload() error {
 		return err
 	}
 	s.engine.Store(eng)
-	s.log.Info().Str("db_path", s.dbPath).Msg("geoip xdb buffer hot-reloaded")
+	s.log.Info("geoip xdb buffer hot-reloaded", slog.String("db_path", s.dbPath))
 	return nil
 }
 

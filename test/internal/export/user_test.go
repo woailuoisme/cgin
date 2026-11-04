@@ -3,6 +3,7 @@ package export_test
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"cgin/internal/import"
 	"cgin/internal/user"
 	"cgin/pkg/errs"
+	"cgin/pkg/excel"
 )
 
 func TestUserExportAndImportRoundTrip(t *testing.T) {
@@ -54,7 +56,7 @@ func TestUserExportAndImportRoundTrip(t *testing.T) {
 	require.NotEmpty(t, buf.Bytes())
 
 	var imported []importer.UserRow
-	err = importer.Users(
+	result, err := importer.Users(
 		t.Context(),
 		bytes.NewReader(buf.Bytes()),
 		func(_ context.Context, rows []importer.UserRow) error {
@@ -63,6 +65,10 @@ func TestUserExportAndImportRoundTrip(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
+	assert.Equal(t, 2, result.TotalRows)
+	assert.Equal(t, 2, result.SuccessRows)
+	assert.Equal(t, 0, result.FailedRows)
+	assert.False(t, result.HasErrors())
 	require.Len(t, imported, 2)
 
 	assert.Equal(t, importer.UserRow{
@@ -101,12 +107,50 @@ func TestUserImport_DefaultRoleStatusAndValidation(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		err = importer.Users(t.Context(), bytes.NewReader(buf.Bytes()), func(context.Context, []importer.UserRow) error {
+		_, err = importer.Users(t.Context(), bytes.NewReader(buf.Bytes()), func(context.Context, []importer.UserRow) error {
 			return nil
 		})
 		require.Error(t, err)
 		bizErr, ok := errs.As(err)
 		require.True(t, ok)
 		assert.Equal(t, errs.CodeExcelDuplicateRow, bizErr.Code())
+	})
+
+	t.Run("多字节中文姓名按字符数校验（50汉字合法、101汉字超限）", func(t *testing.T) {
+		validChineseName := strings.Repeat("张", 50) // 150 UTF-8 字节，但仅 50 个 Unicode 字符
+		tooLongChineseName := strings.Repeat("王", 101)
+
+		var buf bytes.Buffer
+		require.NoError(t, export.Users(
+			t.Context(),
+			&buf,
+			func(_ context.Context, _ user.ListFilter, afterID string, _ int) ([]sqlc.User, error) {
+				if afterID != "" {
+					return nil, nil
+				}
+				return []sqlc.User{
+					{ID: "1", Name: validChineseName, Email: "cn1@example.com", Role: enum.RoleUser, Status: enum.StatusActive, CreatedAt: now},
+					{ID: "2", Name: tooLongChineseName, Email: "cn2@example.com", Role: enum.RoleUser, Status: enum.StatusActive, CreatedAt: now},
+				}, nil
+			},
+			user.ListFilter{},
+		))
+
+		var imported []importer.UserRow
+		result, err := importer.Users(
+			t.Context(),
+			bytes.NewReader(buf.Bytes()),
+			func(_ context.Context, rows []importer.UserRow) error {
+				imported = append(imported, rows...)
+				return nil
+			},
+			excel.WithSkipInvalid[importer.UserRow](true),
+		)
+		require.NoError(t, err)
+		assert.Equal(t, 2, result.TotalRows)
+		assert.Equal(t, 1, result.SuccessRows)
+		assert.Equal(t, 1, result.FailedRows)
+		require.Len(t, imported, 1)
+		assert.Equal(t, validChineseName, imported[0].Name)
 	})
 }

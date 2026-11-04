@@ -58,7 +58,11 @@ var ServicesPackage = do.Package(
 	// 2. 管理端用户管理服务
 	do.Lazy(func(i do.Injector) (*adminservice.UserService, error) {
 		userService := do.MustInvoke[*user.Service](i)
-		return adminservice.MustNewUserService(adminservice.UserDeps{UserService: userService}), nil
+		signer := do.MustInvoke[media.Signer](i)
+		return adminservice.MustNewUserService(adminservice.UserDeps{
+			UserService: userService,
+			Signer:      signer,
+		}), nil
 	}),
 
 	// 3. 管理端认证服务
@@ -78,7 +82,7 @@ var ServicesPackage = do.Package(
 		disk := do.MustInvoke[storage.Disk](i)
 		searchClient := do.MustInvoke[search.Client](i)
 		gateway := do.MustInvoke[platformRealtime.Gateway](i)
-		mediaEngine := do.MustInvoke[media.Engine](i)
+		signer := do.MustInvoke[media.Signer](i)
 		mailerClient := do.MustInvoke[mailer.Mailer](i)
 
 		return service.NewSystemService(service.SystemDeps{
@@ -87,7 +91,7 @@ var ServicesPackage = do.Package(
 			Storage:  disk,
 			Search:   searchClient,
 			Realtime: gateway,
-			Imgproxy: mediaEngine,
+			Imgproxy: signer,
 			Mailer:   mailerClient,
 		}), nil
 	}),
@@ -109,10 +113,10 @@ var ServicesPackage = do.Package(
 	// 6. 个人资料维护服务
 	do.Lazy(func(i do.Injector) (*service.ProfileService, error) {
 		userService := do.MustInvoke[*user.Service](i)
-		mediaEngine := do.MustInvoke[media.Engine](i)
+		disk := do.MustInvoke[storage.Disk](i)
 		return service.MustNewProfileService(service.ProfileDeps{
 			Users:   userService,
-			Storage: mediaEngine,
+			Storage: disk,
 		}), nil
 	}),
 

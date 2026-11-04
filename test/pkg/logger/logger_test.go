@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"log/slog"
 	"testing"
+	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/goleak"
 
@@ -23,7 +24,7 @@ func TestLogger_BuildAndContext(t *testing.T) {
 	cfg := config.LogConfig{
 		Level:       "debug",
 		Channel:     "console",
-		ServiceName: "cgin-test",
+		ServiceName: "cfiber-test",
 		Env:         "local",
 	}
 
@@ -44,7 +45,7 @@ func TestLogger_ChannelJSON(t *testing.T) {
 	cfg := config.LogConfig{
 		Level:       "info",
 		Channel:     "json",
-		ServiceName: "cgin-test",
+		ServiceName: "cfiber-test",
 		Env:         "production",
 	}
 
@@ -103,7 +104,7 @@ func TestLogger_OptionsAndRedaction(t *testing.T) {
 			logger.WithRedaction(false),
 		)
 
-		l.Info().Str("action", "test_run").Msg("operational check")
+		l.Info("operational check", slog.String("action", "test_run"))
 		output := buf.String()
 		assert.Contains(t, output, `"service":"auth-service"`)
 		assert.Contains(t, output, `"action":"test_run"`)
@@ -119,12 +120,12 @@ func TestLogger_OptionsAndRedaction(t *testing.T) {
 			logger.WithRedaction(true),
 		)
 
-		l.Info().
-			Str("username", "admin").
-			Str("password", "super_secret_123").
-			Str("token", "jwt_ey123456").
-			Str("authorization", "Bearer xyz").
-			Msg("user sign-in attempted")
+		l.Info("user sign-in attempted",
+			slog.String("username", "admin"),
+			slog.String("password", "super_secret_123"),
+			slog.String("token", "jwt_ey123456"),
+			slog.String("authorization", "Bearer xyz"),
+		)
 
 		output := buf.String()
 		assert.Contains(t, output, `"username":"admin"`)
@@ -144,10 +145,10 @@ func TestLogger_OptionsAndRedaction(t *testing.T) {
 			logger.WithRedaction(false),
 		)
 
-		l.Info().
-			Int("max_open_conns", 10).
-			Str("query", "select 1").
-			Msg("database pool ready")
+		l.Info("database pool ready",
+			slog.Int("max_open_conns", 10),
+			slog.String("query", "select 1"),
+		)
 
 		output := buf.String()
 		assert.Contains(t, output, "INF")
@@ -164,36 +165,36 @@ func TestLogger_RedactionCoversAllJSONValueKinds(t *testing.T) {
 	tests := []struct {
 		name    string
 		channel string
-		log     func(l *zerolog.Logger)
+		log     func(l *logger.Logger)
 		secret  string
 		expect  string
 	}{
 		{
 			name:    "字符串取值",
 			channel: "json",
-			log:     func(l *zerolog.Logger) { l.Info().Str("token", "secret-string").Msg("m") },
+			log:     func(l *logger.Logger) { l.Info("m", slog.String("token", "secret-string")) },
 			secret:  "secret-string",
 			expect:  `"token":"[REDACTED]"`,
 		},
 		{
 			name:    "数字取值",
 			channel: "json",
-			log:     func(l *zerolog.Logger) { l.Info().Int("token", 987654).Msg("m") },
+			log:     func(l *logger.Logger) { l.Info("m", slog.Int("token", 987654)) },
 			secret:  "987654",
 			expect:  `"token":"[REDACTED]"`,
 		},
 		{
 			name:    "布尔取值",
 			channel: "json",
-			log:     func(l *zerolog.Logger) { l.Info().Bool("password", true).Msg("m") },
+			log:     func(l *logger.Logger) { l.Info("m", slog.Bool("password", true)) },
 			secret:  "true",
 			expect:  `"password":"[REDACTED]"`,
 		},
 		{
 			name:    "对象取值",
 			channel: "json",
-			log: func(l *zerolog.Logger) {
-				l.Info().Any("token", map[string]any{"inner": "secret-object"}).Msg("m")
+			log: func(l *logger.Logger) {
+				l.Info("m", slog.Any("token", map[string]any{"inner": "secret-object"}))
 			},
 			secret: "secret-object",
 			expect: `"token":"[REDACTED]"`,
@@ -201,17 +202,17 @@ func TestLogger_RedactionCoversAllJSONValueKinds(t *testing.T) {
 		{
 			name:    "数组取值",
 			channel: "json",
-			log:     func(l *zerolog.Logger) { l.Info().Strs("password", []string{"secret-array"}).Msg("m") },
+			log:     func(l *logger.Logger) { l.Info("m", slog.Any("password", []string{"secret-array"})) },
 			secret:  "secret-array",
 			expect:  `"password":"[REDACTED]"`,
 		},
 		{
 			name:    "嵌套对象与内嵌引号花括号",
 			channel: "json",
-			log: func(l *zerolog.Logger) {
-				l.Info().Any("authorization", map[string]any{
+			log: func(l *logger.Logger) {
+				l.Info("m", slog.Any("authorization", map[string]any{
 					"nested": map[string]any{"raw": `{"a":"}not-a-close"}`},
-				}).Msg("m")
+				}))
 			},
 			secret: "not-a-close",
 			expect: `"authorization":"[REDACTED]"`,
@@ -219,14 +220,14 @@ func TestLogger_RedactionCoversAllJSONValueKinds(t *testing.T) {
 		{
 			name:    "控制台键值形式",
 			channel: "console",
-			log:     func(l *zerolog.Logger) { l.Info().Str("password", "secret-console").Msg("m") },
+			log:     func(l *logger.Logger) { l.Info("m", slog.String("password", "secret-console")) },
 			secret:  "secret-console",
 			expect:  "password=[REDACTED]",
 		},
 		{
 			name:    "非敏感字段保持原样",
 			channel: "json",
-			log:     func(l *zerolog.Logger) { l.Info().Str("username", "admin").Msg("m") },
+			log:     func(l *logger.Logger) { l.Info("m", slog.String("username", "admin")) },
 			expect:  `"username":"admin"`,
 		},
 	}
@@ -255,6 +256,93 @@ func TestLogger_RedactionCoversAllJSONValueKinds(t *testing.T) {
 	}
 }
 
+// TestLogger_TraceContextHandler 验证 TraceContextHandler 自动提取请求标识与 Trace 属性。
+func TestLogger_TraceContextHandler(t *testing.T) {
+	var buf bytes.Buffer
+	l := logger.NewWithOptions(
+		logger.WithLevel("info"),
+		logger.WithChannel("json"),
+		logger.WithWriter(&buf),
+		logger.WithRedaction(false),
+	)
+
+	ctx := logger.WithContext(context.Background(), l, "req_custom_trace_999")
+	reqLogger := logger.FromContext(ctx)
+	reqLogger.InfoContext(ctx, "processing with request id")
+
+	output := buf.String()
+	assert.Contains(t, output, `"request_id":"req_custom_trace_999"`)
+	assert.Contains(t, output, `"message":"processing with request id"`)
+}
+
+// TestParseSlogLevel 验证日志级别字符串解析为 slog.Level。
+func TestParseSlogLevel(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected slog.Level
+	}{
+		{"debug", slog.LevelDebug},
+		{"DEBUG", slog.LevelDebug},
+		{"info", slog.LevelInfo},
+		{"warn", slog.LevelWarn},
+		{"warning", slog.LevelWarn},
+		{"error", slog.LevelError},
+		{"unknown", slog.LevelInfo},
+		{"", slog.LevelInfo},
+	}
+
+	for _, tc := range tests {
+		assert.Equal(t, tc.expected, logger.ParseSlogLevel(tc.input), "解析级别 %q 失败", tc.input)
+	}
+}
+
+// TestLogger_ConsoleCleanAndDurationUnit 验证控制台模式下 TraceID/SpanID 抑制与 Duration 自适应单位格式化。
+func TestLogger_ConsoleCleanAndDurationUnit(t *testing.T) {
+	var buf bytes.Buffer
+	l := logger.NewWithOptions(
+		logger.WithLevel("info"),
+		logger.WithChannel("console"),
+		logger.WithWriter(&buf),
+		logger.WithColor(false),
+	)
+
+	ctx := logger.WithContext(context.Background(), l, "req_sample_id_12345")
+	l.InfoContext(ctx, "access",
+		slog.String("method", "GET"),
+		slog.String("path", "/docs/openapi.json"),
+		slog.Int("status", 200),
+		slog.Duration("latency", 251834*time.Nanosecond),
+		slog.String("ip", "127.0.0.1"),
+	)
+
+	out := buf.String()
+	assert.Contains(t, out, "251.834µs", "耗时应带人类友好自适应单位")
+	assert.NotContains(t, out, "trace_id", "控制台普通日志不应输出 trace_id")
+	assert.NotContains(t, out, "span_id", "控制台普通日志不应输出 span_id")
+	assert.NotContains(t, out, "request_id", "控制台普通 200 日志不应输出冗长 request_id")
+	assert.NotContains(t, out, "logger_test.go", "普通 Info 日志不应输出代码位置 Caller")
+
+	// 验证 Warn 级别自动附加 request_id 但不输出 Caller
+	buf.Reset()
+	l.WarnContext(ctx, "slow request detected",
+		slog.String("path", "/slow"),
+		slog.Duration("latency", 500*time.Millisecond),
+	)
+	warnOut := buf.String()
+	assert.Contains(t, warnOut, "request_id=req_sample_id_12345", "Warn 级别日志应保留 request_id 便于追踪排查")
+	assert.Contains(t, warnOut, "latency=500ms")
+	assert.NotContains(t, warnOut, "logger_test.go", "Warn 级别日志不应输出代码位置 Caller")
+
+	// 验证 Error 级别自动附加精简代码位置（如 logger_test.go:340 >）
+	buf.Reset()
+	l.ErrorContext(ctx, "database query failed",
+		slog.String("error", "timeout"),
+	)
+	errOut := buf.String()
+	assert.Contains(t, errOut, "logger_test.go:", "Error 级别日志应附加精简文件名与行号")
+	assert.Contains(t, errOut, "request_id=req_sample_id_12345", "Error 级别日志应保留 request_id")
+}
+
 func BenchmarkLogger_JSONRedact(b *testing.B) {
 	l := logger.NewWithOptions(
 		logger.WithLevel("info"),
@@ -263,14 +351,13 @@ func BenchmarkLogger_JSONRedact(b *testing.B) {
 		logger.WithRedaction(true),
 	)
 
-	b.ResetTimer()
 	b.ReportAllocs()
-	for range b.N {
-		l.Info().
-			Str("username", "admin").
-			Str("password", "super_secret_123").
-			Str("token", "jwt_ey123456").
-			Msg("user sign-in attempted")
+	for b.Loop() {
+		l.Info("user sign-in attempted",
+			slog.String("username", "admin"),
+			slog.String("password", "super_secret_123"),
+			slog.String("token", "jwt_ey123456"),
+		)
 	}
 }
 
@@ -283,13 +370,12 @@ func BenchmarkLogger_ConsoleRedact(b *testing.B) {
 		logger.WithRedaction(true),
 	)
 
-	b.ResetTimer()
 	b.ReportAllocs()
-	for range b.N {
-		l.Info().
-			Str("username", "admin").
-			Str("password", "super_secret_123").
-			Str("token", "jwt_ey123456").
-			Msg("user sign-in attempted")
+	for b.Loop() {
+		l.Info("user sign-in attempted",
+			slog.String("username", "admin"),
+			slog.String("password", "super_secret_123"),
+			slog.String("token", "jwt_ey123456"),
+		)
 	}
 }

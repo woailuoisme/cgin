@@ -32,7 +32,15 @@ func newS3Disk(t *testing.T) storage.Disk {
 		t.Skip("未配置 S3_ENDPOINT，跳过对象存储连测")
 	}
 
-	disk, err := storage.NewS3Disk(cfg.Storage.S3)
+	disk, err := storage.NewS3Disk(storage.S3Config{
+		Endpoint:        cfg.Storage.S3.Endpoint,
+		Bucket:          cfg.Storage.S3.Bucket,
+		Region:          cfg.Storage.S3.Region,
+		AccessKeyID:     cfg.Storage.S3.AccessKeyID,
+		SecretAccessKey: cfg.Storage.S3.SecretAccessKey,
+		UseSSL:          cfg.Storage.S3.UseSSL,
+		PublicURL:       cfg.Storage.S3.PublicURL,
+	})
 	require.NoError(t, err, "S3 配置不完整（endpoint / bucket / 密钥）")
 	return disk
 }
@@ -60,7 +68,7 @@ func TestS3RoundTrip(t *testing.T) {
 
 	// 用时间戳隔离，避免与其他用例或人工调试踩到同一个键。
 	key := fmt.Sprintf("tests/%d/hello.txt", time.Now().UnixNano())
-	content := []byte("cgin storage integration")
+	content := []byte("cfiber storage integration")
 
 	t.Cleanup(func() { _ = disk.Delete(t.Context(), key) })
 
@@ -79,7 +87,9 @@ func TestS3RoundTrip(t *testing.T) {
 	assert.Equal(t, int64(len(content)), size)
 
 	// 预签名链接必须真的能下载到内容——这是"签名算对了"与"只是返回了一个字符串"的分界。
-	signed, err := disk.TemporaryURL(ctx, key, 2*time.Minute)
+	presigner, ok := storage.AsPresigner(disk)
+	require.True(t, ok, "S3 驱动必须具备 Presigner 特性")
+	signed, err := presigner.TemporaryURL(ctx, key, 2*time.Minute)
 	require.NoError(t, err)
 
 	status, body := fetch(ctx, t, signed)

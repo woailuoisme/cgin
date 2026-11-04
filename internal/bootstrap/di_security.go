@@ -1,7 +1,6 @@
 package bootstrap
 
 import (
-	"github.com/rs/zerolog"
 	"github.com/samber/do/v2"
 
 	"cgin/internal/config"
@@ -15,6 +14,7 @@ import (
 	"cgin/pkg/cache"
 	"cgin/pkg/hasher"
 	"cgin/pkg/i18n"
+	"cgin/pkg/logger"
 	"cgin/pkg/validator"
 )
 
@@ -73,7 +73,7 @@ var SecurityPackage = do.Package(
 	do.Lazy(func(i do.Injector) (*global.Middleware, error) {
 		cfg := do.MustInvoke[*config.Config](i)
 		c := do.MustInvoke[cache.Store](i)
-		log := do.MustInvoke[*zerolog.Logger](i)
+		log := do.MustInvoke[*logger.Logger](i)
 		translator := do.MustInvoke[i18n.Translator](i)
 		val := do.MustInvoke[*validator.Validator](i)
 
@@ -95,7 +95,7 @@ var SecurityPackage = do.Package(
 		authManager := do.MustInvoke[*platformauth.Manager](i)
 		c := do.MustInvoke[cache.Store](i)
 		enforcer := do.MustInvoke[*authorization.Enforcer](i)
-		log := do.MustInvoke[*zerolog.Logger](i)
+		log := do.MustInvoke[*logger.Logger](i)
 
 		return middleware.New(middleware.Deps{
 			AuthManager: authManager,

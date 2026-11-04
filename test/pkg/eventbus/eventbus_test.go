@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -197,7 +198,7 @@ func TestEventBus_ObservabilityContextPropagation(t *testing.T) {
 			consumerTraceID = sc.TraceID().String()
 		}
 		consumerReqID = logger.RequestIDFromContext(ctx)
-		logger.FromContext(ctx).Info().Str("user_id", ev.UserID).Msg("consumer logged event")
+		logger.FromContext(ctx).InfoContext(ctx, "consumer logged event", slog.String("user_id", ev.UserID))
 		close(done)
 		return nil
 	})
@@ -383,7 +384,7 @@ func TestEventBus_FunctionalOptions(t *testing.T) {
 	}
 }
 
-// TestLoggerAdapter 验证 Watermill 日志适配器的日志记录与字段下沉能力。
+// TestLoggerAdapter 验证 Watermill 日志适配器的日志记录与级别过滤能力。
 func TestLoggerAdapter(t *testing.T) {
 	adapter := eventbus.NewLoggerAdapter(logger.Nop())
 
@@ -397,4 +398,16 @@ func TestLoggerAdapter(t *testing.T) {
 
 	withFields := adapter.With(watermill.LogFields{"scope": "bus"})
 	assert.NotNil(t, withFields)
+
+	var buf bytes.Buffer
+	testLog := logger.NewWithOptions(logger.WithChannel("json"), logger.WithWriter(&buf), logger.WithLevel("debug"))
+	filteredAdapter := eventbus.NewLoggerAdapter(testLog, slog.LevelWarn)
+
+	filteredAdapter.Info("should be filtered", watermill.LogFields{"k": "v"})
+	filteredAdapter.Debug("should be filtered debug", nil)
+	assert.Empty(t, buf.String(), "低于 Warn 级别的日志应被静默过滤")
+
+	filteredAdapter.Error("critical failure", errors.New("boom"), watermill.LogFields{"scope": "bus"})
+	assert.Contains(t, buf.String(), "critical failure")
+	assert.Contains(t, buf.String(), "boom")
 }

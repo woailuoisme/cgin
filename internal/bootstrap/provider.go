@@ -4,11 +4,11 @@ import (
 	"context"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog"
 	"github.com/samber/do/v2"
 
 	"cgin/internal/config"
 	"cgin/pkg/eventbus"
+	"cgin/pkg/logger"
 )
 
 // NewInjector 构造并组装系统全量依赖注入容器（单 RootScope）。
@@ -49,7 +49,7 @@ func NewApplication(ctx context.Context, portOverride int) (*Application, error)
 	}
 
 	cfg := do.MustInvoke[*config.Config](injector)
-	log := do.MustInvoke[*zerolog.Logger](injector)
+	log := do.MustInvoke[*logger.Logger](injector)
 	bus := do.MustInvoke[*eventbus.Manager](injector)
 
 	return &Application{

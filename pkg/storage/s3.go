@@ -18,7 +18,6 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/samber/lo"
 
-	"cgin/internal/config"
 	"cgin/pkg/errs"
 	"cgin/pkg/resilience"
 )
@@ -34,9 +33,12 @@ type (
 	sizeReader interface{ Size() int64 }
 )
 
-// s3Disk 用 minio-go/v7 实现 Disk，对接任何 S3 兼容对象存储。
-// 编译期断言：驱动一旦不再满足 Disk 契约，构建就失败在这里，而不是在 Open 的赋值处。
-var _ Disk = (*s3Disk)(nil)
+// s3Disk 用 minio-go/v7 实现 Disk 与 Presigner，对接任何 S3 兼容对象存储。
+// 编译期断言：驱动一旦不再满足契约，构建就失败在这里。
+var (
+	_ Disk      = (*s3Disk)(nil)
+	_ Presigner = (*s3Disk)(nil)
+)
 
 type s3Disk struct {
 	client    *minio.Client
@@ -47,9 +49,8 @@ type s3Disk struct {
 	publicURL string
 }
 
-// NewS3Disk 构造 S3 兼容驱动。必填项缺失时直接失败——这些值由 config.validate 在更早的
-// 阶段拦截，这里的检查是防止绕过配置层直接调用的兜底。
-func NewS3Disk(cfg config.S3StorageConfig) (Disk, error) {
+// NewS3Disk 构造 S3 兼容驱动。
+func NewS3Disk(cfg S3Config) (Disk, error) {
 	if strings.TrimSpace(cfg.Endpoint) == "" {
 		return nil, errors.New("storage: S3_ENDPOINT cannot be empty")
 	}

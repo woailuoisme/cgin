@@ -6,6 +6,7 @@ import (
 	"cgin/internal/database/sqlc"
 	"cgin/internal/enum"
 	appuser "cgin/internal/user"
+	"cgin/pkg/media"
 )
 
 // UserResource 是认证端点与管理端用户接口共用的用户档案资源视图。
@@ -37,14 +38,14 @@ type UserResource struct {
 // ProjectUser 把用户模型投影为用户档案资源视图。
 //
 // 逐字段赋值而不是依赖结构体布局转换：两端的字段增减不会因“恰好同构”而静默通过。
-func ProjectUser(u *sqlc.User) UserResource {
+func ProjectUser(u *sqlc.User, signer ...media.Signer) UserResource {
 	profile := appuser.ProjectProfile(u)
 	return UserResource{
 		ID:              profile.ID,
 		Name:            profile.Name,
 		Email:           profile.Email,
 		EmailVerified:   profile.EmailVerified,
-		Avatar:          BuildAvatar(profile.AvatarPath),
+		Avatar:          BuildAvatar(profile.AvatarPath, signer...),
 		Role:            profile.Role,
 		Username:        profile.Username,
 		DisplayUsername: profile.DisplayUsername,

@@ -5,10 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/samber/oops"
 
 	"cgin/internal/config"
@@ -57,22 +57,22 @@ type defaultCallbackHandler struct{}
 var _ CallbackHandler = (*defaultCallbackHandler)(nil)
 
 func (d *defaultCallbackHandler) OnPaymentSuccess(ctx context.Context, result *payment.PaymentResult) error {
-	logger.FromContext(ctx).Error().
-		Str("out_trade_no", result.OutTradeNo).
-		Str("channel_trade_no", result.ChannelTradeNo).
-		Int64("paid_amount", result.PaidAmount).
-		Msg("payment success callback received without a registered handler")
+	logger.FromContext(ctx).ErrorContext(ctx, "payment success callback received without a registered handler",
+		slog.String("out_trade_no", result.OutTradeNo),
+		slog.String("channel_trade_no", result.ChannelTradeNo),
+		slog.Int64("paid_amount", result.PaidAmount),
+	)
 	return errs.Internal(errors.New("payment callback handler is not configured"))
 }
 
 func (d *defaultCallbackHandler) OnRefundSuccess(ctx context.Context, result *payment.RefundResult) error {
-	logger.FromContext(ctx).Error().
-		Str("out_trade_no", result.OutTradeNo).
-		Str("out_refund_no", result.OutRefundNo).
-		Str("channel_refund_no", result.ChannelRefundNo).
-		Int64("refund_amount", result.RefundAmount).
-		Str("status", string(result.Status)).
-		Msg("refund callback received without a registered handler")
+	logger.FromContext(ctx).ErrorContext(ctx, "refund callback received without a registered handler",
+		slog.String("out_trade_no", result.OutTradeNo),
+		slog.String("out_refund_no", result.OutRefundNo),
+		slog.String("channel_refund_no", result.ChannelRefundNo),
+		slog.Int64("refund_amount", result.RefundAmount),
+		slog.String("status", string(result.Status)),
+	)
 	return errs.Internal(errors.New("payment callback handler is not configured"))
 }
 
@@ -159,7 +159,10 @@ func (s *PaymentService) ProcessNotification(
 			Wrap(handleErr)
 	}
 
-	key.withLogFields(log.Info()).Msg("payment callback notification successfully processed")
+	log.LogAttrs(ctx, slog.LevelInfo,
+		"payment callback notification successfully processed",
+		key.logAttrs()...,
+	)
 
 	// 3. 写入持久化去重标记（在 defer releaseLock 释放处理锁之前完成写入）
 	s.recordConsumed(ctx, key)
@@ -182,9 +185,13 @@ func (k notificationKey) cacheKey(purpose notificationKeyPurpose) string {
 	return cache.Key("payment", "notify", string(purpose), k.channel.String(), k.kind, k.tradeNo)
 }
 
-// withLogFields 把三段幂等标识写入日志事件，保证日志里始终齐全。
-func (k notificationKey) withLogFields(e *zerolog.Event) *zerolog.Event {
-	return e.Str("channel", k.channel.String()).Str("kind", k.kind).Str("trade_no", k.tradeNo)
+// logAttrs 把三段幂等标识转化为 slog.Attr 列表，保证日志里始终齐全。
+func (k notificationKey) logAttrs() []slog.Attr {
+	return []slog.Attr{
+		slog.String("channel", k.channel.String()),
+		slog.String("kind", k.kind),
+		slog.String("trade_no", k.tradeNo),
+	}
 }
 
 // acquireLockOrConsumed 检查通知是否已消费并尝试加分布式防重放锁，返回释放函数以保证处理失败时立即解锁。
@@ -197,8 +204,10 @@ func (s *PaymentService) acquireLockOrConsumed(ctx context.Context, key notifica
 
 	doneKey := key.cacheKey(purposeConsumed)
 	if _, getErr := s.cache.Get(ctx, doneKey); getErr == nil {
-		key.withLogFields(log.Warn()).
-			Msg("callback notification already consumed, acknowledged without reprocessing")
+		log.LogAttrs(ctx, slog.LevelWarn,
+			"callback notification already consumed, acknowledged without reprocessing",
+			key.logAttrs()...,
+		)
 		return true, noop, nil
 	}
 
@@ -260,10 +269,10 @@ func (s *PaymentService) recordConsumed(ctx context.Context, key notificationKey
 	}
 	doneKey := key.cacheKey(purposeConsumed)
 	if err := s.cache.Set(ctx, doneKey, "1", notifyDoneTTL); err != nil {
-		logger.FromContext(ctx).Warn().
-			Err(err).
-			Str("trade_no", key.tradeNo).
-			Msg("failed to persist payment notification dedup marker")
+		logger.FromContext(ctx).WarnContext(ctx, "failed to persist payment notification dedup marker",
+			slog.Any("error", err),
+			slog.String("trade_no", key.tradeNo),
+		)
 	}
 }
 

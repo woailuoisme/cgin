@@ -2,7 +2,6 @@ package bootstrap
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog"
 	"github.com/samber/do/v2"
 
 	"cgin/internal/config"
@@ -12,6 +11,7 @@ import (
 	"cgin/internal/middleware/global"
 	"cgin/internal/service"
 	adminservice "cgin/internal/service/admin"
+	"cgin/pkg/logger"
 	"cgin/pkg/media"
 )
 
@@ -20,7 +20,7 @@ var HandlersPackage = do.Package(
 	// 1. 系统探针处理器
 	do.Lazy(func(i do.Injector) (*handler.SystemHandler, error) {
 		svc := do.MustInvoke[*service.SystemService](i)
-		log := do.MustInvoke[*zerolog.Logger](i)
+		log := do.MustInvoke[*logger.Logger](i)
 		return handler.NewSystemHandler(svc, log), nil
 	}),
 
@@ -62,8 +62,8 @@ var HandlersPackage = do.Package(
 
 	// 8. 媒体资源处理器
 	do.Lazy(func(i do.Injector) (*handler.MediaHandler, error) {
-		engine := do.MustInvoke[media.Engine](i)
-		return handler.NewMediaHandler(engine), nil
+		uploader := do.MustInvoke[media.Uploader](i)
+		return handler.NewMediaHandler(uploader), nil
 	}),
 
 	// 9. 路由处理器聚合

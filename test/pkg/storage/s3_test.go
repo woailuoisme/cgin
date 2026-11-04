@@ -1,8 +1,4 @@
 // 本文件覆盖 S3 驱动中不需要真实服务端即可断言的部分：构造期校验、URL 组装与预签名。
-//
-// 预签名完全在本地计算签名、不产生网络往返，所以能离线断言"链接里确实有签名"，
-// 而不只是"函数返回了字符串"。真正需要桶的操作（Put / Get / HealthCheck 成功路径）
-// 必须对着真实对象存储跑，本文件不假装覆盖了它们。
 package storage_test
 
 import (
@@ -14,15 +10,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"cgin/internal/config"
 	"cgin/pkg/storage"
 )
 
 // s3Config 返回一份最小可用的 S3 配置，指向本机共享栈里的 garage（明文）。
-func s3Config() config.S3StorageConfig {
-	return config.S3StorageConfig{
+func s3Config() storage.S3Config {
+	return storage.S3Config{
 		Endpoint:        "127.0.0.1:3900",
-		Bucket:          "cgin",
+		Bucket:          "cfiber",
 		Region:          "garage",
 		AccessKeyID:     "access-key",
 		SecretAccessKey: "secret-key",
@@ -34,13 +29,13 @@ func s3Config() config.S3StorageConfig {
 func TestNewS3DiskRequiresConfig(t *testing.T) {
 	tests := []struct {
 		name   string
-		mutate func(*config.S3StorageConfig)
+		mutate func(*storage.S3Config)
 		want   string
 	}{
-		{"缺 endpoint", func(c *config.S3StorageConfig) { c.Endpoint = "" }, "S3_ENDPOINT"},
-		{"缺 bucket", func(c *config.S3StorageConfig) { c.Bucket = "" }, "S3_BUCKET"},
-		{"缺 access key", func(c *config.S3StorageConfig) { c.AccessKeyID = "" }, "S3_ACCESS_KEY"},
-		{"缺 secret", func(c *config.S3StorageConfig) { c.SecretAccessKey = "" }, "S3_SECRET_KEY"},
+		{"缺 endpoint", func(c *storage.S3Config) { c.Endpoint = "" }, "S3_ENDPOINT"},
+		{"缺 bucket", func(c *storage.S3Config) { c.Bucket = "" }, "S3_BUCKET"},
+		{"缺 access key", func(c *storage.S3Config) { c.AccessKeyID = "" }, "S3_ACCESS_KEY"},
+		{"缺 secret", func(c *storage.S3Config) { c.SecretAccessKey = "" }, "S3_SECRET_KEY"},
 	}
 
 	for _, tt := range tests {
@@ -63,7 +58,7 @@ func TestS3URL(t *testing.T) {
 
 		address, err := disk.URL("users/1/a.png")
 		require.NoError(t, err)
-		assert.Equal(t, "http://127.0.0.1:3900/cgin/users/1/a.png", address)
+		assert.Equal(t, "http://127.0.0.1:3900/cfiber/users/1/a.png", address)
 	})
 
 	t.Run("配置前缀后以它为准", func(t *testing.T) {
@@ -88,26 +83,28 @@ func TestS3URL(t *testing.T) {
 func TestS3Presign(t *testing.T) {
 	disk, err := storage.NewS3Disk(s3Config())
 	require.NoError(t, err)
+	presigner, ok := storage.AsPresigner(disk)
+	require.True(t, ok, "S3 驱动必须实现 Presigner 特性")
 	ctx := t.Context()
 
-	raw, err := disk.TemporaryURL(ctx, "users/1/avatar.png", 10*time.Minute)
+	raw, err := presigner.TemporaryURL(ctx, "users/1/avatar.png", 10*time.Minute)
 	require.NoError(t, err)
 
 	signed, err := url.Parse(raw)
 	require.NoError(t, err)
 	assert.Equal(t, "127.0.0.1:3900", signed.Host)
-	assert.Equal(t, "/cgin/users/1/avatar.png", signed.Path)
+	assert.Equal(t, "/cfiber/users/1/avatar.png", signed.Path)
 	assert.NotEmpty(t, signed.Query().Get("X-Amz-Signature"), "预签名必须真的带签名")
 	assert.Equal(t, "600", signed.Query().Get("X-Amz-Expires"))
 
-	raw, err = disk.PresignPut(ctx, "users/1/avatar.png", time.Minute)
+	raw, err = presigner.PresignPut(ctx, "users/1/avatar.png", time.Minute)
 	require.NoError(t, err)
 	assert.Contains(t, raw, "X-Amz-Signature")
 
 	// ttl 非正数会签出一个立即失效或永不过期的地址，必须直接拒绝。
-	_, err = disk.TemporaryURL(ctx, "a.png", 0)
+	_, err = presigner.TemporaryURL(ctx, "a.png", 0)
 	require.Error(t, err)
-	_, err = disk.PresignPut(ctx, "a.png", -time.Minute)
+	_, err = presigner.PresignPut(ctx, "a.png", -time.Minute)
 	require.Error(t, err)
 }
 
@@ -118,12 +115,10 @@ func TestS3HealthCheckReportsFailure(t *testing.T) {
 	disk, err := storage.NewS3Disk(cfg)
 	require.NoError(t, err)
 
-	// minio 对连接错误有重试，用短超时把用例耗时压在 3 秒内；两种失败（拒绝连接或超时）
-	// 都会被包装成带桶名的错误。
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 
 	err = disk.Ping(ctx)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "S3 bucket cgin")
+	assert.Contains(t, err.Error(), "S3 bucket cfiber")
 }

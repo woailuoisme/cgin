@@ -63,9 +63,9 @@ func TestAuthEventListener(t *testing.T) {
 	}, 3*time.Second, 50*time.Millisecond)
 
 	dispatcher.AssertDispatched(t, job.TaskSendWelcomeEmail, 1)
-	dispatcher.AssertDispatchedJob(t, func(j queue.Job) bool {
-		if welcomeJob, ok := j.(*job.WelcomeEmailJob); ok {
-			return welcomeJob.Email == "user@example.com" && welcomeJob.Name == "John Doe"
+	dispatcher.AssertDispatchedTask(t, func(task queue.DispatchedTask) bool {
+		if payload, ok := task.Payload.(job.WelcomeEmailPayload); ok {
+			return payload.Email == "user@example.com" && payload.Name == "John Doe"
 		}
 		return false
 	})

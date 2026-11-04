@@ -150,12 +150,34 @@ type sampleRecord struct {
 	Score int
 }
 
-func sampleSchema() []excel.Column[sampleRecord] {
-	return []excel.Column[sampleRecord]{
+func sampleExportSchema() []excel.ExportColumn[sampleRecord] {
+	return []excel.ExportColumn[sampleRecord]{
+		{
+			Header: "Email",
+			Width:  25,
+			Align:  excel.AlignLeft,
+			Encode: func(r *sampleRecord) any { return r.Email },
+		},
+		{
+			Header: "Name",
+			Width:  20,
+			Align:  excel.AlignCenter,
+			Encode: func(r *sampleRecord) any { return r.Name },
+		},
+		{
+			Header: "Score",
+			Width:  10,
+			Align:  excel.AlignRight,
+			Encode: func(r *sampleRecord) any { return r.Score },
+		},
+	}
+}
+
+func sampleImportSchema() []excel.ImportColumn[sampleRecord] {
+	return []excel.ImportColumn[sampleRecord]{
 		{
 			Header:   "Email",
 			Required: true,
-			Encode:   func(r *sampleRecord) any { return r.Email },
 			Decode: func(cell string, dst *sampleRecord) error {
 				if !strings.Contains(cell, "@") {
 					return errors.New("invalid email")
@@ -167,7 +189,6 @@ func sampleSchema() []excel.Column[sampleRecord] {
 		{
 			Header:   "Name",
 			Required: true,
-			Encode:   func(r *sampleRecord) any { return r.Name },
 			Decode: func(cell string, dst *sampleRecord) error {
 				dst.Name = cell
 				return nil
@@ -176,7 +197,7 @@ func sampleSchema() []excel.Column[sampleRecord] {
 		{
 			Header:   "Score",
 			Required: false,
-			Encode:   func(r *sampleRecord) any { return r.Score },
+			Default:  "0",
 			Decode: func(cell string, dst *sampleRecord) error {
 				val, err := strconv.Atoi(cell)
 				if err != nil {
@@ -198,7 +219,7 @@ func TestWriteTableAndReadTableRoundTrip(t *testing.T) {
 
 	var buf bytes.Buffer
 	idx := 0
-	err := excel.WriteTable(t.Context(), &buf, "Members", sampleSchema(), func() (sampleRecord, bool, error) {
+	err := excel.WriteTable(t.Context(), &buf, "Members", sampleExportSchema(), func() (sampleRecord, bool, error) {
 		if idx >= len(input) {
 			return sampleRecord{}, false, nil
 		}
@@ -212,10 +233,10 @@ func TestWriteTableAndReadTableRoundTrip(t *testing.T) {
 		batches [][]sampleRecord
 		gotAll  []sampleRecord
 	)
-	err = excel.ReadTable(
+	result, err := excel.ReadTable(
 		t.Context(),
 		bytes.NewReader(buf.Bytes()),
-		sampleSchema(),
+		sampleImportSchema(),
 		func(_ context.Context, rows []sampleRecord) error {
 			cloned := append([]sampleRecord(nil), rows...)
 			batches = append(batches, cloned)
@@ -224,21 +245,123 @@ func TestWriteTableAndReadTableRoundTrip(t *testing.T) {
 		},
 		excel.WithSheet[sampleRecord]("Members"),
 		excel.WithChunkSize[sampleRecord](2),
-		excel.WithUniqueKey[sampleRecord]("email", func(r *sampleRecord) string { return r.Email }),
+		excel.WithUniqueKey("email", func(r *sampleRecord) string { return r.Email }),
 	)
 	require.NoError(t, err)
+	assert.Equal(t, 3, result.TotalRows)
+	assert.Equal(t, 3, result.SuccessRows)
+	assert.Equal(t, 0, result.FailedRows)
+	assert.False(t, result.HasErrors())
 	assert.Len(t, batches, 2, "3 行数据按 chunkSize=2 应拆成 2 个批次回调")
 	assert.Equal(t, input, gotAll)
 }
 
+func TestWriter_MultiSheet(t *testing.T) {
+	var buf bytes.Buffer
+	writer := excel.NewWriter(&buf)
+
+	sheet1, err := excel.NewSheet(writer, "Engineering", sampleExportSchema())
+	require.NoError(t, err)
+	require.NoError(t, sheet1.WriteRow(&sampleRecord{Email: "dev@example.com", Name: "Dev", Score: 100}))
+	require.NoError(t, sheet1.Close())
+
+	sheet2, err := excel.NewSheet(writer, "Product", sampleExportSchema())
+	require.NoError(t, err)
+	require.NoError(t, sheet2.WriteRow(&sampleRecord{Email: "pm@example.com", Name: "PM", Score: 90}))
+	// 故意不手动调用 sheet2.Close()，验证 writer.Close() 自动兜底 Flush
+	require.NoError(t, writer.Close())
+
+	file, err := excelize.OpenReader(bytes.NewReader(buf.Bytes()))
+	require.NoError(t, err)
+	defer func() { _ = file.Close() }()
+
+	sheets := file.GetSheetList()
+	assert.Contains(t, sheets, "Engineering")
+	assert.Contains(t, sheets, "Product")
+
+	prodRows, err := file.GetRows("Product")
+	require.NoError(t, err)
+	require.Len(t, prodRows, 2)
+	assert.Equal(t, []string{"pm@example.com", "PM", "90"}, prodRows[1])
+}
+
+func TestReader_PartialImportWithSkipInvalid(t *testing.T) {
+	var buf bytes.Buffer
+	rows := [][]any{
+		{"valid1@example.com", "Valid One", 10},
+		{"not-an-email", "Invalid Two", 20},
+		{"valid3@example.com", "Valid Three", 30},
+	}
+	require.NoError(t, excel.Write(t.Context(), &buf, "Sheet1", []string{"Email", "Name", "Score"}, rowIterator(rows, nil)))
+
+	var imported []sampleRecord
+	result, err := excel.ReadTable(
+		t.Context(),
+		bytes.NewReader(buf.Bytes()),
+		sampleImportSchema(),
+		func(_ context.Context, batch []sampleRecord) error {
+			imported = append(imported, batch...)
+			return nil
+		},
+		excel.WithSkipInvalid[sampleRecord](true),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 3, result.TotalRows)
+	assert.Equal(t, 2, result.SuccessRows)
+	assert.Equal(t, 1, result.FailedRows)
+	assert.True(t, result.HasErrors())
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, 3, result.Errors[0].Row)
+	assert.Equal(t, "email", result.Errors[0].Field)
+	require.Len(t, imported, 2)
+	assert.Equal(t, "valid1@example.com", imported[0].Email)
+	assert.Equal(t, "valid3@example.com", imported[1].Email)
+}
+
+func TestReader_SkipInvalidDuplicateKey(t *testing.T) {
+	var buf bytes.Buffer
+	rows := [][]any{
+		{"user1@example.com", "User One", 10},
+		{"USER1@example.com", "Duplicate User", 20}, // 重复邮箱
+		{"user2@example.com", "User Two", 30},
+	}
+	require.NoError(t, excel.Write(t.Context(), &buf, "Sheet1", []string{"Email", "Name", "Score"}, rowIterator(rows, nil)))
+
+	var imported []sampleRecord
+	result, err := excel.ReadTable(
+		t.Context(),
+		bytes.NewReader(buf.Bytes()),
+		sampleImportSchema(),
+		func(_ context.Context, batch []sampleRecord) error {
+			imported = append(imported, batch...)
+			return nil
+		},
+		excel.WithSkipInvalid[sampleRecord](true),
+		excel.WithUniqueKey("email", func(r *sampleRecord) string { return r.Email }),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 3, result.TotalRows)
+	assert.Equal(t, 2, result.SuccessRows)
+	assert.Equal(t, 1, result.FailedRows)
+	assert.True(t, result.HasErrors())
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, 3, result.Errors[0].Row)
+	assert.Equal(t, "email", result.Errors[0].Field)
+	assert.Contains(t, result.Errors[0].Message, "Duplicate email")
+
+	require.Len(t, imported, 2)
+	assert.Equal(t, "user1@example.com", imported[0].Email)
+	assert.Equal(t, "user2@example.com", imported[1].Email)
+}
+
 func TestReadTable_ErrorCodes(t *testing.T) {
-	cols := sampleSchema()
+	cols := sampleImportSchema()
 
 	t.Run("文件超限返回 EXCEL_FILE_TOO_LARGE", func(t *testing.T) {
 		var buf bytes.Buffer
 		require.NoError(t, excel.Write(t.Context(), &buf, "Sheet1", []string{"Email", "Name"}, rowIterator([][]any{{"a@b.c", "A"}}, nil)))
 
-		err := excel.ReadTable(
+		_, err := excel.ReadTable(
 			t.Context(),
 			bytes.NewReader(buf.Bytes()),
 			cols,
@@ -252,7 +375,7 @@ func TestReadTable_ErrorCodes(t *testing.T) {
 	})
 
 	t.Run("损坏文件返回 EXCEL_OPEN_ERROR", func(t *testing.T) {
-		err := excel.ReadTable(
+		_, err := excel.ReadTable(
 			t.Context(),
 			strings.NewReader("not-a-valid-zip-or-xlsx"),
 			cols,
@@ -268,7 +391,7 @@ func TestReadTable_ErrorCodes(t *testing.T) {
 		var buf bytes.Buffer
 		require.NoError(t, excel.Write(t.Context(), &buf, "Sheet1", []string{"Email", "Name"}, rowIterator(nil, nil)))
 
-		err := excel.ReadTable(
+		_, err := excel.ReadTable(
 			t.Context(),
 			bytes.NewReader(buf.Bytes()),
 			cols,
@@ -285,7 +408,7 @@ func TestReadTable_ErrorCodes(t *testing.T) {
 		var buf bytes.Buffer
 		require.NoError(t, excel.Write(t.Context(), &buf, "Sheet1", []string{"Email"}, rowIterator([][]any{{"a@b.c"}}, nil)))
 
-		err := excel.ReadTable(
+		_, err := excel.ReadTable(
 			t.Context(),
 			bytes.NewReader(buf.Bytes()),
 			cols,
@@ -305,7 +428,7 @@ func TestReadTable_ErrorCodes(t *testing.T) {
 		}
 		require.NoError(t, excel.Write(t.Context(), &buf, "Sheet1", []string{"email", "name", "score"}, rowIterator(rows, nil)))
 
-		err := excel.ReadTable(
+		_, err := excel.ReadTable(
 			t.Context(),
 			bytes.NewReader(buf.Bytes()),
 			cols,
@@ -330,12 +453,12 @@ func TestReadTable_ErrorCodes(t *testing.T) {
 		}
 		require.NoError(t, excel.Write(t.Context(), &buf, "Sheet1", []string{"Email", "Name"}, rowIterator(rows, nil)))
 
-		err := excel.ReadTable(
+		_, err := excel.ReadTable(
 			t.Context(),
 			bytes.NewReader(buf.Bytes()),
 			cols,
 			func(context.Context, []sampleRecord) error { return nil },
-			excel.WithUniqueKey[sampleRecord]("email", func(r *sampleRecord) string { return r.Email }),
+			excel.WithUniqueKey("email", func(r *sampleRecord) string { return r.Email }),
 		)
 		require.Error(t, err)
 		bizErr, ok := errs.As(err)

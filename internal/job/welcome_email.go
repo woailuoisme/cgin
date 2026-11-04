@@ -2,6 +2,7 @@ package job
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/samber/oops"
@@ -15,55 +16,50 @@ import (
 // TaskSendWelcomeEmail 声明发送欢迎邮件的 Asynq 任务唯一标识符。
 const TaskSendWelcomeEmail = "auth:send_welcome_email"
 
-// WelcomeEmailJob 向新注册用户异步投递欢迎邮件的后台队列任务。
-type WelcomeEmailJob struct {
-	queue.JobMeta
+// WelcomeEmailPayload 向新注册用户异步投递欢迎邮件的纯数据传输载荷 (DTO)。
+type WelcomeEmailPayload struct {
 	Email string `json:"email"`
 	Name  string `json:"name"`
-
-	// mailer 由工厂闭包在 Worker 启动期显式注入，不参与 JSON 序列化
-	mailer mailer.Mailer `json:"-"`
 }
 
-// NewWelcomeEmailJob 创建发送欢迎邮件的任务载荷实例（用于入队派发）。
-func NewWelcomeEmailJob(email, name string) *WelcomeEmailJob {
-	return &WelcomeEmailJob{
-		JobMeta: queue.NewJobMeta(TaskSendWelcomeEmail, queue.DefaultQueueName).
-			WithRetries(3).
-			WithTimeout(30 * time.Second),
-		Email: email,
-		Name:  name,
-	}
+// WelcomeEmailHandler 专职负责欢迎邮件任务执行的业务服务组件 (SRP)。
+type WelcomeEmailHandler struct {
+	mailer mailer.Mailer
 }
 
-// RegisterJobs 向队列注册表登记该任务的还原工厂与执行依赖。
-func RegisterJobs(reg *queue.Registry, m mailer.Mailer) {
-	if reg == nil {
+// NewWelcomeEmailHandler 创建带有 Mailer 依赖的欢迎邮件执行处理器。
+func NewWelcomeEmailHandler(m mailer.Mailer) *WelcomeEmailHandler {
+	return &WelcomeEmailHandler{mailer: m}
+}
+
+// RegisterJobs 向任务路由器显式挂载该任务的强类型处理函数与默认执行选项。
+func RegisterJobs(router *queue.TaskRouter, m mailer.Mailer) {
+	if router == nil {
 		return
 	}
-	reg.Job(func() queue.Job {
-		return &WelcomeEmailJob{
-			JobMeta: queue.NewJobMeta(TaskSendWelcomeEmail, queue.DefaultQueueName),
-			mailer:  m,
-		}
-	})
+	h := NewWelcomeEmailHandler(m)
+	queue.Register(router, TaskSendWelcomeEmail, h.Handle,
+		queue.WithQueue(queue.DefaultQueueName),
+		queue.WithMaxRetry(3),
+		queue.WithTimeout(30*time.Second),
+	)
 }
 
-// Handle 任务执行入口，由 Asynq Worker 协程池调用。
-func (j *WelcomeEmailJob) Handle(ctx context.Context) error {
+// Handle 任务执行入口，由 Worker 协程池在消费时反序列化载荷后直接调度。
+func (h *WelcomeEmailHandler) Handle(ctx context.Context, p WelcomeEmailPayload) error {
 	log := logger.FromContext(ctx)
-	log.Info().
-		Str("email", j.Email).
-		Str("name", j.Name).
-		Msg("processing welcome email task")
+	log.InfoContext(ctx, "processing welcome email task",
+		slog.String("email", p.Email),
+		slog.String("name", p.Name),
+	)
 
-	if j.mailer == nil {
-		log.Warn().Msg("mailer dependency is not injected, skipped welcome email task")
+	if h.mailer == nil {
+		log.WarnContext(ctx, "mailer dependency is not injected, skipped welcome email task")
 		return nil
 	}
 
 	htmlBody, err := mailer.RenderTemplate("welcome", map[string]any{
-		"Name":    j.Name,
+		"Name":    p.Name,
 		"AppName": "cgin",
 		"Button": map[string]any{
 			"Text":  "Get Started",
@@ -72,29 +68,29 @@ func (j *WelcomeEmailJob) Handle(ctx context.Context) error {
 		},
 	})
 	if err != nil {
-		return j.fail(err)
+		return h.fail(p, err)
 	}
 
 	msg := mailer.Message{
-		To:      []string{j.Email},
+		To:      []string{p.Email},
 		Subject: "Welcome to cgin",
 		Body:    htmlBody,
 		IsHTML:  true,
 	}
 
-	if err := j.mailer.Send(ctx, msg); err != nil {
-		return j.fail(err)
+	if err := h.mailer.Send(ctx, msg); err != nil {
+		return h.fail(p, err)
 	}
 
-	log.Info().
-		Str("email", j.Email).
-		Msg("welcome email sent successfully")
+	log.InfoContext(ctx, "welcome email sent successfully",
+		slog.String("email", p.Email),
+	)
 	return nil
 }
 
-func (j *WelcomeEmailJob) fail(err error) error {
+func (h *WelcomeEmailHandler) fail(p WelcomeEmailPayload, err error) error {
 	return oops.Code(string(errs.CodeInternal)).
 		With("task", TaskSendWelcomeEmail).
-		With("email", j.Email).
+		With("email", p.Email).
 		Wrap(err)
 }

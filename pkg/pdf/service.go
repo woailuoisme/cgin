@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -18,7 +19,6 @@ import (
 	"github.com/johnfercher/maroto/v2/pkg/core"
 	"github.com/johnfercher/maroto/v2/pkg/core/entity"
 	"github.com/johnfercher/maroto/v2/pkg/props"
-	"github.com/rs/zerolog"
 	"github.com/samber/lo"
 	"github.com/samber/oops"
 
@@ -34,13 +34,13 @@ import (
 type Service struct {
 	cfg        config.PDFConfig
 	storage    storage.Disk
-	log        *zerolog.Logger
+	log        *slog.Logger
 	fonts      []entity.CustomFont
 	fontFamily string
 }
 
 // NewService 实例化 PDF 服务。
-func NewService(cfg config.PDFConfig, disk storage.Disk, log *zerolog.Logger) *Service {
+func NewService(cfg config.PDFConfig, disk storage.Disk, log *slog.Logger) *Service {
 	fonts, resolvedFamily := ResolveFontConfig(cfg.FontPath, cfg.FontFamily, log)
 
 	return &Service{

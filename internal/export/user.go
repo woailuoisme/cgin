@@ -18,29 +18,38 @@ const (
 )
 
 // userColumns 定义用户导出的声明式强类型列契约。
-var userColumns = []excel.Column[sqlc.User]{
+var userColumns = []excel.ExportColumn[sqlc.User]{
 	{
 		Header: "ID",
+		Width:  28,
 		Encode: func(u *sqlc.User) any { return u.ID },
 	},
 	{
 		Header: "Name",
+		Width:  20,
 		Encode: func(u *sqlc.User) any { return u.Name },
 	},
 	{
 		Header: "Email",
+		Width:  28,
 		Encode: func(u *sqlc.User) any { return u.Email },
 	},
 	{
 		Header: "Role",
+		Width:  12,
+		Align:  excel.AlignCenter,
 		Encode: func(u *sqlc.User) any { return u.Role },
 	},
 	{
 		Header: "Status",
+		Width:  12,
+		Align:  excel.AlignCenter,
 		Encode: func(u *sqlc.User) any { return u.Status },
 	},
 	{
 		Header: "Created At",
+		Width:  22,
+		Align:  excel.AlignCenter,
 		Encode: func(u *sqlc.User) any {
 			if u.CreatedAt.IsZero() {
 				return ""

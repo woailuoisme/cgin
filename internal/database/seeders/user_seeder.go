@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -45,12 +46,12 @@ func (s *UserSeeder) Seed(ctx context.Context, db *database.DB) error {
 	}
 	// 演示数据携带固定测试凭据，生产环境中直接跳过
 	if cfg.IsProduction() {
-		log.Warn().Msg("demo user seeding is disabled in production, skipped")
+		log.WarnContext(ctx, "demo user seeding is disabled in production, skipped")
 		return nil
 	}
 
 	total := max(cmp.Or(s.Count, 20), 1)
-	log.Info().Int("count", total).Msg("batch generating test users...")
+	log.InfoContext(ctx, "batch generating test users...", slog.Int("count", total))
 
 	rows, err := s.buildRows(ctx, db, total)
 	if err != nil {
@@ -82,7 +83,7 @@ func (s *UserSeeder) Seed(ctx context.Context, db *database.DB) error {
 		subHook(int64(len(created)), int64(len(rows)))
 	}
 
-	log.Info().Int("total", len(created)).Msg("batch test user seeding completed")
+	log.InfoContext(ctx, "batch test user seeding completed", slog.Int("total", len(created)))
 	return nil
 }
 
@@ -152,7 +153,7 @@ func generatedUserRows(total int) []map[string]any {
 			"phone_number_verified": true,
 		}
 		if i == 0 {
-			row["avatar_path"] = "uploads/avatar/20261031/demo-avatar.webp"
+			row["avatar_path"] = fmt.Sprintf("uploads/avatars/fixtures/user_%d.webp", i)
 		}
 		if i == 1 {
 			expires := time.Now().UTC().Add(30 * 24 * time.Hour)

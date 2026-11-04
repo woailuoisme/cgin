@@ -186,16 +186,12 @@ func TestLocalURL(t *testing.T) {
 	})
 }
 
-// TestLocalPresignIsUnsupported 确认本地驱动明确拒绝预签名，而不是返回无签名的假链接。
+// TestLocalPresignIsUnsupported 确认本地驱动不具备预签名能力。
 func TestLocalPresignIsUnsupported(t *testing.T) {
 	disk, _ := newLocalDisk(t, "https://cdn.example.com")
-	ctx := t.Context()
-
-	_, err := disk.TemporaryURL(ctx, "users/1/a.png", time.Minute)
-	require.ErrorIs(t, err, storage.ErrPresignUnsupported)
-
-	_, err = disk.PresignPut(ctx, "users/1/a.png", time.Minute)
-	require.ErrorIs(t, err, storage.ErrPresignUnsupported)
+	presigner, ok := storage.AsPresigner(disk)
+	assert.False(t, ok)
+	assert.Nil(t, presigner)
 }
 
 // TestNewLocalDiskCreatesRoot 确认根目录会被创建，空路径被拒绝。

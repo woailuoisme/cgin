@@ -1,6 +1,6 @@
-// Package logger 提供基于 zerolog 的高性能结构化日志器构建与请求作用域透传。
+// Package logger 提供基于 Go 官方标准库 log/slog 与 samber/slog-zerolog Handler 的结构化日志器构建与请求作用域透传。
 //
-// 全系统统一以 *zerolog.Logger 传递日志器：nil 表示未注入，由 Nop() 兜底，
+// 全系统统一以 *slog.Logger 传递日志器：nil 表示未注入，由 Nop() 兜底，
 // 调用方因此无需逐处判空，且与 FromContext 的返回类型保持一致。
 package logger
 
@@ -8,28 +8,158 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"fmt"
 	"io"
+	"log/slog"
 	"os"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
+	slogcommon "github.com/samber/slog-common"
+	slogzerolog "github.com/samber/slog-zerolog/v2"
 	"go.opentelemetry.io/otel/trace"
 
 	"cgin/internal/config"
 )
 
+// ChannelJSON 与 ChannelConsole 描述输出通道格式。
+const (
+	ChannelJSON    = "json"
+	ChannelConsole = "console"
+)
+
+// Logger 是标准库 *slog.Logger 的类型别名，保证系统对外统一认知。
+type Logger = slog.Logger
+
 // requestIDKey 是请求标识在 context 中的私有键。
 type requestIDKey struct{}
 
+// contextLoggerKey 是请求作用域日志器在 context 中的私有键。
+type contextLoggerKey struct{}
+
+func formatCallerPC(pc uintptr) string {
+	fs := runtime.CallersFrames([]uintptr{pc})
+	frame, _ := fs.Next()
+	if frame.File == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s:%d", filepath.Base(frame.File), frame.Line)
+}
+
+// TraceContextHandler 拦截 slog 调用，从 context 中自动提取链路标识（TraceID/SpanID/RequestID）并注入 Record 属性。
+type TraceContextHandler struct {
+	next      slog.Handler
+	zlog      *zerolog.Logger
+	channel   string
+	addCaller bool
+}
+
+var _ slog.Handler = (*TraceContextHandler)(nil)
+
+// NewTraceContextHandler 包装目标 Handler，实现上下文元数据与智能 Caller 格式化的自动透传。
+func NewTraceContextHandler(next slog.Handler, zlog *zerolog.Logger, channel string, addCaller bool) *TraceContextHandler {
+	return &TraceContextHandler{
+		next:      next,
+		zlog:      zlog,
+		channel:   channel,
+		addCaller: addCaller,
+	}
+}
+
+func (h *TraceContextHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.next.Enabled(ctx, level)
+}
+
+func (h *TraceContextHandler) attachTraceAttrs(ctx context.Context, r *slog.Record) {
+	if ctx == nil {
+		return
+	}
+
+	// 1. 自动提取并注入 OpenTelemetry TraceID 与 SpanID（仅在 JSON 模式下全量透传给 APM）
+	if h.channel == ChannelJSON {
+		span := trace.SpanFromContext(ctx)
+		if span != nil && span.SpanContext().IsValid() {
+			sc := span.SpanContext()
+			r.AddAttrs(
+				slog.String("trace_id", sc.TraceID().String()),
+				slog.String("span_id", sc.SpanID().String()),
+			)
+		}
+	}
+
+	// 2. 自动提取并注入 HTTP/Worker 链路请求标识 RequestID
+	// - JSON 模式：全量提供给 APM/Loki 搜集；
+	// - 控制台模式：仅在 Warn/Error 时提供排查关联，普通 Info/Debug 极简过滤。
+	if reqID := RequestIDFromContext(ctx); reqID != "" {
+		if h.channel == ChannelJSON || r.Level >= slog.LevelWarn {
+			r.AddAttrs(slog.String("request_id", reqID))
+		}
+	}
+}
+
+func (h *TraceContextHandler) attachCallerAttr(r *slog.Record) {
+	// 3. 智能解析并注入相对路径代码位置（Caller）
+	// - 控制台模式：仅在 Error 级别时展示，格式为 file.go:line >，对齐行业极简风格，避免日常 Info/Debug/Warn 视觉噪音；
+	// - JSON 生产模式：若启用 AddCaller，则对所有级别提供规范的 caller 属性。
+	shouldAddCaller := (h.channel == ChannelJSON && h.addCaller) || (h.channel == ChannelConsole && r.Level >= slog.LevelError)
+	if shouldAddCaller && r.PC != 0 {
+		if c := formatCallerPC(r.PC); c != "" {
+			r.AddAttrs(slog.String(zerolog.CallerFieldName, c))
+		}
+	}
+}
+
+func (h *TraceContextHandler) Handle(ctx context.Context, r slog.Record) error {
+	h.attachTraceAttrs(ctx, &r)
+	h.attachCallerAttr(&r)
+	return h.next.Handle(ctx, r)
+}
+
+func (h *TraceContextHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &TraceContextHandler{
+		next:      h.next.WithAttrs(attrs),
+		zlog:      h.zlog,
+		channel:   h.channel,
+		addCaller: h.addCaller,
+	}
+}
+
+func (h *TraceContextHandler) WithGroup(name string) slog.Handler {
+	return &TraceContextHandler{
+		next:      h.next.WithGroup(name),
+		zlog:      h.zlog,
+		channel:   h.channel,
+		addCaller: h.addCaller,
+	}
+}
+
 var (
-	// nopLogger 是所有可选日志参数的零值占位，避免调用方逐处判空。
-	nopLogger = zerolog.Nop()
+	// nopLogger 是所有可选日志参数的零值占位（基于官方 DiscardHandler，零内存分配）。
+	nopLogger = slog.New(slog.DiscardHandler)
 	// defaultLogger 是装配完成前的全局兜底日志器，读多写少故用原子指针。
-	defaultLogger atomic.Pointer[zerolog.Logger]
+	defaultLogger atomic.Pointer[slog.Logger]
+	// defaultZerolog 保存全局兜底的底层 zerolog 实例。
+	defaultZerolog atomic.Pointer[zerolog.Logger]
 )
+
+func buildSlogConverter() slogzerolog.Converter {
+	return func(addSource bool, replaceAttr func(groups []string, a slog.Attr) slog.Attr, loggerAttr []slog.Attr, groups []string, record *slog.Record) map[string]any {
+		attrs := slogcommon.AppendRecordAttrsToAttrs(loggerAttr, groups, record)
+		for i := range attrs {
+			if attrs[i].Value.Kind() == slog.KindDuration {
+				attrs[i] = slog.String(attrs[i].Key, attrs[i].Value.Duration().String())
+			}
+		}
+		attrs = slogcommon.ReplaceAttrs(replaceAttr, []string{}, attrs...)
+		attrs = slogcommon.RemoveEmptyAttrs(attrs)
+		return slogcommon.AttrsToMap(attrs...)
+	}
+}
 
 func init() {
 	zerolog.TimestampFieldName = "timestamp"
@@ -37,15 +167,24 @@ func init() {
 	zerolog.MessageFieldName = "message"
 	zerolog.TimeFieldFormat = time.RFC3339
 
-	fallback := newFallbackLogger()
-	defaultLogger.Store(&fallback)
+	fallbackZ := newFallbackLogger()
+	defaultZerolog.Store(&fallbackZ)
+
+	fallbackH := slogzerolog.Option{
+		Level:     slog.LevelError,
+		Logger:    &fallbackZ,
+		Converter: buildSlogConverter(),
+	}.NewZerologHandler()
+
+	fallbackS := slog.New(NewTraceContextHandler(fallbackH, &fallbackZ, "console", false))
+	defaultLogger.Store(fallbackS)
 }
 
 // newFallbackLogger 创建系统启动早期或无配置时的兜底输出日志器。
 func newFallbackLogger() zerolog.Logger {
 	cw := zerolog.ConsoleWriter{
 		Out:        os.Stderr,
-		TimeFormat: "2006-01-02 15:04:05.000",
+		TimeFormat: "15:04:05",
 		NoColor:    true,
 	}
 	return zerolog.New(cw).
@@ -56,24 +195,62 @@ func newFallbackLogger() zerolog.Logger {
 }
 
 // defaultLog 返回当前兜底日志器，保证永不为 nil。
-func defaultLog() *zerolog.Logger {
+func defaultLog() *slog.Logger {
 	if l := defaultLogger.Load(); l != nil {
 		return l
 	}
-	return Nop()
+	return nopLogger
 }
 
-// Nop 返回静默日志器指针，作为所有可选日志参数的零值兜底。
-//
-// 返回的是进程内共享实例，只可只读使用：zerolog 的 WithContext 会写回指针接收者，
-// 严禁对返回值调用任何变异方法或直接解引用赋值。
-func Nop() *zerolog.Logger {
-	return &nopLogger
+// Nop 返回官方无操作静默日志器指针，作为所有可选日志参数的零值兜底。
+func Nop() *slog.Logger {
+	return nopLogger
 }
 
 // Default 返回当前全局默认日志器。
-func Default() *zerolog.Logger {
+func Default() *slog.Logger {
 	return defaultLog()
+}
+
+// ToZerolog 从 *slog.Logger 中尝试提取底层的 *zerolog.Logger 实例；若未找到则回退默认全局 zerolog。
+func ToZerolog(l *slog.Logger) *zerolog.Logger {
+	if l == nil {
+		return defaultZerolog.Load()
+	}
+	if th, ok := l.Handler().(*TraceContextHandler); ok && th.zlog != nil {
+		return th.zlog
+	}
+	if dz := defaultZerolog.Load(); dz != nil {
+		return dz
+	}
+	z := zerolog.Nop()
+	return &z
+}
+
+// FromZerolog 将原生 *zerolog.Logger 包装为带 TraceContext 拦截的 *slog.Logger。
+func FromZerolog(z *zerolog.Logger) *slog.Logger {
+	if z == nil {
+		return Nop()
+	}
+	h := slogzerolog.Option{
+		Level:  slogLevelFromZerolog(z.GetLevel()),
+		Logger: z,
+	}.NewZerologHandler()
+	return slog.New(NewTraceContextHandler(h, z, "console", false))
+}
+
+// slogLevelFromZerolog 将 zerolog.Level 映射为 slog.Level。
+func slogLevelFromZerolog(lvl zerolog.Level) slog.Level {
+	switch lvl {
+	case zerolog.DebugLevel, zerolog.TraceLevel:
+		return slog.LevelDebug
+	case zerolog.WarnLevel:
+		return slog.LevelWarn
+	case zerolog.ErrorLevel, zerolog.FatalLevel, zerolog.PanicLevel:
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }
 
 // DefaultRedactKeys 预设的敏感字段键名列表（全小写存储，按键名精确匹配）。
@@ -185,6 +362,11 @@ func ParseLevel(lvl string) zerolog.Level {
 	default:
 		return zerolog.InfoLevel
 	}
+}
+
+// ParseSlogLevel 将字符串日志级别解析为 slog.Level。
+func ParseSlogLevel(lvl string) slog.Level {
+	return slogLevelFromZerolog(ParseLevel(lvl))
 }
 
 // jsonRedactedValue 是 JSON 字段脱敏后的占位值。
@@ -411,30 +593,45 @@ func buildConsoleWriter(opt Options) zerolog.ConsoleWriter {
 	return zerolog.ConsoleWriter{
 		Out:        out,
 		NoColor:    !shouldColor,
-		TimeFormat: "2006-01-02 15:04:05.000",
+		TimeFormat: "15:04:05",
 		PartsOrder: []string{
 			zerolog.TimestampFieldName,
 			zerolog.LevelFieldName,
 			zerolog.CallerFieldName,
 			zerolog.MessageFieldName,
 		},
+		FieldsOrder: []string{
+			"method",
+			"path",
+			"status",
+			"latency",
+			"ip",
+		},
+		FieldsExclude: []string{
+			"source",
+			"trace_id",
+			"span_id",
+		},
+		FormatCaller: func(i any) string {
+			var c string
+			if cc, ok := i.(string); ok {
+				c = cc
+			}
+			if c == "" {
+				return ""
+			}
+			if !shouldColor {
+				return c + " >"
+			}
+			return "\x1b[36m" + c + "\x1b[0m \x1b[33m>\x1b[0m"
+		},
 	}
 }
 
-// NewWithOptions 遵循依赖倒置原则，依据函数式选项构建并发安全的 Zerolog 日志器。
-func NewWithOptions(opts ...Option) *zerolog.Logger {
-	opt := Options{
-		Level:     "info",
-		Channel:   "console",
-		Redact:    true,
-		AddCaller: true,
-	}
-	for _, fn := range opts {
-		fn(&opt)
-	}
-
+// buildZerologCore 构建底层的 zerolog.Logger 实例。
+func buildZerologCore(opt Options) *zerolog.Logger {
 	var out io.Writer
-	if opt.Channel == "json" {
+	if opt.Channel == ChannelJSON {
 		target := cmp.Or[io.Writer](opt.Writer, os.Stdout)
 		if opt.Redact {
 			target = newJSONRedactingWriter(target)
@@ -449,25 +646,49 @@ func NewWithOptions(opts ...Option) *zerolog.Logger {
 	}
 
 	lvl := ParseLevel(opt.Level)
-	ctx := zerolog.New(out).Level(lvl).With().Timestamp()
-	if opt.AddCaller {
-		ctx = ctx.Caller()
-	}
-	if opt.Channel == "json" && opt.ServiceName != "" {
-		ctx = ctx.Str("service", opt.ServiceName)
+	builder := zerolog.New(out).Level(lvl).With().Timestamp()
+	if opt.Channel == ChannelJSON && opt.ServiceName != "" {
+		builder = builder.Str("service", opt.ServiceName)
 	}
 
-	l := ctx.Logger()
+	l := builder.Logger()
 	for _, h := range opt.Hooks {
 		l = l.Hook(h)
 	}
-
-	defaultLogger.Store(&l)
 	return &l
 }
 
+// NewWithOptions 遵循依赖倒置原则，依据函数式选项构建并发安全的日志器。
+func NewWithOptions(opts ...Option) *slog.Logger {
+	opt := Options{
+		Level:     "info",
+		Channel:   "console",
+		Redact:    true,
+		AddCaller: true,
+	}
+	for _, fn := range opts {
+		fn(&opt)
+	}
+
+	zlog := buildZerologCore(opt)
+	defaultZerolog.Store(zlog)
+
+	baseHandler := slogzerolog.Option{
+		Level:     slogLevelFromZerolog(zlog.GetLevel()),
+		Logger:    zlog,
+		AddSource: false, // 彻底关闭 slogzerolog 默认的 source={...} JSON 字段倾倒，统一由 TraceContextHandler 精准注入
+		Converter: buildSlogConverter(),
+	}.NewZerologHandler()
+
+	pipelineHandler := NewTraceContextHandler(baseHandler, zlog, opt.Channel, opt.AddCaller)
+	sl := slog.New(pipelineHandler)
+
+	defaultLogger.Store(sl)
+	return sl
+}
+
 // New 按配置构建日志器，内部转发至 NewWithOptions。
-func New(cfg config.LogConfig, opts ...Option) *zerolog.Logger {
+func New(cfg config.LogConfig, opts ...Option) *slog.Logger {
 	allOpts := make([]Option, 0, 4+len(opts))
 	allOpts = append(allOpts,
 		WithLevel(cfg.Level),
@@ -509,25 +730,19 @@ func isTerminal() bool {
 	return info.Mode()&os.ModeCharDevice != 0
 }
 
-// WithContext 将日志器与请求标识注入 context，若存在活跃 OpenTelemetry Span 则自动同步注入 trace_id 与 span_id。
+// WithContext 将日志器与请求标识注入 context。
 // l 为 nil 时回退全局兜底日志器，调用方无需判空。
-func WithContext(ctx context.Context, l *zerolog.Logger, requestID string) context.Context {
+func WithContext(ctx context.Context, l *slog.Logger, requestID string) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if l == nil {
 		l = defaultLog()
 	}
-	c := l.With()
 	if requestID != "" {
-		c = c.Str("request_id", requestID)
 		ctx = context.WithValue(ctx, requestIDKey{}, requestID)
 	}
-	if sc := trace.SpanFromContext(ctx).SpanContext(); sc.IsValid() {
-		c = c.Str("trace_id", sc.TraceID().String()).Str("span_id", sc.SpanID().String())
-	}
-	sub := c.Logger()
-	return sub.WithContext(ctx)
+	return context.WithValue(ctx, contextLoggerKey{}, l)
 }
 
 // RequestIDFromContext 从 context 中安全提取请求标识 request_id。
@@ -542,31 +757,20 @@ func RequestIDFromContext(ctx context.Context) string {
 }
 
 // FromContextOK 从 context 中提取请求作用域日志器。
-func FromContextOK(ctx context.Context) (*zerolog.Logger, bool) {
+func FromContextOK(ctx context.Context) (*slog.Logger, bool) {
 	if ctx == nil {
 		return nil, false
 	}
-	if l := zerolog.Ctx(ctx); l != nil && l.GetLevel() != zerolog.Disabled {
+	if l, ok := ctx.Value(contextLoggerKey{}).(*slog.Logger); ok && l != nil {
 		return l, true
 	}
 	return nil, false
 }
 
 // FromContext 提取请求作用域日志器，缺失时返回默认兜底日志器指针（保证永不为 nil）。
-// 若上下文中未绑定请求日志器但存在活跃 Span，自动为兜底日志器附加 trace_id 与 span_id。
-func FromContext(ctx context.Context) *zerolog.Logger {
+func FromContext(ctx context.Context) *slog.Logger {
 	if l, ok := FromContextOK(ctx); ok {
 		return l
 	}
-	l := defaultLog()
-	if ctx != nil {
-		if sc := trace.SpanFromContext(ctx).SpanContext(); sc.IsValid() {
-			sub := l.With().
-				Str("trace_id", sc.TraceID().String()).
-				Str("span_id", sc.SpanID().String()).
-				Logger()
-			return &sub
-		}
-	}
-	return l
+	return defaultLog()
 }

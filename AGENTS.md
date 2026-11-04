@@ -15,11 +15,11 @@
 - **数据库迁移 (Migrations)**：[Atlas CLI](file:///Users/seaside/Projects/backend/go/gin-sqlc/atlas.hcl)，采用声明式 Schema 驱动的版本化 SQL 迁移。
 - **缓存体系**：[Valkey (Redis 兼容)](file:///Users/seaside/Projects/backend/go/gin-sqlc/pkg/cache/cache.go) + 高性能驱动 (`redis/rueidis`)。
 - **鉴权与授权**：无状态 JWT 令牌 (`golang-jwt/jwt/v5`) + 基于 [Casbin v3](file:///Users/seaside/Projects/backend/go/gin-sqlc/pkg/authorization/authz.go) 的 RBAC 静态权限矩阵。
-- **领域事件与异步任务**：[Watermill](file:///Users/seaside/Projects/backend/go/gin-sqlc/pkg/eventbus/manager.go) (`ThreeDotsLabs/watermill`) 事件总线与 CQRS 路由 + [Asynq](file:///Users/seaside/Projects/backend/go/gin-sqlc/pkg/queue/client.go) (`hibiken/asynq`) 周期任务与重试队列。
+- **领域事件与异步任务**：[Watermill](file:///Users/seaside/Projects/backend/go/gin-sqlc/pkg/eventbus/manager.go) (`ThreeDotsLabs/watermill`) 事件总线与 CQRS 路由 + [Asynq](file:///Users/seaside/Projects/backend/go/gin-sqlc/pkg/queue/producer.go) (`hibiken/asynq`) 周期任务与重试队列。
 - **实时通信**：[Centrifugo](file:///Users/seaside/Projects/backend/go/gin-sqlc/pkg/realtime/manager.go) 连接凭据签发与订阅鉴权代理，频道命名与分发规则收敛在 service 层。
 - **CLI 命令行体系**：基于 [`spf13/cobra`](file:///Users/seaside/Projects/backend/go/gin-sqlc/internal/console/root.go) 的现代工业级分层命令行系统，分组管理子命令并提供隐式 Artisan 风格冒号别名兼容。
 - **对象存储与邮件**：S3/MinIO (`minio/minio-go/v7`) 与本地存储抽象；Mailpit 邮件测试系统 (`wneessen/go-mail`)。
-- **结构化日志与错误处理**：[Zerolog](https://github.com/rs/zerolog) (`github.com/rs/zerolog`) 零分配链式结构化上下文日志（统一以 `*zerolog.Logger` 注入，`logger.Nop()` 兜底）；`samber/oops` 业务错误堆栈与语义化错误码。
+- **结构化日志与错误处理**：Go 官方标准库 [`log/slog`](https://pkg.go.dev/log/slog) 门面接口 + [`samber/slog-zerolog/v2`](https://github.com/samber/slog-zerolog) 高性能极速引擎（统一以 `*slog.Logger` 注入，`logger.Nop()` 兜底，支持 `TraceContextHandler` 全链路上下文透传与敏感数据自动脱敏）；`samber/oops` 业务错误堆栈与语义化错误码。
 - **时间推导与数据格式化**：[Carbon v2](https://github.com/golang-module/carbon) (`golang-module/carbon/v2`) 链式时间计算与多语言相对时间 + [go-humanize](https://github.com/dustin/go-humanize) (`dustin/go-humanize`) 字节容量与大数字千分位格式化。
 - **高精度金融与货币体系**：基于 [`shopspring/decimal`](https://github.com/shopspring/decimal) 与 [pkg/money](file:///Users/seaside/Projects/backend/go/gin-sqlc/pkg/money/money.go) 的不可变 Money 值对象体系，原生映射 Postgres `NUMERIC`，提供 ISO-4217 元数据、金融舍入、Fowler 无损均摊及收单网关适配。
 - **接口契约与文档**：基于 [api.md](file:///Users/seaside/Projects/backend/go/gin-sqlc/api.md) 契约，使用 `swag` 自动化生成 OpenAPI 规范并嵌入二进制。
@@ -84,7 +84,7 @@ internal/                       # 私有实现层（分层优先：route → han
 ├── handler/                    # 传输适配层（package handler）
 │   ├── admin/                  # package adminhandler
 │   └── auth.go · profile.go · payment.go · realtime.go · system.go
-├── import/                     # 领域导入用例（预留空层：待 pkg/excel 补齐读取能力）
+├── import/                     # 领域导入用例（XLSX 流式分块解析与校验，基于 pkg/excel）
 ├── index/                      # 全文检索索引器定义与集中装配（基于 pkg/search）
 ├── job/                        # 异步任务签名与处理器（Asynq Job，基于 pkg/queue）
 ├── listener/                   # 领域事件监听器注册（向 pkg/eventbus 挂载订阅）
@@ -134,7 +134,6 @@ pkg/                            # 可复用的横切基础设施与跨切片基�
 shared/                         # 纯静态资产层（仅嵌入式 OpenAPI 规范；业务内核全部沉入 internal）
 └── apidocs/                    # 嵌入式 OpenAPI 规范与文档契约
 test/                           # 外部测试包（测试代码与业务逻辑彻底解耦，镜像同层目录）
-├── architecture/               # 分层依赖红线守卫（layering_test.go）
 ├── integration/                # 真实外部依赖的集成测试（声明 //go:build integration）
 ├── internal/                   # 镜像 internal/ 各层用例（bootstrap · config · console · database · dto · enum · export · index · job · listener · media · middleware · notification · realtime · route · service · user）
 ├── pkg/                        # 镜像 pkg/ 各原子基础设施组件的单元测试
@@ -452,7 +451,6 @@ test/                           # 外部测试包（测试代码与业务逻辑�
   - 单元测试（Mock / 内存）：无需任何构建标签，执行速度极快。
   - 集成测试（集成真实 Postgres / Valkey / Mailpit）：测试文件首行必须声明 `//go:build integration` 构建标签，仅在运行 `just test-int` 时激活。
 - **断言规范**：使用 `github.com/stretchr/testify`，关键前置条件与不可恢复判断使用 `require`（快速失败），普通字段与属性校验使用 `assert`。
-- **架构契约测试**：[test/architecture/](file:///Users/seaside/Projects/backend/go/gin-sqlc/test/architecture/) 用 `go/parser` 扫描各层导入，强制 `route → handler → service → dto` 单向依赖与 `pkg/` 纯净性。分层扁平化后同层模块共享一个包，编译器无法拦截反向 import，这条测试就是该红线的执行者——新增跨层调用前先确认它不会变红。
 
 ### 7.2 交付前三级质量门禁 (Quality Gates)
 

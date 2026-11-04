@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"strings"
 	"time"
@@ -120,7 +121,7 @@ func (v *verifier) consume(ctx context.Context, purpose, email, code string) err
 
 	if !time.Now().UTC().Before(record.ExpiresAt) {
 		if _, err := v.db.Queries(ctx).DeleteVerificationByID(ctx, sqlc.DeleteVerificationByIDParams{ID: record.ID}); err != nil {
-			logger.FromContext(ctx).Warn().Err(err).Msg("failed to clean up expired credential")
+			logger.FromContext(ctx).WarnContext(ctx, "failed to clean up expired credential", slog.Any("error", err))
 		}
 		return errOTPExpired
 	}
@@ -143,7 +144,7 @@ func (v *verifier) consume(ctx context.Context, purpose, email, code string) err
 	}
 
 	if _, err := v.cache.Delete(ctx, cache.Key("auth", "otp-attempts", identifier)); err != nil {
-		logger.FromContext(ctx).Warn().Err(err).Msg("failed to clear verification attempts")
+		logger.FromContext(ctx).WarnContext(ctx, "failed to clear verification attempts", slog.Any("error", err))
 	}
 	return nil
 }
@@ -153,7 +154,7 @@ func (v *verifier) checkAttempts(ctx context.Context, identifier string) error {
 	attempts, err := v.cache.Increment(ctx, cache.Key("auth", "otp-attempts", identifier), otpAttemptsTTL)
 	if err != nil {
 		// 计数不可用时放行：凭据本身仍有 HMAC 与过期时间保护。
-		logger.FromContext(ctx).Error().Err(err).Msg("failed to record verification attempts, request allowed")
+		logger.FromContext(ctx).ErrorContext(ctx, "failed to record verification attempts, request allowed", slog.Any("error", err))
 		return nil
 	}
 	if attempts > int64(v.maxAttempts) {

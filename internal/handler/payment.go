@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -49,9 +50,9 @@ func (h *PaymentHandler) HandleNotification(c *gin.Context) {
 	channel := payment.Channel(pathParams.Channel)
 	if !channel.IsValid() {
 		// 报文里不拼接调用方原始输入，渠道值只进结构化日志。
-		logger.FromContext(c.Request.Context()).Warn().
-			Str("channel", pathParams.Channel).
-			Msg("unsupported payment channel callback received")
+		logger.FromContext(c.Request.Context()).WarnContext(c.Request.Context(), "unsupported payment channel callback received",
+			slog.String("channel", pathParams.Channel),
+		)
 		err := errs.BadRequest(service.MsgUnsupportedChannel)
 		_ = c.Error(err)
 		return
@@ -65,11 +66,11 @@ func (h *PaymentHandler) HandleNotification(c *gin.Context) {
 	// 1. 严格验签并解析 HTTP 报文 (微信商户证书/微信平台证书/支付宝公钥证书)
 	notification, err := h.gateway.ParseNotification(c.Request.Context(), channel, pathParams.App, c.Request)
 	if err != nil {
-		logger.FromContext(c.Request.Context()).Warn().
-			Err(err).
-			Str("channel", channel.String()).
-			Str("app_key", pathParams.App).
-			Msg("payment callback verification or parsing failed")
+		logger.FromContext(c.Request.Context()).WarnContext(c.Request.Context(), "payment callback verification or parsing failed",
+			slog.Any("error", err),
+			slog.String("channel", channel.String()),
+			slog.String("app_key", pathParams.App),
+		)
 
 		replyAck(c, payment.FailureAck(channel))
 		return
@@ -107,7 +108,9 @@ func (h *PaymentHandler) HandleAlipayReturn(c *gin.Context) {
 	// 对 URL Query 参数进行支付宝公钥验签
 	notification, err := h.gateway.ParseNotification(ctx, payment.ChannelAlipay, "", c.Request)
 	if err != nil {
-		log.Warn().Err(err).Msg("alipay return verification failed, redirecting to order failure page")
+		log.WarnContext(ctx, "alipay return verification failed, redirecting to order failure page",
+			slog.Any("error", err),
+		)
 		c.Redirect(http.StatusFound, h.svc.FailureRedirectURL())
 		return
 	}
@@ -121,10 +124,10 @@ func (h *PaymentHandler) HandleAlipayReturn(c *gin.Context) {
 	}
 
 	redirectURL := h.svc.BuildAlipayReturnURL(outTradeNo)
-	log.Info().
-		Str("out_trade_no", outTradeNo).
-		Str("redirect_url", redirectURL).
-		Msg("alipay return callback verified, redirecting to frontend")
+	log.InfoContext(ctx, "alipay return callback verified, redirecting to frontend",
+		slog.String("out_trade_no", outTradeNo),
+		slog.String("redirect_url", redirectURL),
+	)
 
 	c.Redirect(http.StatusFound, redirectURL)
 }

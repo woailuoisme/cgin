@@ -43,8 +43,6 @@ func putCopyBuffer(b *[]byte) {
 
 // localDisk 用操作系统文件系统实现 Disk。
 //
-// 它没有预签名能力（返回 ErrPresignUnsupported）：本地文件由谁提供、怎么鉴权，属于部署环境
-// 的事（静态服务器、反向代理）。公开地址因此必须由配置显式给出，驱动不会凭空拼一个。
 // 编译期断言：驱动一旦不再满足 Disk 契约，构建就失败在这里，而不是在 Open 的赋值处。
 var _ Disk = (*localDisk)(nil)
 
@@ -295,16 +293,6 @@ func (d *localDisk) URL(key string) (string, error) {
 		return "", ErrNoPublicURL
 	}
 	return d.baseURL + "/" + keyOf(key), nil
-}
-
-// TemporaryURL 在 local 驱动上不可用：本地文件没有服务端签名机制。
-func (d *localDisk) TemporaryURL(context.Context, string, time.Duration) (string, error) {
-	return "", ErrPresignUnsupported
-}
-
-// PresignPut 在 local 驱动上不可用，原因同 TemporaryURL。
-func (d *localDisk) PresignPut(context.Context, string, time.Duration) (string, error) {
-	return "", ErrPresignUnsupported
 }
 
 // Ping 确认根目录存在且可写：只读挂载这类问题若留到第一次上传才暴露，

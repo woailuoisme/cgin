@@ -6,12 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"runtime/debug"
 	"slices"
 	"sync"
 
-	"github.com/hibiken/asynq"
 	"github.com/samber/lo"
 	"github.com/samber/oops"
 	"golang.org/x/sync/errgroup"
@@ -120,10 +120,10 @@ func (p *Pool) worker() {
 
 func recoverWithLog(ctx context.Context) {
 	if r := recover(); r != nil {
-		logger.FromContext(ctx).Error().
-			Any("panic", r).
-			Str("stack", string(debug.Stack())).
-			Msg("panic recovered in async notification task execution")
+		logger.FromContext(ctx).ErrorContext(ctx, "panic recovered in async notification task execution",
+			slog.Any("panic", r),
+			slog.String("stack", string(debug.Stack())),
+		)
 	}
 }
 
@@ -384,35 +384,39 @@ func (n *Notifier) Send(ctx context.Context, notifiables any, notif Notification
 	return n.sendSync(ctx, targets, notif, &so)
 }
 
-// dispatchQueueJob 尝试将实现了 queue.Job 的通知直接派发至持久化队列。
-func dispatchQueueJob(ctx context.Context, q queue.Dispatcher, notif Notification) bool {
-	job, ok := notif.(queue.Job)
-	if !ok {
+// dispatchQueueJob 尝试将支持异步队列的通知直接派发至持久化队列。
+func dispatchQueueJob(ctx context.Context, q queue.Producer, notif Notification) bool {
+	if q == nil || notif == nil {
 		return false
 	}
 
-	var dispatchOpts []asynq.Option
+	taskName := "notification:send"
+	if qn, ok := notif.(interface{ TaskName() string }); ok && qn.TaskName() != "" {
+		taskName = qn.TaskName()
+	}
+
+	var dispatchOpts []queue.TaskOption
 	if sqo, ok := notif.(ShouldQueueWithOptions); ok {
 		if queueName := sqo.QueueName(); queueName != "" {
-			dispatchOpts = append(dispatchOpts, asynq.Queue(queueName))
+			dispatchOpts = append(dispatchOpts, queue.WithQueue(queueName))
 		}
 		if retries := sqo.MaxRetries(); retries > 0 {
-			dispatchOpts = append(dispatchOpts, asynq.MaxRetry(retries))
+			dispatchOpts = append(dispatchOpts, queue.WithMaxRetry(retries))
 		}
 		if delay := sqo.Delay(); delay > 0 {
-			dispatchOpts = append(dispatchOpts, asynq.ProcessIn(delay))
+			dispatchOpts = append(dispatchOpts, queue.WithDelay(delay))
 		}
 	}
 
-	err := q.Dispatch(ctx, job, dispatchOpts...)
+	err := q.Enqueue(ctx, taskName, notif, dispatchOpts...)
 	if err == nil {
 		return true
 	}
 
-	logger.FromContext(ctx).Warn().
-		Err(err).
-		Str("notification", fmt.Sprintf("%T", notif)).
-		Msg("failed to dispatch notification to queue, falling back to pool")
+	logger.FromContext(ctx).WarnContext(ctx, "failed to dispatch notification to queue, falling back to pool",
+		slog.Any("error", err),
+		slog.String("notification", fmt.Sprintf("%T", notif)),
+	)
 	return false
 }
 
@@ -431,19 +435,19 @@ func (n *Notifier) tryDispatchAsync(ctx context.Context, notif Notification, tas
 	}
 	submitErr := n.asyncPool.Submit(ctx, func(asyncCtx context.Context) {
 		if err := task(asyncCtx); err != nil {
-			logger.FromContext(asyncCtx).Error().
-				Err(err).
-				Str("notification", fmt.Sprintf("%T", notif)).
-				Msg("failed to deliver async notification")
+			logger.FromContext(asyncCtx).ErrorContext(asyncCtx, "failed to deliver async notification",
+				slog.Any("error", err),
+				slog.String("notification", fmt.Sprintf("%T", notif)),
+			)
 		}
 	})
 	if submitErr == nil {
 		return true
 	}
-	logger.FromContext(ctx).Warn().
-		Err(submitErr).
-		Bool("queue_full", errors.Is(submitErr, ErrQueueFull)).
-		Msg("async notification pool unavailable, falling back to synchronous delivery")
+	logger.FromContext(ctx).WarnContext(ctx, "async notification pool unavailable, falling back to synchronous delivery",
+		slog.Any("error", submitErr),
+		slog.Bool("queue_full", errors.Is(submitErr, ErrQueueFull)),
+	)
 	return false
 }
 

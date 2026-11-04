@@ -2,74 +2,108 @@ package queue
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"testing"
-
-	"github.com/hibiken/asynq"
 )
+
+// DispatchedTask 记录已派发任务的元数据与载荷快照。
+type DispatchedTask struct {
+	TaskName string
+	Payload  any
+	Settings TaskSettings
+}
 
 var (
-	_ Dispatcher = (*MemoryDispatcher)(nil)
-	_ Dispatcher = (*SyncDispatcher)(nil)
+	_ Producer = (*MemoryProducer)(nil)
+	_ Producer = (*SyncProducer)(nil)
 )
 
-// MemoryDispatcher 是专为单元测试打造的内存任务收集器 (LSP)。
-// 模拟队列入队并完整记录已派发的任务实例，无需启动本地 Redis。
-type MemoryDispatcher struct {
-	mu   sync.RWMutex
-	jobs []Job
+// MemoryProducer 专为单元测试打造的高性能内存任务收集器 (LSP)。
+type MemoryProducer struct {
+	mu    sync.RWMutex
+	tasks []DispatchedTask
 }
 
-// NewMemoryDispatcher 构建一个全新的空内存派发器。
-func NewMemoryDispatcher() *MemoryDispatcher {
-	return &MemoryDispatcher{}
+// NewMemoryProducer 构建一个全新的空内存生产者。
+func NewMemoryProducer() *MemoryProducer {
+	return &MemoryProducer{}
 }
 
-// Dispatch 将任务记录到内部切片，完全满足 Dispatcher 契约。
-func (m *MemoryDispatcher) Dispatch(_ context.Context, job Job, _ ...asynq.Option) error {
-	if job == nil {
-		return errors.New("queue: cannot dispatch nil job")
+// NewMemoryDispatcher 为 NewMemoryProducer 的兼容别名。
+func NewMemoryDispatcher() *MemoryProducer {
+	return NewMemoryProducer()
+}
+
+// Enqueue 将任务记录到内存切片中，完全满足 Producer 契约。
+func (m *MemoryProducer) Enqueue(_ context.Context, taskName string, payload any, opts ...TaskOption) error {
+	if taskName == "" {
+		return errors.New("queue: cannot enqueue task with empty name")
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.jobs = append(m.jobs, job)
+
+	m.tasks = append(m.tasks, DispatchedTask{
+		TaskName: taskName,
+		Payload:  payload,
+		Settings: BuildTaskSettings(opts...),
+	})
 	return nil
 }
 
-// DispatchedJobs 获取所有已入队任务的切片副本。
-func (m *MemoryDispatcher) DispatchedJobs() []Job {
+// Close 满足 Producer 接口。
+func (m *MemoryProducer) Close() error {
+	return nil
+}
+
+// Tasks 获取所有已入队任务的切片副本。
+func (m *MemoryProducer) Tasks() []DispatchedTask {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return slices.Clone(m.jobs)
+	return slices.Clone(m.tasks)
+}
+
+// Dispatched 返回指定任务名称的全部已派发任务切片。
+func (m *MemoryProducer) Dispatched(taskName string) []DispatchedTask {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var matched []DispatchedTask
+	for _, t := range m.tasks {
+		if t.TaskName == taskName {
+			matched = append(matched, t)
+		}
+	}
+	return matched
 }
 
 // Count 返回已投递的任务总数。
-func (m *MemoryDispatcher) Count() int {
+func (m *MemoryProducer) Count() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return len(m.jobs)
+	return len(m.tasks)
 }
 
-// Clear 清空已记录的任务，便于在用例之间重置状态。
-func (m *MemoryDispatcher) Clear() {
+// Clear 清空已记录的任务，便于测试用例重置状态。
+func (m *MemoryProducer) Clear() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.jobs = m.jobs[:0]
+	m.tasks = m.tasks[:0]
 }
 
-// AssertDispatched 断言指定任务名的 Job 曾被入队。
-// 可选参数 expectedCount 可精确断言入队次数。
-func (m *MemoryDispatcher) AssertDispatched(tb testing.TB, taskName string, expectedCount ...int) {
+// AssertDispatched 断言指定任务名的任务曾被入队。
+func (m *MemoryProducer) AssertDispatched(tb testing.TB, taskName string, expectedCount ...int) {
 	tb.Helper()
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	matched := 0
-	for _, j := range m.jobs {
-		if j.TaskName() == taskName {
+	for _, t := range m.tasks {
+		if t.TaskName == taskName {
 			matched++
 		}
 	}
@@ -87,41 +121,74 @@ func (m *MemoryDispatcher) AssertDispatched(tb testing.TB, taskName string, expe
 	}
 }
 
-// AssertNotDispatched 断言指定任务名的 Job 从未被入队。
-func (m *MemoryDispatcher) AssertNotDispatched(tb testing.TB, taskName string) {
+// AssertNotDispatched 断言指定任务名的任务从未被入队。
+func (m *MemoryProducer) AssertNotDispatched(tb testing.TB, taskName string) {
 	tb.Helper()
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	if slices.ContainsFunc(m.jobs, func(j Job) bool { return j.TaskName() == taskName }) {
-		tb.Fatalf("expected task %q not to be dispatched, but found it in memory queue", taskName)
+	if slices.ContainsFunc(m.tasks, func(t DispatchedTask) bool { return t.TaskName == taskName }) {
+		tb.Fatalf("expected task %q not to be dispatched, but found it in memory producer", taskName)
 	}
 }
 
-// AssertDispatchedJob 根据自定义谓词函数匹配并断言具体载荷字段。
-func (m *MemoryDispatcher) AssertDispatchedJob(tb testing.TB, predicate func(j Job) bool) {
+// AssertDispatchedTask 依据自定义谓词函数匹配并断言已入队任务。
+func (m *MemoryProducer) AssertDispatchedTask(tb testing.TB, match func(t DispatchedTask) bool) {
 	tb.Helper()
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	if !slices.ContainsFunc(m.jobs, predicate) {
-		tb.Fatalf("expected matching job to be dispatched, but no matching job found")
+	if !slices.ContainsFunc(m.tasks, match) {
+		tb.Fatal("expected matching dispatched task in memory producer, but none found")
 	}
 }
 
-// SyncDispatcher 同步执行派发器：在 Dispatch 调用发生时立即在当前协程执行 job.Handle(ctx)。
-// 适用于无需异步的本地 CLI 执行场景或事务提交即时验证测试。
-type SyncDispatcher struct{}
-
-// NewSyncDispatcher 创建一个同步派发器实例。
-func NewSyncDispatcher() *SyncDispatcher {
-	return &SyncDispatcher{}
+// SyncProducer 在调用线程内立即同步执行任务（专用于轻量集成测试）。
+type SyncProducer struct {
+	router *TaskRouter
 }
 
-// Dispatch 立即同步执行任务 Handle 方法。
-func (s *SyncDispatcher) Dispatch(ctx context.Context, job Job, _ ...asynq.Option) error {
-	if job == nil {
-		return errors.New("queue: cannot dispatch nil job")
+// NewSyncProducer 创建同步立即执行的 Producer。
+func NewSyncProducer(router *TaskRouter) *SyncProducer {
+	return &SyncProducer{router: router}
+}
+
+// NewSyncDispatcher 为 NewSyncProducer 的兼容别名。
+func NewSyncDispatcher(router ...*TaskRouter) *SyncProducer {
+	if len(router) > 0 && router[0] != nil {
+		return NewSyncProducer(router[0])
 	}
-	return job.Handle(ctx)
+	return NewSyncProducer(NewTaskRouter())
+}
+
+// Enqueue 序列化载荷并在当前 goroutine 立即同步调用注册的 Handler。
+func (s *SyncProducer) Enqueue(ctx context.Context, taskName string, payload any, _ ...TaskOption) error {
+	if s == nil || s.router == nil {
+		return errors.New("queue: sync producer router is nil")
+	}
+
+	h, ok := s.router.GetHandler(taskName)
+	if !ok {
+		return fmt.Errorf("queue: no handler registered for task %q", taskName)
+	}
+
+	var rawPayload []byte
+	var err error
+	if payload == nil {
+		rawPayload = []byte("{}")
+	} else if b, ok := payload.([]byte); ok {
+		rawPayload = b
+	} else {
+		rawPayload, err = json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("queue: failed to marshal sync payload for %q: %w", taskName, err)
+		}
+	}
+
+	return h(ctx, rawPayload)
+}
+
+// Close 满足 Producer 接口。
+func (s *SyncProducer) Close() error {
+	return nil
 }

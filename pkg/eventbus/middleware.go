@@ -2,13 +2,14 @@ package eventbus
 
 import (
 	"cmp"
+	"context"
+	"log/slog"
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/components/cqrs"
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/ThreeDotsLabs/watermill/message/router/middleware"
-	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel/trace"
 
 	"cgin/pkg/errs"
@@ -22,45 +23,89 @@ const (
 	MetadataPublishedAt = "published_at"
 )
 
-// LoggerAdapter 将系统统一的 *zerolog.Logger 适配为 Watermill 的 LoggerAdapter 接口。
+// LoggerAdapter 将系统统一的 *slog.Logger 适配为 Watermill 的 LoggerAdapter 接口。
 type LoggerAdapter struct {
-	logger *zerolog.Logger
+	logger   *slog.Logger
+	minLevel slog.Level
 }
 
 var _ watermill.LoggerAdapter = (*LoggerAdapter)(nil)
 
-// NewLoggerAdapter 创建 Watermill 日志适配器，nil 日志器自动降级为静默输出。
-func NewLoggerAdapter(l *zerolog.Logger) *LoggerAdapter {
-	return &LoggerAdapter{logger: cmp.Or(l, logger.Nop())}
+// NewLoggerAdapter 创建 Watermill 日志适配器，支持按最小级别过滤内部流水，nil 日志器自动降级为静默输出。
+func NewLoggerAdapter(l *slog.Logger, minLevel ...slog.Level) *LoggerAdapter {
+	lvl := slog.LevelWarn
+	if len(minLevel) > 0 {
+		lvl = minLevel[0]
+	}
+	return &LoggerAdapter{
+		logger:   cmp.Or(l, logger.Nop()),
+		minLevel: lvl,
+	}
+}
+
+func fieldsToAttrs(fields watermill.LogFields) []any {
+	if len(fields) == 0 {
+		return nil
+	}
+	attrs := make([]any, 0, len(fields))
+	for k, v := range fields {
+		attrs = append(attrs, slog.Any(k, v))
+	}
+	return attrs
 }
 
 // Error 记录错误级别日志。
 func (a *LoggerAdapter) Error(msg string, err error, fields watermill.LogFields) {
-	a.logger.Error().Err(err).Fields(fields).Msg(msg)
+	if a.minLevel > slog.LevelError || !a.logger.Enabled(context.Background(), slog.LevelError) {
+		return
+	}
+	extra := 0
+	if err != nil {
+		extra = 1
+	}
+	attrs := make([]any, 0, len(fields)+extra)
+	if err != nil {
+		attrs = append(attrs, slog.Any("error", err))
+	}
+	for k, v := range fields {
+		attrs = append(attrs, slog.Any(k, v))
+	}
+	a.logger.Error(msg, attrs...)
 }
 
 // Info 记录信息级别日志。
 func (a *LoggerAdapter) Info(msg string, fields watermill.LogFields) {
-	a.logger.Info().Fields(fields).Msg(msg)
+	if a.minLevel > slog.LevelInfo || !a.logger.Enabled(context.Background(), slog.LevelInfo) {
+		return
+	}
+	a.logger.Info(msg, fieldsToAttrs(fields)...)
 }
 
 // Debug 记录调试级别日志。
 func (a *LoggerAdapter) Debug(msg string, fields watermill.LogFields) {
-	a.logger.Debug().Fields(fields).Msg(msg)
+	if a.minLevel > slog.LevelDebug || !a.logger.Enabled(context.Background(), slog.LevelDebug) {
+		return
+	}
+	a.logger.Debug(msg, fieldsToAttrs(fields)...)
 }
 
 // Trace 记录跟踪级别日志。
 func (a *LoggerAdapter) Trace(msg string, fields watermill.LogFields) {
-	a.logger.Trace().Fields(fields).Msg(msg)
+	if a.minLevel > slog.LevelDebug || !a.logger.Enabled(context.Background(), slog.LevelDebug) {
+		return
+	}
+	a.logger.Debug(msg, fieldsToAttrs(fields)...)
 }
 
-// With 返回携带指定上下文字段的新适配器实例，字段下沉至日志器上下文而非逐条重复写入。
+// With 返回携带指定上下文字段的新适配器实例。
 func (a *LoggerAdapter) With(fields watermill.LogFields) watermill.LoggerAdapter {
 	if len(fields) == 0 {
 		return a
 	}
-	sub := a.logger.With().Fields(fields).Logger()
-	return &LoggerAdapter{logger: &sub}
+	return &LoggerAdapter{
+		logger:   a.logger.With(fieldsToAttrs(fields)...),
+		minLevel: a.minLevel,
+	}
 }
 
 // injectEventMetadata 在发布端将 OpenTelemetry TraceContext 与 logger.RequestIDFromContext 注入消息元数据。
@@ -86,7 +131,7 @@ func injectEventMetadata(params cqrs.OnEventSendParams) error {
 
 // observabilityContextMiddleware 在消费端还原远程 OpenTelemetry SpanContext，
 // 并通过 logger.WithContext 注入携带 request_id / trace_id / span_id 的请求作用域日志器。
-func observabilityContextMiddleware(baseLogger *zerolog.Logger) message.HandlerMiddleware {
+func observabilityContextMiddleware(baseLogger *slog.Logger) message.HandlerMiddleware {
 	return func(h message.HandlerFunc) message.HandlerFunc {
 		return func(msg *message.Message) ([]*message.Message, error) {
 			ctx := msg.Context()
@@ -132,18 +177,18 @@ func finalErrorBoundaryMiddleware() message.HandlerMiddleware {
 			}
 
 			ctx := msg.Context()
-			ev := logger.FromContext(ctx).Error().
-				Err(errs.RootCause(err)).
-				Str("message_uuid", msg.UUID).
-				Str("correlation_id", middleware.MessageCorrelationID(msg))
-
+			attrs := []slog.Attr{
+				slog.Any("error", errs.RootCause(err)),
+				slog.String("message_uuid", msg.UUID),
+				slog.String("correlation_id", middleware.MessageCorrelationID(msg)),
+			}
 			if stack := errs.Stack(err); stack != "" {
-				ev = ev.Str("stack", stack)
+				attrs = append(attrs, slog.String("stack", stack))
 			}
 			for _, f := range errs.OopsFields(err) {
-				ev = ev.Any(f.Key, f.Value)
+				attrs = append(attrs, slog.Any(f.Key, f.Value))
 			}
-			ev.Msg("event handler failed after exhausting retries")
+			logger.FromContext(ctx).LogAttrs(ctx, slog.LevelError, "event handler failed after exhausting retries", attrs...)
 
 			return nil, nil
 		}

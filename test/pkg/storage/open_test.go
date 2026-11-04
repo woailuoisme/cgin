@@ -8,15 +8,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"cgin/internal/config"
 	"cgin/pkg/storage"
 )
 
 // TestOpenLocalDisk 覆盖 local 驱动的正常装配路径。
 func TestOpenLocalDisk(t *testing.T) {
-	disk, err := storage.Open(t.Context(), config.StorageConfig{
-		Driver: config.StorageDriverLocal,
-		Local:  config.LocalStorageConfig{Root: t.TempDir()},
+	disk, err := storage.Open(t.Context(), storage.Config{
+		Driver: storage.DriverLocal,
+		Local:  storage.LocalConfig{Root: t.TempDir()},
 	})
 	require.NoError(t, err)
 
@@ -26,14 +25,13 @@ func TestOpenLocalDisk(t *testing.T) {
 	assert.Equal(t, []byte("hi"), got)
 }
 
-// TestOpenRejectsUnknownDriver 确认驱动是单选：写错不会被静默回退到本地，
-// 也不会像旧实现那样把 "minio" / "oss" 之类的别名当成 s3。
+// TestOpenRejectsUnknownDriver 确认驱动是单选：写错不会被静默回退到本地。
 func TestOpenRejectsUnknownDriver(t *testing.T) {
 	for _, driver := range []string{"", "minio", "oss", "Local", "s3 "} {
 		t.Run(driver, func(t *testing.T) {
-			_, err := storage.Open(t.Context(), config.StorageConfig{
+			_, err := storage.Open(t.Context(), storage.Config{
 				Driver: driver,
-				Local:  config.LocalStorageConfig{Root: t.TempDir()},
+				Local:  storage.LocalConfig{Root: t.TempDir()},
 			})
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "storage driver")
@@ -43,7 +41,7 @@ func TestOpenRejectsUnknownDriver(t *testing.T) {
 
 // TestOpenS3RequiresConfig 确认选了 s3 却没给参数时在构造期失败。
 func TestOpenS3RequiresConfig(t *testing.T) {
-	_, err := storage.Open(t.Context(), config.StorageConfig{Driver: config.StorageDriverS3})
+	_, err := storage.Open(t.Context(), storage.Config{Driver: storage.DriverS3})
 	require.Error(t, err)
 }
 
@@ -58,9 +56,9 @@ func TestOpenProbesDisk(t *testing.T) {
 	require.NoError(t, os.Chmod(root, 0o500))
 	t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
 
-	_, err := storage.Open(t.Context(), config.StorageConfig{
-		Driver: config.StorageDriverLocal,
-		Local:  config.LocalStorageConfig{Root: root},
+	_, err := storage.Open(t.Context(), storage.Config{
+		Driver: storage.DriverLocal,
+		Local:  storage.LocalConfig{Root: root},
 	})
 	require.Error(t, err, "不可写的根目录必须让装配失败")
 }

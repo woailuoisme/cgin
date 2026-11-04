@@ -5,12 +5,12 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
-	"github.com/rs/zerolog"
 	"github.com/samber/oops"
 
 	"cgin/internal/config"
@@ -208,14 +208,14 @@ type Mailer interface {
 // Manager 邮件管理器，实现 Mailer 契约与 do.ShutdownerWithError 优雅停机契约。
 type Manager struct {
 	driver Driver
-	log    *zerolog.Logger
+	log    *slog.Logger
 }
 
 var _ Mailer = (*Manager)(nil)
 
 // NewManager 封装底层 Driver 构建 Manager 实例。
-func NewManager(driver Driver, log ...*zerolog.Logger) *Manager {
-	var l *zerolog.Logger
+func NewManager(driver Driver, log ...*slog.Logger) *Manager {
+	var l *slog.Logger
 	if len(log) > 0 && log[0] != nil {
 		l = log[0]
 	} else {
@@ -242,25 +242,25 @@ func (m *Manager) Send(ctx context.Context, msg Message) error {
 	}
 
 	if err := m.driver.Send(ctx, msg); err != nil {
-		m.log.Error().
-			Err(err).
-			Strs("to", maskRecipients(msg.To)).
-			Strs("cc", maskRecipients(msg.Cc)).
-			Strs("bcc", maskRecipients(msg.Bcc)).
-			Str("subject", msg.Subject).
-			Int("attachments", len(msg.Attachments)).
-			Msg("mail delivery failed")
+		m.log.ErrorContext(ctx, "mail delivery failed",
+			slog.Any("error", err),
+			slog.Any("to", maskRecipients(msg.To)),
+			slog.Any("cc", maskRecipients(msg.Cc)),
+			slog.Any("bcc", maskRecipients(msg.Bcc)),
+			slog.String("subject", msg.Subject),
+			slog.Int("attachments", len(msg.Attachments)),
+		)
 		return err
 	}
 
-	m.log.Debug().
-		Strs("to", maskRecipients(msg.To)).
-		Strs("cc", maskRecipients(msg.Cc)).
-		Strs("bcc", maskRecipients(msg.Bcc)).
-		Str("subject", msg.Subject).
-		Int("attachments", len(msg.Attachments)).
-		Bool("is_html", msg.IsHTML).
-		Msg("mail delivered successfully")
+	m.log.DebugContext(ctx, "mail delivered successfully",
+		slog.Any("to", maskRecipients(msg.To)),
+		slog.Any("cc", maskRecipients(msg.Cc)),
+		slog.Any("bcc", maskRecipients(msg.Bcc)),
+		slog.String("subject", msg.Subject),
+		slog.Int("attachments", len(msg.Attachments)),
+		slog.Bool("is_html", msg.IsHTML),
+	)
 	return nil
 }
 
@@ -310,7 +310,7 @@ func (m *Manager) Shutdown() error {
 }
 
 // New 根据 MailConfig 创建邮件管理器实例（支持 mailpit 与 resend 驱动，默认 mailpit）。
-func New(cfg config.MailConfig, log *zerolog.Logger) (Mailer, error) {
+func New(cfg config.MailConfig, log *slog.Logger) (Mailer, error) {
 	log = cmp.Or(log, logger.Nop())
 
 	driverName := cmp.Or(strings.ToLower(strings.TrimSpace(cfg.Driver)), "mailpit")

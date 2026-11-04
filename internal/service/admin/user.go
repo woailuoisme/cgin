@@ -11,6 +11,7 @@ import (
 	"cgin/internal/enum"
 	"cgin/internal/export"
 	"cgin/internal/user"
+	"cgin/pkg/media"
 	"cgin/pkg/response"
 )
 
@@ -27,11 +28,13 @@ type userStore interface {
 // UserDeps 声明用户管理服务的外部依赖。
 type UserDeps struct {
 	UserService userStore
+	Signer      media.Signer
 }
 
 // UserService 实现后台用户管理用例。
 type UserService struct {
 	userService userStore
+	signer      media.Signer
 }
 
 // MustNewUserService 构造管理服务；UserService 为装配方必须提供的硬依赖。
@@ -39,7 +42,7 @@ func MustNewUserService(deps UserDeps) *UserService {
 	if deps.UserService == nil {
 		panic("admin: user service requires a non-nil UserService")
 	}
-	return &UserService{userService: deps.UserService}
+	return &UserService{userService: deps.UserService, signer: deps.Signer}
 }
 
 // ListUsers 返回分页用户列表，排序与过滤都走白名单。
@@ -51,7 +54,7 @@ func (s *UserService) ListUsers(ctx context.Context, query admindto.ListUsersQue
 	}
 
 	items := lo.Map(users, func(entity sqlc.User, _ int) admindto.UserResource {
-		return admindto.ToUserResource(&entity)
+		return admindto.ToUserResource(&entity, s.signer)
 	})
 	return items, response.NewMeta(page, pageSize, total), nil
 }
@@ -67,7 +70,7 @@ func (s *UserService) GetUser(ctx context.Context, id string) (admindto.UserReso
 	if err != nil {
 		return admindto.UserResource{}, err
 	}
-	return admindto.ToUserResource(entity), nil
+	return admindto.ToUserResource(entity, s.signer), nil
 }
 
 // CreateUser 由管理员直接创建账号，初始口令由调用方指定。
@@ -85,7 +88,7 @@ func (s *UserService) CreateUser(ctx context.Context, req admindto.CreateUserBod
 	if err != nil {
 		return admindto.UserResource{}, err
 	}
-	return admindto.ToUserResource(created), nil
+	return admindto.ToUserResource(created, s.signer), nil
 }
 
 // UpdateUser 由管理员局部更新用户，含角色、状态与封禁信息。
@@ -94,7 +97,7 @@ func (s *UserService) UpdateUser(ctx context.Context, id string, req admindto.Up
 	if err != nil {
 		return admindto.UserResource{}, err
 	}
-	return admindto.ToUserResource(entity), nil
+	return admindto.ToUserResource(entity, s.signer), nil
 }
 
 // DeleteUser 软删除指定用户。

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/mail"
 	"strings"
+	"unicode/utf8"
 
 	"cgin/internal/enum"
 	"cgin/internal/user"
@@ -28,13 +29,13 @@ type UserRow struct {
 }
 
 // userColumns 定义用户导入的声明式强类型列契约，表头命名与 internal/export 对齐。
-var userColumns = []excel.Column[UserRow]{
+var userColumns = []excel.ImportColumn[UserRow]{
 	{
 		Header:   "Name",
 		Required: true,
 		Decode: func(cell string, dst *UserRow) error {
 			trimmed := strings.TrimSpace(cell)
-			if len(trimmed) > 100 {
+			if utf8.RuneCountInString(trimmed) > 100 {
 				return errors.New("name must not exceed 100 characters")
 			}
 			dst.Name = trimmed
@@ -57,6 +58,7 @@ var userColumns = []excel.Column[UserRow]{
 	{
 		Header:   "Role",
 		Required: false,
+		Default:  string(enum.RoleUser),
 		Decode: func(cell string, dst *UserRow) error {
 			role := enum.Role(strings.ToLower(strings.TrimSpace(cell)))
 			if !role.IsValid() {
@@ -69,6 +71,7 @@ var userColumns = []excel.Column[UserRow]{
 	{
 		Header:   "Status",
 		Required: false,
+		Default:  string(enum.StatusActive),
 		Decode: func(cell string, dst *UserRow) error {
 			status := enum.UserStatus(strings.ToLower(strings.TrimSpace(cell)))
 			if !status.IsValid() {
@@ -87,9 +90,9 @@ func Users(
 	r io.Reader,
 	saveBatch func(ctx context.Context, rows []UserRow) error,
 	opts ...excel.ReadOption[UserRow],
-) error {
+) (excel.ImportResult, error) {
 	if saveBatch == nil {
-		return errors.New("importer: nil saveBatch callback")
+		return excel.ImportResult{}, errors.New("importer: nil saveBatch callback")
 	}
 
 	baseOpts := []excel.ReadOption[UserRow]{

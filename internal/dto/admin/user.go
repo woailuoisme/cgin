@@ -52,7 +52,7 @@ type Status = enum.Status
 // UserPathParams 是用户唯一标识的路径参数。
 type UserPathParams struct {
 	// 用户唯一标识
-	ID string `uri:"id" json:"id" example:"usr_01J9X4N8Y0ABCD" validate:"required"`
+	ID string `uri:"id" json:"id" example:"0192e2b3-847e-7c5b-9d47-68198f16182f" validate:"required"`
 }
 
 // --- 请求体 Body ---
@@ -67,8 +67,8 @@ type CreateUserBody struct {
 	Name string `json:"name" example:"Alex Mercer" validate:"required,min=1,max=120"`
 	// 唯一登录用户名 (3-30位)
 	Username *string `json:"username" example:"alexmercer" validate:"omitempty,min=3,max=30,usernameslug,notreserved"`
-	// 用户头像在对象存储中的相对路径
-	AvatarPath *string `json:"avatarPath" example:"uploads/avatar/20261031/uuid.webp" validate:"omitempty,max=2048"`
+	// 用户头像在对象存储中的相对路径（Key）
+	AvatarPath *string `json:"avatar_path" example:"uploads/avatars/20261031/uuid.png" validate:"omitempty,max=512"`
 	// 用户权限角色 (user: 普通用户, admin: 系统管理员)
 	Role Role `json:"role" example:"user" enums:"user,admin" validate:"required,oneof=user admin"`
 	// 邮箱是否已完成验证
@@ -79,8 +79,8 @@ type CreateUserBody struct {
 type UpdateUserBody struct {
 	// 用户展示昵称
 	Name omitnull.Val[string] `json:"name" validate:"omitempty,min=1,max=120" swaggertype:"string" extensions:"x-nullable" example:"Alex Mercer"`
-	// 用户头像在对象存储中的相对路径
-	AvatarPath omitnull.Val[string] `json:"avatarPath" validate:"omitempty,max=2048" swaggertype:"string" extensions:"x-nullable" example:"uploads/avatar/20261031/uuid.webp"`
+	// 用户头像在对象存储中的相对路径（Key）
+	AvatarPath omitnull.Val[string] `json:"avatar_path" validate:"omitempty,max=512" swaggertype:"string" extensions:"x-nullable" example:"uploads/avatars/20261031/uuid.png"`
 	// 唯一登录用户名 (3-30位)
 	Username omitnull.Val[string] `json:"username" validate:"omitempty,min=3,max=30,usernameslug,notreserved" swaggertype:"string" extensions:"x-nullable" example:"alexmercer"`
 	// 用户显示名称
@@ -139,17 +139,17 @@ func (r UpdateUserBody) AdminFieldSet() user.AdminFieldSet {
 // ListUsersQueryParams 是 GET /v1/admin/users 的查询参数。
 type ListUsersQueryParams struct {
 	// 当前页码 (从 1 开始，默认 1，上限 1000000，与 maxPage 常量保持一致)
-	Page int `form:"page" json:"page" example:"1" validate:"omitempty,min=1,max=1000000"`
+	Page int `form:"page" query:"page" json:"page" example:"1" validate:"omitempty,min=1,max=1000000"`
 	// 每页条数 (1-100，默认 20)
-	PageSize int `form:"pageSize" json:"pageSize" example:"20" validate:"omitempty,min=1,max=100"`
+	PageSize int `form:"pageSize" query:"pageSize" json:"pageSize" example:"20" validate:"omitempty,min=1,max=100"`
 	// 排序字段 (字段名前加 - 表示倒序，如 -createdAt)
-	Sort string `form:"sort" json:"sort" example:"-createdAt" validate:"omitempty,usersort,max=120"`
+	Sort string `form:"sort" query:"sort" json:"sort" example:"-createdAt" validate:"omitempty,usersort,max=120"`
 	// 关键字搜索 (按邮箱、昵称、用户名模糊检索)
-	Search string `form:"search" json:"search" example:"alex" validate:"omitempty,max=120"`
+	Search string `form:"search" query:"search" json:"search" example:"alex" validate:"omitempty,max=120"`
 	// 按账号状态过滤 (active: 正常活跃, inactive: 未激活, banned: 已封禁)
-	Status Status `form:"status" json:"status" example:"active" enums:"active,inactive,banned" validate:"omitempty,oneof=active inactive banned"`
+	Status Status `form:"status" query:"status" json:"status" example:"active" enums:"active,inactive,banned" validate:"omitempty,oneof=active inactive banned"`
 	// 按权限角色过滤 (user: 普通用户, admin: 系统管理员)
-	Role Role `form:"role" json:"role" example:"user" enums:"user,admin" validate:"omitempty,oneof=user admin"`
+	Role Role `form:"role" query:"role" json:"role" example:"user" enums:"user,admin" validate:"omitempty,oneof=user admin"`
 }
 
 // ToFilter 将 HTTP 查询参数投影为底层过滤条件，内聚修剪与排序归一化规则。
@@ -176,7 +176,7 @@ type UserResource struct {
 	Email string `json:"email" example:"alex@example.com"`
 	// 邮箱是否已验证
 	EmailVerified bool `json:"emailVerified" example:"true"`
-	// 用户头像多规格衍生访问地址
+	// 用户头像复合对象（包含相对存储路径与 Imgproxy 防篡改签名访问 URL）
 	Avatar *media.ImageVariants `json:"avatar"`
 	// 用户权限角色 (user: 普通用户, admin: 系统管理员)
 	Role Role `json:"role" example:"user" enums:"user,admin"`
@@ -213,14 +213,18 @@ type UserPageResource struct {
 }
 
 // ToUserResource 把模型投影为管理视角的响应资源。
-func ToUserResource(entity *sqlc.User) UserResource {
+func ToUserResource(entity *sqlc.User, signer ...media.Signer) UserResource {
 	profile := user.ProjectProfile(entity)
+	var s media.Signer
+	if len(signer) > 0 {
+		s = signer[0]
+	}
 	return UserResource{
 		ID:              profile.ID,
 		Name:            profile.Name,
 		Email:           profile.Email,
 		EmailVerified:   profile.EmailVerified,
-		Avatar:          media.BuildImageVariants(lo.FromPtr(profile.AvatarPath)),
+		Avatar:          media.BuildImageVariants(lo.FromPtr(profile.AvatarPath), s),
 		Role:            profile.Role,
 		Username:        profile.Username,
 		DisplayUsername: profile.DisplayUsername,

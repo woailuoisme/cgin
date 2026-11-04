@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strconv"
 	"strings"
@@ -183,7 +184,7 @@ func (s *AuthService) SendVerificationOTP(ctx context.Context, language string, 
 	user, err := s.users.ByEmail(ctx, req.Email)
 	if err != nil {
 		if isNotFound(err) {
-			logger.FromContext(ctx).Info().Msg("verification requested for non-existent email, ignored")
+			logger.FromContext(ctx).InfoContext(ctx, "verification requested for non-existent email, ignored")
 			return dto.StatusResource{Status: true}, nil
 		}
 		return dto.StatusResource{}, err
@@ -256,7 +257,7 @@ func (s *AuthService) translateLookupFailure(ctx context.Context, err error, ide
 		if equaliser, ok := s.users.(platformauth.TimingEqualiser); ok {
 			equaliser.EqualiseTiming(ctx, identifier)
 		}
-		logger.FromContext(ctx).Info().Str("identifier", identifier).Msg("login failed: account not found")
+		logger.FromContext(ctx).InfoContext(ctx, "login failed: account not found", slog.String("identifier", identifier))
 		return errs.InvalidCredentials()
 	}
 	return err
@@ -269,7 +270,10 @@ func isNotFound(err error) bool {
 
 func (s *AuthService) recordLogin(ctx context.Context, userID, method string) {
 	if err := s.users.RecordLogin(ctx, userID, method); err != nil {
-		logger.FromContext(ctx).Warn().Err(err).Str("user_id", userID).Msg("failed to record last login")
+		logger.FromContext(ctx).WarnContext(ctx, "failed to record last login",
+			slog.Any("error", err),
+			slog.String("user_id", userID),
+		)
 	}
 }
 
@@ -350,7 +354,7 @@ func (s *AuthService) sendResetCredential(ctx context.Context, language, purpose
 	user, err := s.users.ByEmail(ctx, email)
 	if err != nil {
 		if isNotFound(err) {
-			logger.FromContext(ctx).Info().Msg("password reset requested for non-existent email, ignored")
+			logger.FromContext(ctx).InfoContext(ctx, "password reset requested for non-existent email, ignored")
 			return dto.StatusResource{Status: true}, nil
 		}
 		return dto.StatusResource{}, err

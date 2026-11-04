@@ -41,35 +41,31 @@ func (m *mockMailer) Ping(_ context.Context) error {
 	return nil
 }
 
-func TestWelcomeEmailJobExecution(t *testing.T) {
+func TestWelcomeEmailHandler(t *testing.T) {
 	t.Parallel()
 
 	mailMock := &mockMailer{}
-	welcomeEmail := job.NewWelcomeEmailJob("alex@example.com", "Alex")
+	handler := job.NewWelcomeEmailHandler(mailMock)
+	payload := job.WelcomeEmailPayload{
+		Email: "alex@example.com",
+		Name:  "Alex",
+	}
 
-	assert.Equal(t, job.TaskSendWelcomeEmail, welcomeEmail.TaskName())
-	assert.Equal(t, queue.DefaultQueueName, welcomeEmail.QueueName())
-	assert.Equal(t, 3, welcomeEmail.MaxRetries())
+	router := queue.NewTaskRouter()
+	job.RegisterJobs(router, mailMock)
 
-	reg := queue.DefaultRegistry()
-	job.RegisterJobs(reg, mailMock)
-
-	err := welcomeEmail.Handle(t.Context())
-	require.NoError(t, err) // 未注入 mailer 时优雅跳过
-
-	// 验证从注册表工厂还原的任务具有注入的 mailer 并能成功渲染发送
-	factory, ok := reg.Get(job.TaskSendWelcomeEmail)
+	taskHandler, ok := router.GetHandler(job.TaskSendWelcomeEmail)
 	require.True(t, ok)
-	injectedJob := factory()
-	injectedWelcome, ok := injectedJob.(*job.WelcomeEmailJob)
-	require.True(t, ok)
-	injectedWelcome.Email = "alex@example.com"
-	injectedWelcome.Name = "Alex"
+	require.NotNil(t, taskHandler)
 
-	err = injectedWelcome.Handle(t.Context())
+	err := handler.Handle(t.Context(), payload)
 	require.NoError(t, err)
 	require.Len(t, mailMock.sent, 1)
 	assert.Equal(t, []string{"alex@example.com"}, mailMock.sent[0].To)
 	assert.Contains(t, mailMock.sent[0].Body, "Alex")
 	assert.Contains(t, mailMock.sent[0].Body, "Welcome to cgin")
+
+	// 验证未注入 mailer 时优雅跳过
+	emptyHandler := job.NewWelcomeEmailHandler(nil)
+	require.NoError(t, emptyHandler.Handle(t.Context(), payload))
 }

@@ -2,12 +2,10 @@ package storage_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"cgin/internal/config"
 	"cgin/pkg/storage"
 )
 
@@ -21,30 +19,26 @@ func TestStorage_RoleInterfaces(t *testing.T) {
 	var _ storage.Deleter = disk
 	var _ storage.Inspector = disk
 	var _ storage.PublicURLer = disk
-	var _ storage.Presigner = disk
 	var _ storage.Pinger = disk
 
 	assert.Equal(t, "local", disk.Driver())
 }
 
-// TestStorage_PresignUnsupported 验证不支持预签名的驱动以哨兵错误显式拒绝，而不是静默返回空地址。
-func TestStorage_PresignUnsupported(t *testing.T) {
+// TestStorage_PresignFeatureProbe 验证特性探测模式 (Feature Probe)：Local 不支持预签名，AsPresigner 返回 false。
+func TestStorage_PresignFeatureProbe(t *testing.T) {
 	local, _ := newLocalDisk(t, "http://localhost:8080")
-	ctx := t.Context()
 
-	_, err := local.TemporaryURL(ctx, "avatar.png", time.Minute)
-	require.ErrorIs(t, err, storage.ErrPresignUnsupported)
-
-	_, err = local.PresignPut(ctx, "avatar.png", time.Minute)
-	require.ErrorIs(t, err, storage.ErrPresignUnsupported)
+	presigner, ok := storage.AsPresigner(local)
+	assert.False(t, ok, "本地文件系统驱动不应声明 Presigner 特性")
+	assert.Nil(t, presigner)
 }
 
 // TestStorage_DriverDispatch 验证内置驱动按名称分发，未知驱动立即报错。
 func TestStorage_DriverDispatch(t *testing.T) {
 	t.Run("本地驱动按名称分发", func(t *testing.T) {
-		cfg := config.StorageConfig{
-			Driver: config.StorageDriverLocal,
-			Local:  config.LocalStorageConfig{Root: t.TempDir()},
+		cfg := storage.Config{
+			Driver: storage.DriverLocal,
+			Local:  storage.LocalConfig{Root: t.TempDir()},
 		}
 
 		disk, err := storage.Open(t.Context(), cfg)
@@ -53,7 +47,7 @@ func TestStorage_DriverDispatch(t *testing.T) {
 	})
 
 	t.Run("未知驱动返回错误", func(t *testing.T) {
-		_, err := storage.Open(t.Context(), config.StorageConfig{Driver: "custom_mock"})
+		_, err := storage.Open(t.Context(), storage.Config{Driver: "custom_mock"})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unknown storage driver")
 	})

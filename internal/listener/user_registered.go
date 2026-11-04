@@ -2,6 +2,7 @@ package listener
 
 import (
 	"context"
+	"log/slog"
 
 	"cgin/internal/event"
 	"cgin/internal/job"
@@ -11,7 +12,7 @@ import (
 )
 
 // RegisterListeners 向事件总线挂载 auth 领域切片所关注的所有领域事件监听。
-func RegisterListeners(bus eventbus.Subscriber, dispatcher queue.Dispatcher) error {
+func RegisterListeners(bus eventbus.Subscriber, producer queue.Producer) error {
 	if bus == nil {
 		return nil
 	}
@@ -21,14 +22,16 @@ func RegisterListeners(bus eventbus.Subscriber, dispatcher queue.Dispatcher) err
 			return nil
 		}
 
-		logger.FromContext(ctx).Info().
-			Str("user_id", evt.UserID).
-			Str("email", evt.Email).
-			Msg("handling UserRegistered domain event")
+		logger.FromContext(ctx).InfoContext(ctx, "handling UserRegistered domain event",
+			slog.String("user_id", evt.UserID),
+			slog.String("email", evt.Email),
+		)
 
-		if dispatcher != nil && evt.Email != "" {
-			welcomeJob := job.NewWelcomeEmailJob(evt.Email, evt.Name)
-			return dispatcher.Dispatch(ctx, welcomeJob)
+		if producer != nil && evt.Email != "" {
+			return producer.Enqueue(ctx, job.TaskSendWelcomeEmail, job.WelcomeEmailPayload{
+				Email: evt.Email,
+				Name:  evt.Name,
+			})
 		}
 
 		return nil

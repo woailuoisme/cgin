@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
@@ -170,19 +171,19 @@ func (h *handler) replay(c *gin.Context, storageKey string) (bool, error) {
 func (h *handler) persist(c *gin.Context, key, storageKey string, snapshot *response) bool {
 	payload, err := json.Marshal(snapshot)
 	if err != nil {
-		logger.FromContext(c.Request.Context()).Error().
-			Str("key", h.maskKey(key)).
-			Err(err).
-			Msg("failed to marshal idempotency response")
+		logger.FromContext(c.Request.Context()).ErrorContext(c.Request.Context(), "failed to marshal idempotency response",
+			slog.String("key", h.maskKey(key)),
+			slog.Any("error", err),
+		)
 		return false
 	}
 
 	if err := h.cfg.Storage.Set(c.Request.Context(), storageKey, payload, h.cfg.Lifetime); err != nil {
 		// 响应已写给客户端，无法再改写状态码；记录错误并放弃缓存。
-		logger.FromContext(c.Request.Context()).Error().
-			Str("key", h.maskKey(key)).
-			Err(err).
-			Msg("failed to save idempotency response")
+		logger.FromContext(c.Request.Context()).ErrorContext(c.Request.Context(), "failed to save idempotency response",
+			slog.String("key", h.maskKey(key)),
+			slog.Any("error", err),
+		)
 		return false
 	}
 	return true
@@ -191,10 +192,10 @@ func (h *handler) persist(c *gin.Context, key, storageKey string, snapshot *resp
 // unlock 释放互斥锁；解锁失败只记录日志，不影响已完成的响应。
 func (h *handler) unlock(ctx context.Context, key, storageKey string) {
 	if err := h.cfg.Lock.Unlock(ctx, storageKey); err != nil {
-		logger.FromContext(ctx).Error().
-			Str("key", h.maskKey(key)).
-			Err(err).
-			Msg("failed to unlock idempotency key")
+		logger.FromContext(ctx).ErrorContext(ctx, "failed to unlock idempotency key",
+			slog.String("key", h.maskKey(key)),
+			slog.Any("error", err),
+		)
 	}
 }
 

@@ -6,13 +6,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/rs/zerolog"
 
 	"cgin/internal/config"
 	"cgin/pkg/logger"
@@ -65,47 +65,47 @@ func (t *QueryTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.T
 
 	failed := isActionableDBError(data.Err)
 	slow := t.slowThreshold > 0 && dur >= t.slowThreshold
-	debug := t.debugEnabled && log.GetLevel() <= zerolog.DebugLevel
+	debug := t.debugEnabled && log.Enabled(ctx, slog.LevelDebug)
 	if !failed && !slow && !debug {
 		return
 	}
 
-	var event *zerolog.Event
+	attrs := []slog.Attr{
+		slog.String("operation", sqlOperation(trace.sql)),
+		slog.String("fingerprint", QueryFingerprint(trace.sql)),
+		slog.String("duration", dur.String()),
+	}
+	if caller := captureCaller(); caller != "" {
+		attrs = append(attrs, slog.String("caller", caller))
+	}
+
+	var level slog.Level
+	var msg string
+
 	switch {
 	case failed:
-		event = log.Error().Err(data.Err)
+		level = slog.LevelError
+		msg = "database query failed"
+		attrs = append(attrs, slog.Any("error", data.Err))
 	case slow:
-		event = log.Warn().Str("threshold", t.slowThreshold.String())
+		level = slog.LevelWarn
+		msg = "slow database query detected"
+		attrs = append(attrs, slog.String("threshold", t.slowThreshold.String()))
 		if errors.Is(data.Err, context.Canceled) {
-			event = event.Bool("canceled", true)
+			attrs = append(attrs, slog.Bool("canceled", true))
 		}
 	default:
-		event = log.Debug()
+		level = slog.LevelDebug
+		msg = "database query executed"
 		if statement, safe := loggableStatement(trace.sql); safe {
-			event = event.Str("statement", statement)
+			attrs = append(attrs, slog.String("statement", statement))
 		}
 		if data.Err != nil {
-			event = event.Err(data.Err)
+			attrs = append(attrs, slog.Any("error", data.Err))
 		}
 	}
 
-	event = event.
-		Str("operation", sqlOperation(trace.sql)).
-		Str("fingerprint", QueryFingerprint(trace.sql)).
-		Str("duration", dur.String())
-
-	if caller := captureCaller(); caller != "" {
-		event = event.Str("caller", caller)
-	}
-
-	switch {
-	case failed:
-		event.Msg("database query failed")
-	case slow:
-		event.Msg("slow database query detected")
-	default:
-		event.Msg("database query executed")
-	}
+	log.LogAttrs(ctx, level, msg, attrs...)
 }
 
 // QueryFingerprint 返回语句的稳定短指纹：折叠连续空白后取 SHA-256 前 8 字节。

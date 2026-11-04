@@ -22,7 +22,6 @@ const (
 var ErrPayloadTooLarge = errors.New("queue: task payload exceeds 2MB limit")
 
 // ErrMalformedEnvelope 当任务载荷不是合法信封时返回。
-// 严格对待结构错误：把坏载荷当作业务字段缺失会让排查失去线索。
 var ErrMalformedEnvelope = errors.New("queue: malformed task envelope")
 
 // TaskEnvelope 封装任务载荷与全链路追踪元数据信封。
@@ -33,12 +32,23 @@ type TaskEnvelope struct {
 	DispatchedAt time.Time         `json:"dispatchedAt"`
 }
 
-// wrapEnvelope 将任务结构体序列化并封装进 TaskEnvelope 信封中。
-// headers 只携带 request_id：它是唯一的跨进程透传上下文，其余元数据由 Job 自身表达。
-func wrapEnvelope(ctx context.Context, job Job) ([]byte, error) {
-	rawPayload, err := json.Marshal(job)
-	if err != nil {
-		return nil, fmt.Errorf("queue: failed to serialize job payload: %w", err)
+// packEnvelope 将任务结构体或任意载荷序列化并封装进 TaskEnvelope 信封中。
+func packEnvelope(ctx context.Context, taskName string, payload any) ([]byte, error) {
+	if taskName == "" {
+		return nil, errors.New("queue: task name cannot be empty")
+	}
+
+	var rawPayload []byte
+	var err error
+	if payload == nil {
+		rawPayload = []byte("{}")
+	} else if b, ok := payload.([]byte); ok {
+		rawPayload = b
+	} else {
+		rawPayload, err = json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("queue: failed to serialize task payload: %w", err)
+		}
 	}
 
 	if len(rawPayload) > MaxPayloadLimitBytes {
@@ -51,7 +61,7 @@ func wrapEnvelope(ctx context.Context, job Job) ([]byte, error) {
 	}
 
 	env := TaskEnvelope{
-		TaskName:     job.TaskName(),
+		TaskName:     taskName,
 		Payload:      rawPayload,
 		Headers:      headers,
 		DispatchedAt: time.Now().UTC(),
@@ -65,39 +75,32 @@ func wrapEnvelope(ctx context.Context, job Job) ([]byte, error) {
 	return envBytes, nil
 }
 
-// unwrapEnvelope 从原始字节中解包 TaskEnvelope 信封并把载荷填充进 job。
-// 空载荷、非 JSON、缺任务名、缺载荷一律报 ErrMalformedEnvelope，不做裸 JSON 回退。
-func unwrapEnvelope(raw []byte, job Job) (map[string]string, error) {
+// unpackEnvelope 从原始字节中解包 TaskEnvelope 信封。
+func unpackEnvelope(raw []byte) (TaskEnvelope, error) {
 	if len(raw) == 0 {
-		return nil, fmt.Errorf("%w: empty payload", ErrMalformedEnvelope)
+		return TaskEnvelope{}, fmt.Errorf("%w: empty payload", ErrMalformedEnvelope)
 	}
 
 	var env TaskEnvelope
 	if err := json.Unmarshal(raw, &env); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrMalformedEnvelope, err)
+		return TaskEnvelope{}, fmt.Errorf("%w: %w", ErrMalformedEnvelope, err)
 	}
 	if env.TaskName == "" {
-		return nil, fmt.Errorf("%w: missing task name", ErrMalformedEnvelope)
+		return TaskEnvelope{}, fmt.Errorf("%w: missing task name", ErrMalformedEnvelope)
 	}
 	if len(env.Payload) == 0 {
-		return nil, fmt.Errorf("%w: missing payload for task %q", ErrMalformedEnvelope, env.TaskName)
-	}
-
-	if err := json.Unmarshal(env.Payload, job); err != nil {
-		return nil, fmt.Errorf("queue: failed to unmarshal envelope payload: %w", err)
+		return TaskEnvelope{}, fmt.Errorf("%w: missing payload for task %q", ErrMalformedEnvelope, env.TaskName)
 	}
 
 	if env.Headers == nil {
-		return make(map[string]string), nil
+		env.Headers = make(map[string]string)
 	}
 
-	return env.Headers, nil
+	return env, nil
 }
 
 // extractRequestID 从上下文提取非空的请求追踪 ID。
 func extractRequestID(ctx context.Context) (string, bool) {
-	if id := logger.RequestIDFromContext(ctx); id != "" {
-		return id, true
-	}
-	return "", false
+	id := logger.RequestIDFromContext(ctx)
+	return id, id != ""
 }

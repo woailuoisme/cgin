@@ -164,3 +164,47 @@ func (v *FileValidator) Validate(_ context.Context, originalName string, size in
 
 	return nil
 }
+
+// SanitizeExtension 规范化并清洗文件扩展名（转小写、剔除控制字符、Null Byte 与路径穿越符号）。
+func SanitizeExtension(name string) string {
+	ext := strings.ToLower(filepath.Ext(strings.ReplaceAll(name, "\x00", "")))
+	if len(ext) <= 1 || ext[0] != '.' {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteByte('.')
+	for _, r := range ext[1:] {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	if b.Len() == 1 {
+		return ""
+	}
+	return b.String()
+}
+
+// ResolveExtension 规范化并清洗文件扩展名，当原始扩展名缺失时基于 MIME 类型智能补全。
+func ResolveExtension(fileName, mimeType string) string {
+	ext := SanitizeExtension(fileName)
+	if ext != "" {
+		return ext
+	}
+	switch strings.ToLower(strings.TrimSpace(mimeType)) {
+	case "image/png":
+		return ".png"
+	case "image/jpeg", "image/jpg":
+		return ".jpg"
+	case "image/webp":
+		return ".webp"
+	case "image/gif":
+		return ".gif"
+	case "image/avif":
+		return ".avif"
+	case "application/pdf":
+		return ".pdf"
+	default:
+		return ""
+	}
+}

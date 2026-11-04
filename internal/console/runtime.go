@@ -70,7 +70,6 @@ func newQueueWorkCmd(f Factory) *cobra.Command {
 			}
 
 			log := f.Logger()
-			queue.SetFallbackLogger(log)
 
 			mailerClient, err := mailer.New(cfg.Mail, log)
 			if err != nil {
@@ -78,7 +77,8 @@ func newQueueWorkCmd(f Factory) *cobra.Command {
 			}
 			defer func() { _ = mailerClient.Close() }()
 
-			job.RegisterJobs(queue.DefaultRegistry(), mailerClient)
+			router := queue.NewTaskRouter()
+			job.RegisterJobs(router, mailerClient)
 
 			var locker queue.Locker
 			if cacheLocker, err := cache.NewRedisLocker(cfg.Cache); err == nil {
@@ -86,31 +86,47 @@ func newQueueWorkCmd(f Factory) *cobra.Command {
 				locker = queue.AdaptLocker(cacheLocker)
 			}
 
+			workerConcurrency := cfg.Queue.Concurrency
 			if concurrency > 0 {
-				cfg.Queue.Concurrency = concurrency
+				workerConcurrency = concurrency
 			}
 
-			client, err := queue.NewClient(cfg.Queue, queue.Options{Locker: locker, Logger: log})
+			server, err := queue.NewServer(queue.Config{
+				RedisURL:        cfg.Queue.RedisURL,
+				Concurrency:     workerConcurrency,
+				ShutdownTimeout: cfg.Queue.ShutdownTimeout,
+			},
+				queue.WithServerLogger(log),
+				queue.WithServerLocker(locker),
+			)
 			if err != nil {
-				return fmt.Errorf("failed to initialize queue client: %w", err)
+				return fmt.Errorf("failed to initialize queue server: %w", err)
 			}
-			defer func() { _ = client.Close() }()
+			defer func() { _ = server.Shutdown() }()
+
+			scheduler, err := queue.NewScheduler(queue.Config{
+				RedisURL: cfg.Queue.RedisURL,
+			}, cfg.App.Location(), queue.WithSchedulerLogger(log))
+			if err != nil {
+				return fmt.Errorf("failed to initialize queue scheduler: %w", err)
+			}
+			defer func() { _ = scheduler.Shutdown() }()
 
 			ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
 
 			go func() {
 				<-ctx.Done()
-				_ = client.StopScheduler()
-				_ = client.StopWorker()
+				_ = scheduler.Shutdown()
+				_ = server.Shutdown()
 			}()
 
-			if err := client.StartScheduler(cfg.App.Location()); err != nil {
+			if err := scheduler.Start(); err != nil {
 				return fmt.Errorf("failed to start scheduler: %w", err)
 			}
 
-			f.IOStreams().Title("Queue worker started [queues=%s concurrency=%d]...", queueArg, cfg.Queue.Concurrency)
-			return client.RunWorker(ParseQueueWeights(queueArg))
+			f.IOStreams().Title("Queue worker started [queues=%s concurrency=%d]...", queueArg, workerConcurrency)
+			return server.Run(ParseQueueWeights(queueArg), router)
 		}),
 	}
 
@@ -119,16 +135,18 @@ func newQueueWorkCmd(f Factory) *cobra.Command {
 	return cmd
 }
 
-func openQueueClient(f Factory) (*queue.Client, error) {
+func openQueueInspector(f Factory) (queue.Inspector, error) {
 	cfg, err := f.Config()
 	if err != nil {
 		return nil, err
 	}
-	client, err := queue.NewClient(cfg.Queue, queue.Options{})
+	inspector, err := queue.NewInspector(queue.Config{
+		RedisURL: cfg.Queue.RedisURL,
+	}, queue.WithInspectorLogger(f.Logger()))
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize queue client: %w", err)
+		return nil, fmt.Errorf("failed to initialize queue inspector: %w", err)
 	}
-	return client, nil
+	return inspector, nil
 }
 
 // newQueueFailedCmd 列出全部或指定队列中的失败任务。
@@ -151,7 +169,7 @@ func newQueueFailedCmd(f Factory) *cobra.Command {
 				return &ValidationError{Field: "page-size", Message: "must be greater than 0"}
 			}
 
-			client, err := openQueueClient(f)
+			client, err := openQueueInspector(f)
 			if err != nil {
 				return err
 			}
@@ -211,7 +229,7 @@ func newQueueRetryCmd(f Factory) *cobra.Command {
 				return &ValidationError{Field: "target", Message: "please provide a job ID or 'all'"}
 			}
 
-			client, err := openQueueClient(f)
+			client, err := openQueueInspector(f)
 			if err != nil {
 				return err
 			}
@@ -264,7 +282,7 @@ func newQueueFlushCmd(f Factory) *cobra.Command {
 				return err
 			}
 
-			client, err := openQueueClient(f)
+			client, err := openQueueInspector(f)
 			if err != nil {
 				return err
 			}

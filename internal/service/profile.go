@@ -35,7 +35,7 @@ type ProfileService struct {
 	storage mediaStorage
 }
 
-// MustNewProfileService 构造档案服务；Users 为装配方必须提供的硬依赖。
+// MustNewProfileService 构造档案服务；Users 与 Storage 均为装配方必须提供的硬依赖。
 func MustNewProfileService(deps ProfileDeps) *ProfileService {
 	if deps.Users == nil {
 		panic("profile: service requires a non-nil Users")

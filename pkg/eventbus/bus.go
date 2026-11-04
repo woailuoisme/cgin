@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,7 +15,6 @@ import (
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/ThreeDotsLabs/watermill/message/router/middleware"
 	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
-	"github.com/rs/zerolog"
 
 	"cgin/internal/config"
 	"cgin/pkg/logger"
@@ -71,7 +71,7 @@ type Option func(*Manager)
 // Manager 封装基于 Watermill CQRS 的事件总线、路由器与事件处理器生命周期。
 type Manager struct {
 	cfg            config.EventBusConfig
-	baseLogger     *zerolog.Logger
+	baseLogger     *slog.Logger
 	pubSub         *gochannel.GoChannel
 	router         *message.Router
 	eventBus       *cqrs.EventBus
@@ -139,24 +139,24 @@ func WithChannelBuffer(size int) Option {
 }
 
 // NewManager 初始化并构建基于 Watermill CQRS 的事件总线管理器。
-func NewManager(cfg config.EventBusConfig, zlog *zerolog.Logger, opts ...Option) (*Manager, error) {
-	base := cmp.Or(zlog, logger.Nop())
+func NewManager(cfg config.EventBusConfig, log *slog.Logger, opts ...Option) (*Manager, error) {
+	base := cmp.Or(log, logger.Nop())
+
+	minLevel := slog.LevelWarn
 	if cfg.LogLevel != "" {
-		sublog := base.Level(logger.ParseLevel(cfg.LogLevel))
-		base = &sublog
+		minLevel = logger.ParseSlogLevel(cfg.LogLevel)
 	}
-	adapter := NewLoggerAdapter(base)
+	adapter := NewLoggerAdapter(base, minLevel)
 
 	m := &Manager{
 		cfg:                  cfg,
-		baseLogger:           cmp.Or(zlog, logger.Default()),
+		baseLogger:           cmp.Or(log, logger.Default()),
 		closeTimeout:         10 * time.Second,
 		retryMax:             3,
 		retryInitialInterval: 100 * time.Millisecond,
 		retryMaxInterval:     1 * time.Second,
 		handlerTimeout:       15 * time.Second,
 	}
-
 	for _, opt := range opts {
 		if opt != nil {
 			opt(m)

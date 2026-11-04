@@ -3,11 +3,11 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"slices"
 
 	"github.com/dromara/carbon/v2"
-	"github.com/rs/zerolog"
 	"github.com/samber/do/v2"
 
 	"cgin/internal/config"
@@ -49,8 +49,8 @@ var InfraPackage = do.Package(
 		return tp, nil
 	}),
 
-	// 3. Zerolog 结构化日志记录器
-	do.Lazy(func(i do.Injector) (*zerolog.Logger, error) {
+	// 3. 统一结构化日志记录器
+	do.Lazy(func(i do.Injector) (*logger.Logger, error) {
 		cfg := do.MustInvoke[*config.Config](i)
 		tp := do.MustInvoke[*telemetry.Provider](i)
 
@@ -65,16 +65,16 @@ var InfraPackage = do.Package(
 	// 4. PostgreSQL 数据连接入口与连接池
 	do.Lazy(func(i do.Injector) (*database.DB, error) {
 		cfg := do.MustInvoke[*config.Config](i)
-		log := do.MustInvoke[*zerolog.Logger](i)
+		log := do.MustInvoke[*logger.Logger](i)
 		ctx := context.Background()
 
 		// 旧名已改语义（database/sql 的空闲上限 → pgxpool 的常驻下限），
 		// 遗留环境变量会被静默忽略，启动期显式告警一次。
 		if os.Getenv("DB_MAX_IDLE_CONNS") != "" {
-			log.Warn().
-				Str("deprecated", "DB_MAX_IDLE_CONNS").
-				Str("replacement", "DB_MIN_CONNS").
-				Msg("legacy database pool variable is ignored, renamed to DB_MIN_CONNS")
+			log.WarnContext(ctx, "legacy database pool variable is ignored, renamed to DB_MIN_CONNS",
+				slog.String("deprecated", "DB_MAX_IDLE_CONNS"),
+				slog.String("replacement", "DB_MIN_CONNS"),
+			)
 		}
 
 		pool, err := database.Open(ctx, cfg.Database, cfg.App.Name)
@@ -107,7 +107,7 @@ var InfraPackage = do.Package(
 	// 7. 邮件发送客户端（原生满足 do.ShutdownerWithError 优雅停机契约）
 	do.Lazy(func(i do.Injector) (mailer.Mailer, error) {
 		cfg := do.MustInvoke[*config.Config](i)
-		log := do.MustInvoke[*zerolog.Logger](i)
+		log := do.MustInvoke[*logger.Logger](i)
 
 		return mailer.New(cfg.Mail, log)
 	}),
@@ -115,7 +115,22 @@ var InfraPackage = do.Package(
 	// 8. 对象存储抽象
 	do.Lazy(func(i do.Injector) (storage.Disk, error) {
 		cfg := do.MustInvoke[*config.Config](i)
-		return storage.Open(context.Background(), cfg.Storage)
+		return storage.Open(context.Background(), storage.Config{
+			Driver: cfg.Storage.Driver,
+			Local: storage.LocalConfig{
+				Root: cfg.Storage.Local.Root,
+				URL:  cfg.Storage.Local.URL,
+			},
+			S3: storage.S3Config{
+				Endpoint:        cfg.Storage.S3.Endpoint,
+				Bucket:          cfg.Storage.S3.Bucket,
+				Region:          cfg.Storage.S3.Region,
+				AccessKeyID:     cfg.Storage.S3.AccessKeyID,
+				SecretAccessKey: cfg.Storage.S3.SecretAccessKey,
+				UseSSL:          cfg.Storage.S3.UseSSL,
+				PublicURL:       cfg.Storage.S3.PublicURL,
+			},
+		})
 	}),
 
 	// 9. 多语言翻译门面
@@ -147,25 +162,25 @@ var InfraPackage = do.Package(
 	// 13. IP 归属地服务（内置优雅停机与降级）
 	do.Lazy(func(i do.Injector) (geoip.Service, error) {
 		cfg := do.MustInvoke[*config.Config](i)
-		log := do.MustInvoke[*zerolog.Logger](i)
+		log := do.MustInvoke[*logger.Logger](i)
 		return geoip.NewService(cfg.GeoIP, log)
 	}),
 )
 
 // logDatabaseReady 打印数据库连接池就绪日志并进行连接池配额诊断。
 // 只保留决定容量与阻塞行为的配置：池上下限、连接寿命、语句超时与 SQL 调试开关。
-func logDatabaseReady(ctx context.Context, log *zerolog.Logger, db *database.DB, cfg config.DatabaseConfig) {
-	log.Info().
-		Int("max_open_conns", cfg.MaxOpenConns).
-		Int("min_conns", cfg.MinConns).
-		Str("conn_max_lifetime", cfg.ConnMaxLifetime.String()).
-		Str("statement_timeout", cfg.StatementTimeout.String()).
-		Bool("debug", cfg.Debug).
-		Msg("database connection pool ready")
+func logDatabaseReady(ctx context.Context, log *logger.Logger, db *database.DB, cfg config.DatabaseConfig) {
+	log.InfoContext(ctx, "database connection pool ready",
+		slog.Int("max_open_conns", cfg.MaxOpenConns),
+		slog.Int("min_conns", cfg.MinConns),
+		slog.Duration("conn_max_lifetime", cfg.ConnMaxLifetime),
+		slog.Duration("statement_timeout", cfg.StatementTimeout),
+		slog.Bool("debug", cfg.Debug),
+	)
 
 	if warning, err := database.BudgetWarning(ctx, db.Pool(), cfg.MaxOpenConns); err != nil {
-		log.Debug().Err(err).Msg("database connection budget check skipped")
+		log.DebugContext(ctx, "database connection budget check skipped", slog.Any("error", err))
 	} else if warning != "" {
-		log.Warn().Str("detail", warning).Msg("database max open connections exceed configured budget")
+		log.WarnContext(ctx, "database max open connections exceed configured budget", slog.String("detail", warning))
 	}
 }

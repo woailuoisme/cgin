@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"net/http"
 	"os"
@@ -19,7 +20,6 @@ import (
 	"time"
 
 	"github.com/dromara/carbon/v2"
-	"github.com/rs/zerolog"
 	"github.com/samber/lo"
 	"github.com/samber/oops"
 
@@ -57,7 +57,7 @@ type Manager struct {
 var _ Gateway = (*Manager)(nil)
 
 // NewManager 依据配置构造支付管理器，并在启动期校验渠道凭据。
-func NewManager(cfg config.PaymentConfig, log *zerolog.Logger) (*Manager, error) {
+func NewManager(cfg config.PaymentConfig, log *slog.Logger) (*Manager, error) {
 	log = cmp.Or(log, logger.Nop())
 	manager := &Manager{
 		providers:   make(map[string]Provider),
@@ -83,7 +83,7 @@ func NewManager(cfg config.PaymentConfig, log *zerolog.Logger) (*Manager, error)
 
 // loadWechat 加载微信支付渠道的全部应用。
 // 未配置任何应用即视为该渠道未启用：既不注册也不报错。
-func (m *Manager) loadWechat(cfg config.PaymentConfig, log *zerolog.Logger) error {
+func (m *Manager) loadWechat(cfg config.PaymentConfig, log *slog.Logger) error {
 	applications, err := cfg.Wechat.Applications()
 	if err != nil {
 		return err
@@ -104,7 +104,7 @@ func (m *Manager) loadWechat(cfg config.PaymentConfig, log *zerolog.Logger) erro
 
 // loadAlipay 加载支付宝渠道的全部应用。
 // 未配置任何应用即视为该渠道未启用：既不注册也不报错。
-func (m *Manager) loadAlipay(cfg config.PaymentConfig, log *zerolog.Logger) error {
+func (m *Manager) loadAlipay(cfg config.PaymentConfig, log *slog.Logger) error {
 	applications, err := cfg.Alipay.Applications()
 	if err != nil {
 		return err
@@ -125,21 +125,21 @@ func (m *Manager) loadAlipay(cfg config.PaymentConfig, log *zerolog.Logger) erro
 
 // registerFakeProviders 在显式开启且非生产环境时注册 Fake 渠道。
 // 这样本地开发与端到端演练无需真实商户号即可跑通收银台链路，且该能力永远不会进入生产环境。
-func (m *Manager) registerFakeProviders(log *zerolog.Logger) {
+func (m *Manager) registerFakeProviders(log *slog.Logger) {
 	for _, channel := range ChannelValues() {
 		provider := NewFakeProvider(channel, FakeApplicationKey)
 		if err := m.register(provider); err != nil {
-			log.Warn().
-				Err(err).
-				Str("channel", channel.String()).
-				Msg("failed to register fake payment provider")
+			log.Warn("failed to register fake payment provider",
+				slog.Any("error", err),
+				slog.String("channel", channel.String()),
+			)
 			continue
 		}
 
-		log.Warn().
-			Str("channel", channel.String()).
-			Str("application", FakeApplicationKey).
-			Msg("payment channel is served by the in-process fake provider")
+		log.Warn("payment channel is served by the in-process fake provider",
+			slog.String("channel", channel.String()),
+			slog.String("application", FakeApplicationKey),
+		)
 	}
 }
 
@@ -754,23 +754,23 @@ func upstreamUnavailable(channel, appKey, operation string, cause error) error {
 	)
 }
 
-// xlogAdapter 把 zerolog 适配为 gopay 期望的 xlog.XLogger 接口。
+// xlogAdapter 把 slog 适配为 gopay 期望的 xlog.XLogger 接口。
 //
 // gopay 只通过 SetLogger 暴露日志注入点，接口仅接受可变参数，无法保留结构化字段能力，
 // 因此这里统一把参数拼装为单条消息写入消息体。
 // gopay 的请求/响应明细日志都在 Debug 级别并可能包含报文片段，生产环境直接丢弃 Debug，
 // 不依赖运维把 LOG_LEVEL 调对。
 type xlogAdapter struct {
-	logger       *zerolog.Logger
+	logger       *slog.Logger
 	debugEnabled bool
 }
 
 // newXLogAdapter 创建 gopay 日志适配器。
 // debugEnabled 为假时丢弃全部 Debug 级输出（生产环境直接丢弃报文级日志）。
-func newXLogAdapter(l *zerolog.Logger, debugEnabled bool) xlogAdapter {
-	sub := cmp.Or(l, logger.Nop()).With().Str("component", "payment_sdk").Logger()
+func newXLogAdapter(l *slog.Logger, debugEnabled bool) xlogAdapter {
+	sub := cmp.Or(l, logger.Nop()).With(slog.String("component", "payment_sdk"))
 	return xlogAdapter{
-		logger:       &sub,
+		logger:       sub,
 		debugEnabled: debugEnabled,
 	}
 }
@@ -778,34 +778,40 @@ func newXLogAdapter(l *zerolog.Logger, debugEnabled bool) xlogAdapter {
 // Debug 记录 Debug 级别日志；生产环境为丢弃。
 func (a xlogAdapter) Debug(args ...any) {
 	if a.debugEnabled {
-		a.logger.Debug().Msg(composeLogMessage(args...))
+		a.logger.Debug(composeLogMessage(args...))
 	}
 }
 
 // Info 记录 Info 级别日志。
-func (a xlogAdapter) Info(args ...any) { a.logger.Info().Msg(composeLogMessage(args...)) }
+func (a xlogAdapter) Info(args ...any) { a.logger.Info(composeLogMessage(args...)) }
 
 // Warn 记录 Warn 级别日志。
-func (a xlogAdapter) Warn(args ...any) { a.logger.Warn().Msg(composeLogMessage(args...)) }
+func (a xlogAdapter) Warn(args ...any) { a.logger.Warn(composeLogMessage(args...)) }
 
 // Error 记录 Error 级别日志。
-func (a xlogAdapter) Error(args ...any) { a.logger.Error().Msg(composeLogMessage(args...)) }
+func (a xlogAdapter) Error(args ...any) { a.logger.Error(composeLogMessage(args...)) }
 
 // Debugf 按格式记录 Debug 级别日志；生产环境为丢弃。
 func (a xlogAdapter) Debugf(format string, args ...any) {
 	if a.debugEnabled {
-		a.logger.Debug().Msgf(format, args...)
+		a.logger.Debug(fmt.Sprintf(format, args...))
 	}
 }
 
 // Infof 按格式记录 Info 级别日志。
-func (a xlogAdapter) Infof(format string, args ...any) { a.logger.Info().Msgf(format, args...) }
+func (a xlogAdapter) Infof(format string, args ...any) {
+	a.logger.Info(fmt.Sprintf(format, args...))
+}
 
 // Warnf 按格式记录 Warn 级别日志。
-func (a xlogAdapter) Warnf(format string, args ...any) { a.logger.Warn().Msgf(format, args...) }
+func (a xlogAdapter) Warnf(format string, args ...any) {
+	a.logger.Warn(fmt.Sprintf(format, args...))
+}
 
 // Errorf 按格式记录 Error 级别日志。
-func (a xlogAdapter) Errorf(format string, args ...any) { a.logger.Error().Msgf(format, args...) }
+func (a xlogAdapter) Errorf(format string, args ...any) {
+	a.logger.Error(fmt.Sprintf(format, args...))
+}
 
 // composeLogMessage 把可变参数以空格分隔拼装为单条日志消息，空消息回退为占位符。
 func composeLogMessage(args ...any) string {

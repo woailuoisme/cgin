@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"maps"
 	"net/url"
 	"slices"
@@ -21,7 +22,6 @@ import (
 
 	"github.com/go-resty/resty/v2"
 	"github.com/google/uuid"
-	"github.com/rs/zerolog"
 	"github.com/samber/lo"
 	"github.com/samber/oops"
 
@@ -945,16 +945,16 @@ func (d *SMSBaoDriver) Send(ctx context.Context, msg *SMSMessage) error {
 
 // LogSMSDriver 结构化日志短信驱动。
 type LogSMSDriver struct {
-	logger *zerolog.Logger
+	logger *slog.Logger
 }
 
 var _ SMSDriver = (*LogSMSDriver)(nil)
 
 // NewLogSMSDriver 创建日志短信驱动实例，未注入时回退全局默认日志器。
-func NewLogSMSDriver(logs ...*zerolog.Logger) *LogSMSDriver {
+func NewLogSMSDriver(logs ...*slog.Logger) *LogSMSDriver {
 	base := cmp.Or(append(logs, logger.Default())...)
-	sub := base.With().Str("component", "sms_log_driver").Logger()
-	return &LogSMSDriver{logger: &sub}
+	sub := base.With(slog.String("component", "sms_log_driver"))
+	return &LogSMSDriver{logger: sub}
 }
 
 // Name 返回驱动标识名。
@@ -963,17 +963,18 @@ func (d *LogSMSDriver) Name() string {
 }
 
 // Send 记录短信发送的结构化日志。
-func (d *LogSMSDriver) Send(_ context.Context, msg *SMSMessage) error {
-	event := d.logger.Info().
-		Str("phone", msg.PhoneNumber).
-		Str("sign_name", msg.SignName).
-		Str("template_code", msg.TemplateCode)
+func (d *LogSMSDriver) Send(ctx context.Context, msg *SMSMessage) error {
+	attrs := []slog.Attr{
+		slog.String("phone", msg.PhoneNumber),
+		slog.String("sign_name", msg.SignName),
+		slog.String("template_code", msg.TemplateCode),
+	}
 	if len(msg.TemplateParam) > 0 {
-		event = event.Any("params", msg.TemplateParam)
+		attrs = append(attrs, slog.Any("params", msg.TemplateParam))
 	}
 	if msg.Content != "" {
-		event = event.Str("content", msg.Content)
+		attrs = append(attrs, slog.String("content", msg.Content))
 	}
-	event.Msg("sms notification logged via log driver")
+	d.logger.LogAttrs(ctx, slog.LevelInfo, "sms notification logged via log driver", attrs...)
 	return nil
 }
