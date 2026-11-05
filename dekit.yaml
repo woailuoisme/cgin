@@ -1,0 +1,8 @@
+tasks:
+  api:
+    cmd: ["air"]
+    autostart: true
+
+  worker:
+    cmd: ["air", "-c", ".air.worker.toml"]
+    autostart: true

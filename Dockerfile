@@ -28,20 +28,19 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # ==============================================================================
 FROM alpine:3.24
 
-# 安装基础 CA 证书、时区数据，并创建非 root 用户 (UID 10001)
-RUN apk add --no-cache ca-certificates tzdata \
-  && adduser -D -u 10001 -s /bin/sh appuser
+# 安装基础 CA 证书与时区数据
+RUN apk add --no-cache ca-certificates tzdata
 
 WORKDIR /app
 
 # 复制编译后的纯静态二进制文件 (静态资源与权限策略已全部内嵌)
 COPY --from=builder /out/cgin /app/cgin
 
-# 预先创建可写入的 storage 结构并递归赋予 appuser 权限
+# 预先创建可写入的 storage 结构并递归赋予系统内置 nobody 用户权限
 RUN mkdir -p /app/storage/logs \
   /app/storage/app/uploads \
   /app/storage/cache \
-  && chown -R 10001:10001 /app
+  && chown -R nobody:nobody /app
 
 ENV APP_ENV=production \
   APP_PORT=3300 \
@@ -50,8 +49,8 @@ ENV APP_ENV=production \
 
 EXPOSE 3300
 
-# 以非 root 用户运行应用
-USER 10001:10001
+# 以 Alpine 系统内置非 root 用户 (nobody:nobody / 65534:65534) 运行应用
+USER nobody:nobody
 
 # 支持直接传参执行不同子命令（如 serve, db:seed）
 ENTRYPOINT ["/app/cgin"]

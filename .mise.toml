@@ -16,6 +16,7 @@ atlas = "latest"                                   # 声明式 schema 迁移管�
 lefthook = "latest"                                # Git Hooks 管理器（驱动 pre-commit / pre-push）
 actionlint = "latest"                              # GitHub Actions 流程校验
 process-compose = "latest"                         # 现代多进程编排管理器（just dev）
+dekit = 'latest'
 
 [env]
 _.file = ".env"

@@ -21,12 +21,12 @@ serviceAccount:
 podAnnotations: {}
 
 podSecurityContext:
-  fsGroup: 10001
+  fsGroup: 65534
 
 securityContext:
   runAsNonRoot: true
-  runAsUser: 10001
-  runAsGroup: 10001
+  runAsUser: 65534
+  runAsGroup: 65534
   allowPrivilegeEscalation: false
   capabilities:
     drop:
