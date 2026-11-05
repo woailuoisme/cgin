@@ -9,7 +9,7 @@ processes:
       http_get:
         host: "127.0.0.1"
         port: 3300
-        path: "/healthz"
+        path: "/livez"
       initial_delay_seconds: 2
       period_seconds: 5
       timeout_seconds: 2
@@ -18,3 +18,4 @@ processes:
     command: "just dev-worker"
     availability:
       restart: "always"
+

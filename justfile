@@ -7,9 +7,13 @@ set dotenv-load := true
 default:
     @just --list
 
-# 并行热重载启动 API 与 Worker（基于 process-compose，默认 TUI 交互面板；传参 -t=false 可启用纯控制台流式日志）
+# 并行热重载启动 API 与 Worker（process-compose 交互式 TUI 面板）
 dev *ARGS: free-port
     process-compose up {{ARGS}}
+
+# 并行热重载启动 API 与 Worker（纯终端流式日志输出，无 TUI 面板）
+dev-stream *ARGS: free-port
+    process-compose up -t=false {{ARGS}}
 
 # 仅热重载 API（Air）
 dev-api: free-port
