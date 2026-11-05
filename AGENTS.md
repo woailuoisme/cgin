@@ -184,7 +184,7 @@ test/                           # 外部测试包（测试代码与业务逻辑�
 5. **统一错误与契约协议基座定位 (`pkg/errs`)**：
    - `pkg/errs` 是全系统严格对齐 [api.md](file:///Users/seaside/Projects/backend/go/gin-sqlc/api.md) 契约的**统一错误与传输协议基座**（定义机器可读错误码 `Code`、封装 `samber/oops` 堆栈追踪、PostgreSQL 驱动约束翻译及 `Render` HTTP 最终写回）。
    - **绝对严禁将 `pkg/errs` 迁入 `shared/`**：防止 `render.go` 将 `gin.Context` 与 Web 传输协议污染进纯领域共享内核，同时杜绝 `storage`、`mailer`、`queue` 等底层技术原子反向依赖业务共享包。
-   - 业务错误码（如 `AUTH_*`、`PAYMENT_*`）作为系统对外契约常量统一集中于 `pkg/errs/codes.go`，由状态码映射字典 `statuses` 集中内聚管理，避免分散配置导致的契约漂移。
+   - 业务错误码（如 `AUTH_*`、`PAYMENT_*`）作为系统对外契约常量统一集中于 `pkg/errs/code.go`，由状态码映射字典 `statuses` 集中内聚管理，避免分散配置导致的契约漂移。
 6. **常量与枚举作用域规约与就近内聚原则 (`internal/enum`)**：
    - **核心领域枚举集中于 `internal/enum`**：仅当枚举属于全系统跨垂直切片共享的**核心业务领域实体概念**（如 `Role`、`UserStatus`、`OTPType`、`ProviderID`）时，方可在 `internal/enum` 中定义，且必须使用强类型 `type X string` 并提供 `IsValid()` / `String()` 等纯粹契约。该包是不导入任何 `cgin/` 内部包的零依赖叶子包，`internal/` 各层统一引用这一唯一来源；`pkg/` 与 `shared/` 严禁依赖它。
    - **严禁「集中式常量垃圾桶」反模式 (No God Enum / No Centralized Technical Constants)**：严禁将任何特定技术实现常量、中间件键名、基础设施细节直接堆入 `internal/enum`：

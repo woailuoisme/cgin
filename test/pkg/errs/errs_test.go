@@ -337,18 +337,18 @@ func repoRootCandidates() []string {
 	return candidates
 }
 
-// TestCodeContractMatchesAPIDocs 锁定 codes.go 与 api.md 4.2 清单的双向一致。
+// TestCodeContractMatchesAPIDocs 锁定 code.go 与 api.md 4.2 清单的双向一致。
 //
 // 这两处一旦漂移，客户端按文档分支就会匹配不上真实响应（历史上正是这么错的：
-// codes.go 写小写、api.md 写大写，同一个码两种拼法）。
+// code.go 写小写、api.md 写大写，同一个码两种拼法）。
 func TestCodeContractMatchesAPIDocs(t *testing.T) {
-	source := repoFile(t, "pkg/errs/codes.go")
+	source := repoFile(t, "pkg/errs/code.go")
 
 	declared := make([]string, 0, 64)
 	for _, m := range codesDeclPattern.FindAllStringSubmatch(string(source), -1) {
 		declared = append(declared, m[1])
 	}
-	require.NotEmpty(t, declared, "未能从 codes.go 解析出任何错误码声明")
+	require.NotEmpty(t, declared, "未能从 code.go 解析出任何错误码声明")
 
 	// 1. 声明值必须一律 SHOUTY_SNAKE_CASE：对外契约不接受小写码。
 	for _, code := range declared {
@@ -373,14 +373,14 @@ func TestCodeContractMatchesAPIDocs(t *testing.T) {
 	assert.Equal(t, exposed, documented,
 		"api.md 4.2 清单与 errs.ExposedCodes() 必须一一对应：文档多写或漏写都会让客户端分支失效")
 
-	// 3. api.md 里出现的每个码都必须在 codes.go 有声明（杜绝文档凭空造码）。
+	// 3. api.md 里出现的每个码都必须在 code.go 有声明（杜绝文档凭空造码）。
 	declaredSet := make(map[string]struct{}, len(declared))
 	for _, code := range declared {
 		declaredSet[code] = struct{}{}
 	}
 	for _, code := range documented {
 		_, ok := declaredSet[code]
-		assert.True(t, ok, "api.md 列出的 %q 在 codes.go 中没有声明", code)
+		assert.True(t, ok, "api.md 列出的 %q 在 code.go 中没有声明", code)
 	}
 }
 
