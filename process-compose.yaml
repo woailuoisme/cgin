@@ -2,7 +2,7 @@ version: "0.5"
 
 processes:
   api:
-    command: "just dev-api"
+    command: "air"
     availability:
       restart: "always"
     readiness_probe:
@@ -15,7 +15,7 @@ processes:
       timeout_seconds: 2
 
   worker:
-    command: "just dev-worker"
+    command: "air -c .air.worker.toml"
     availability:
       restart: "always"
 
