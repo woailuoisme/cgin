@@ -70,32 +70,31 @@ func TestGenerateCRUD_Execution(t *testing.T) {
 		assert.NotEmpty(t, content)
 	}
 
-	dtoPath := filepath.Join(tempDir, "internal", "dto", "admin", "article.go")
+	dtoPath := filepath.Join(tempDir, "internal", "feature", "admin", "article", "v1", "dto.go")
 	dtoContent, err := os.ReadFile(dtoPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(dtoContent), "ArticlePathParams")
 	assert.Contains(t, string(dtoContent), "ListArticleQueryParams")
 	assert.Contains(t, string(dtoContent), "ArticleResource")
 
-	servicePath := filepath.Join(tempDir, "internal", "service", "admin", "article.go")
+	servicePath := filepath.Join(tempDir, "internal", "feature", "admin", "article", "service.go")
 	serviceContent, err := os.ReadFile(servicePath)
 	require.NoError(t, err)
-	assert.Contains(t, string(serviceContent), "package adminservice")
-	assert.Contains(t, string(serviceContent), "admindto.ToArticleResource(")
-	assert.NotContains(t, string(serviceContent), "admindto.Toadmindto")
+	assert.Contains(t, string(serviceContent), "package adminarticle")
+	assert.Contains(t, string(serviceContent), "type ArticleService interface")
 
-	handlerPath := filepath.Join(tempDir, "internal", "handler", "admin", "article.go")
+	handlerPath := filepath.Join(tempDir, "internal", "feature", "admin", "article", "v1", "handler.go")
 	handlerContent, err := os.ReadFile(handlerPath)
 	require.NoError(t, err)
-	assert.Contains(t, string(handlerContent), "package adminhandler")
-	assert.Contains(t, string(handlerContent), "response.Paginated(c, items, meta)")
+	assert.Contains(t, string(handlerContent), "package v1")
+	assert.Contains(t, string(handlerContent), "response.Paginated(c, resources, meta)")
 	assert.Contains(t, string(handlerContent), "@Tags         文章管理")
 
-	routesPath := filepath.Join(tempDir, "internal", "route", "admin", "article.go")
+	routesPath := filepath.Join(tempDir, "internal", "feature", "admin", "article", "v1", "router.go")
 	routesContent, err := os.ReadFile(routesPath)
 	require.NoError(t, err)
-	assert.Contains(t, string(routesContent), "RegisterAdminArticlesRoutes")
-	assert.Contains(t, string(routesContent), "package adminroute")
+	assert.Contains(t, string(routesContent), "RegisterRoutes")
+	assert.Contains(t, string(routesContent), "package v1")
 	assert.Contains(t, string(routesContent), `mw.Can(authorization.Resource("articles")`)
 
 	queriesPath := filepath.Join(tempDir, "database", "queries", "articles.sql")
@@ -170,7 +169,7 @@ func TestDestroyCRUD_Execution(t *testing.T) {
 		assert.Equal(t, scaffold.ActionDryRun, r.Action)
 	}
 
-	handlerPath := filepath.Join(tempDir, "internal", "handler", "admin", "article.go")
+	handlerPath := filepath.Join(tempDir, "internal", "feature", "admin", "article", "v1", "handler.go")
 	_, err = os.Stat(handlerPath)
 	require.NoError(t, err)
 
@@ -185,7 +184,7 @@ func TestDestroyCRUD_Execution(t *testing.T) {
 		assert.True(t, os.IsNotExist(statErr))
 	}
 
-	featureDir := filepath.Join(tempDir, "internal", "handler", "admin")
+	featureDir := filepath.Join(tempDir, "internal", "feature", "admin", "article")
 	_, statErr := os.Stat(featureDir)
 	assert.True(t, os.IsNotExist(statErr))
 

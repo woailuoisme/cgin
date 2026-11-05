@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"cgin/internal/config"
-	"cgin/internal/notification/store"
+	"cgin/internal/feature/client/auth/store"
 	"cgin/pkg/cache"
 	"cgin/pkg/notification"
 	"cgin/pkg/queue"

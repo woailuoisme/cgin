@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -28,11 +29,11 @@ func TestHealthEndpoint(t *testing.T) {
 
 	result := call(t, engine, http.MethodGet, "/livez", "", "")
 	assert.Equal(t, http.StatusOK, result.Status)
-	assert.Equal(t, "ok", str(result.Body, "status"))
+	assert.True(t, strings.EqualFold("ok", result.Raw))
 
 	rootResult := call(t, engine, http.MethodGet, "/", "", "")
 	assert.Equal(t, http.StatusOK, rootResult.Status)
-	assert.Equal(t, "ok", str(rootResult.Body, "status"))
+	assert.True(t, strings.EqualFold("ok", rootResult.Raw))
 }
 
 // TestGlobalRoutingAndErrorContract 校验未映射路由与未支持动词返回统一错误 JSON（api.md 5.2）。
@@ -204,24 +205,28 @@ func TestProfilePatchThreeState(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, result.Status, result.Raw)
 		assert.Equal(t, "Renamed", str(result.Body, "name"))
-		assert.Nil(t, result.Body["image"], "未提供的字段应保持原值（nil）")
+		assert.Nil(t, result.Body["avatarPath"], "未提供的字段应保持原值（nil）")
 	})
 
 	t.Run("具体值覆盖", func(t *testing.T) {
+		avatarFile := filepath.Join(appStorageRoot, "uploads", "avatars", "a.png")
+		require.NoError(t, os.MkdirAll(filepath.Dir(avatarFile), 0o755))
+		require.NoError(t, os.WriteFile(avatarFile, []byte("fake image content"), 0o644))
+
 		result := callJSON(t, engine, http.MethodPatch, "/v1/users/me", map[string]any{
-			"image": "https://example.com/a.png",
+			"avatar_path": "uploads/avatars/a.png",
 		}, token)
 
 		require.Equal(t, http.StatusOK, result.Status, result.Raw)
-		assert.Equal(t, "https://example.com/a.png", str(result.Body, "image"))
+		assert.Equal(t, "uploads/avatars/a.png", str(result.Body, "avatarPath"))
 		assert.Equal(t, "Renamed", str(result.Body, "name"), "其他字段不应被清掉")
 	})
 
 	t.Run("显式 null 置空", func(t *testing.T) {
-		result := callJSON(t, engine, http.MethodPatch, "/v1/users/me", map[string]any{"image": nil}, token)
+		result := callJSON(t, engine, http.MethodPatch, "/v1/users/me", map[string]any{"avatar_path": nil}, token)
 
 		require.Equal(t, http.StatusOK, result.Status, result.Raw)
-		assert.Nil(t, result.Body["image"], "显式 null 应把字段置空")
+		assert.Nil(t, result.Body["avatarPath"], "显式 null 应把字段置空")
 	})
 
 	t.Run("NOT NULL 字段置空返回 422", func(t *testing.T) {

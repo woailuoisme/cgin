@@ -59,48 +59,41 @@
 | | `just migrate-hash` | 重算 `database/migrations` 的哈希完整性校验链。 |
 | | `just seed` | 幂等注入首个管理员数据。 |
 | | `just fresh` | 破坏性重建数据库并重新播种（需确认；自动化脚本可用 `just fresh-force`）。 |
-| **API 文档生成** | `just docs` | 使用 `swag` 解析生成客户端规范（`shared/apidocs/swagger.json`）与管理端规范（`shared/apidocs/admin_swagger.json`）。 |
+| **API 文档生成** | `just docs` | 使用 `swag` 解析生成客户端规范（`api/swagger.json`）与管理端规范（`api/admin_swagger.json`）。 |
 
 ---
 
-## 3. 分层优先架构与依赖红线 (Layer-First Architecture & Boundaries)
+## 3. 垂直切片与业务特性优先架构 (Vertical Slice & Feature-First Architecture)
 
-项目采用**分层优先（Layer-First）**设计，依赖方向固定为 `route → handler → service → dto`，边界严格：
+项目采用**业务特性优先（Feature-First / Vertical Slice）**设计，顶层区隔客户端 (`client`) 与管理端 (`admin`)，按业务切片组织代码，切片内部依赖方向固定为 `v1/router → v1/handler → service`，边界严格：
 
 ```
 cmd/api/main.go                 # 应用程序唯一入口，控制权移交 internal/console
-internal/                       # 私有实现层（分层优先：route → handler → service → dto 单向依赖）
+internal/                       # 私有实现层（Feature-First 垂直切片架构）
 ├── bootstrap/                  # 依赖组装（组合根）、引擎初始化与服务生命周期管理
 ├── config/                     # 基于 caarlos0/env 的强类型环境配置加载
-├── console/                    # Artisan 风格 CLI 命令（serve, db:seed, db:fresh）
+├── console/                    # Artisan 风格 CLI 命令（serve, db:seed, db:fresh, make:feature）
 ├── database/                   # 连接池、事务工作单元（RunInTx）与生成查询集
 │   ├── sqlc/                   # sqlc 生成物（禁止手改）
 │   └── seeders/                # 幂等数据播种器
-├── dto/                        # 传输契约层（package dto）：一个模块一个文件
-│   ├── admin/                  # 管理端契约（package admindto）
-│   └── auth.go · profile.go · payment.go · realtime.go · system.go · user.go
 ├── enum/                       # 核心领域枚举契约（Role / UserStatus / OTPType / ProviderID）
-├── event/                      # 领域事件模型：跨切片事实载荷（auth.go · payment.go）
-├── export/                     # 领域导出用例（XLSX 组装，基于 pkg/excel）
-├── handler/                    # 传输适配层（package handler）
-│   ├── admin/                  # package adminhandler
-│   └── auth.go · profile.go · payment.go · realtime.go · system.go
-├── import/                     # 领域导入用例（XLSX 流式分块解析与校验，基于 pkg/excel）
-├── index/                      # 全文检索索引器定义与集中装配（基于 pkg/search）
-├── job/                        # 异步任务签名与处理器（Asynq Job，基于 pkg/queue）
-├── listener/                   # 领域事件监听器注册（向 pkg/eventbus 挂载订阅）
-├── media/                      # 媒体处理内核：上传验证、命名、路径推导、管道与多态附件（基于 pkg/storage）
+├── feature/                    # 垂直业务切片核心目录（Feature-First）
+│   ├── admin/                  # 后台管理端特性切片（package admin<feature>）
+│   │   ├── auth/               # 管理员认证切片（service.go, v1/dto.go, v1/handler.go, v1/router.go）
+│   │   ├── user/               # 系统用户管理切片（service.go, export.go, import.go, index.go, v1/...）
+│   │   ├── provider.go         # 管理端特性服务依赖注入集中装配
+│   │   └── router.go           # 管理端特性 HTTP 路由挂载
+│   ├── client/                 # 前台客户端特性切片（package client<feature>）
+│   │   ├── auth/               # 前台认证与验证码（service.go, event.go, job.go, listener.go, notification.go, store/, v1/...）
+│   │   ├── media/              # 媒体凭据签发（v1/dto.go, v1/handler.go, v1/router.go）
+│   │   ├── payment/            # 支付渠道网关回调（service.go, event.go, v1/...）
+│   │   ├── profile/            # 个人资料与头像（service.go, v1/...）
+│   │   ├── realtime/           # 实时通信凭据与鉴权代理（service.go, channel.go, v1/...）
+│   │   ├── user/               # 客户端用户投影契约（v1/dto.go）
+│   │   ├── provider.go         # 客户端特性服务依赖注入集中装配
+│   │   └── router.go           # 客户端特性 HTTP 路由挂载
+│   └── system/                 # 系统级探针特性切片（service.go, handler.go, route.go, dto.go, provider.go）
 ├── middleware/                 # 全局与路由级 HTTP 中间件（认证、限流、CORS、监控）
-├── notification/               # 跨切片通知类型与数据载荷（otp.go · security_alert.go）
-│   └── store/                  # 通知消息的关系型持久化渠道（package store）
-├── realtime/                   # 实时频道命名、订阅鉴权与分发规则（基于 pkg/realtime）
-├── route/                      # 路由注册层（package route）
-│   ├── admin/                  # package adminroute
-│   └── auth.go · profile.go · payment.go · realtime.go · system.go
-├── schedule/                   # 周期任务编排（预留空层：待 worker 接线方向确定）
-├── service/                    # 用例层（package service）
-│   ├── admin/                  # package adminservice
-│   └── auth*.go · profile.go · payment.go · realtime*.go · system.go · verification.go
 └── user/                       # 用户内核：User View、字段约束、角色策略、注册与基础查询契约
 database/                       # SQL 事实源与版本化迁移资产（Atlas / sqlc 共用根）
 ├── schemas/                    # 声明式目标 DDL（唯一事实源）
@@ -118,6 +111,7 @@ pkg/                            # 可复用的横切基础设施与跨切片基�
 ├── i18n/                       # 语言装载与文案渲染门面（基于 go-i18n，底层同 gin-contrib/i18n）
 ├── logger/                     # Zerolog 结构化日志构建、脱敏与请求作用域透传
 ├── mailer/                     # SMTP 邮件发送抽象（Mailpit / Resend / Log）
+├── media/                      # 统一媒体处理引擎：直传预签名、安全验证、命名/路径策略与 Imgproxy 签名
 ├── money/                      # 不可变高精度货币值对象 (Money)、ISO-4217 元数据、金融舍入与无损分摊
 ├── notification/               # 通知渠道抽象、异步工作池与多通道驱动
 ├── payment/                    # 微信/支付宝收单网关与 Fake 渠道
@@ -132,13 +126,13 @@ pkg/                            # 可复用的横切基础设施与跨切片基�
 ├── telemetry/                  # OpenTelemetry 初始化与 zerolog Hook 桥接
 ├── validator/                  # Go-Playground 校验器与国际化翻译集成
 └── wechat/                     # 微信公众号/小程序接口适配
-shared/                         # 纯静态资产层（仅嵌入式 OpenAPI 规范；业务内核全部沉入 internal）
-└── apidocs/                    # 嵌入式 OpenAPI 规范与文档契约
+api/                            # OpenAPI 规范事实源与嵌入式资产（embed.go, swagger.json, admin_swagger.json）
 test/                           # 外部测试包（测试代码与业务逻辑彻底解耦，镜像同层目录）
+├── api/                        # 镜像 api/ OpenAPI 规范与注解覆盖度单元测试
 ├── integration/                # 真实外部依赖的集成测试（声明 //go:build integration）
-├── internal/                   # 镜像 internal/ 各层用例（bootstrap · config · console · database · dto · enum · export · index · job · listener · media · middleware · notification · realtime · route · service · user）
-├── pkg/                        # 镜像 pkg/ 各原子基础设施组件的单元测试
-├── shared/                     # 镜像 shared/ 静态资产的单元测试（apidocs）
+├── internal/                   # 镜像 internal/ 各特性用例（bootstrap · config · console · database · enum · feature · middleware · user）
+│   └── feature/                # 镜像 admin / client / system 各业务特性切片单元测试
+├── pkg/                        # 镜像 pkg/ 各原子基础设施组件的单元测试（media · cache · storage · realtime 等）
 └── testutil/                   # 公共测试夹具与辅助函数
 ```
 
@@ -167,20 +161,24 @@ test/                           # 外部测试包（测试代码与业务逻辑�
 
 ### 🚨 架构分层绝对红线
 
-1. **分层单向依赖（Layer-First 红线）**：依赖方向固定为 `route → handler → service → dto`（`dto` 仅被读取，不反向依赖任何层）。
-   - **绝对禁止** `service` 反向 import `handler` 或 `route`，也禁止同层内不同模块包相互 import（如 `adminhandler` 与 `handler`）；
-   - **路由注册必须收敛在 `internal/route/` 单包**：`handler` 包内严禁再出现路由注册代码；
-   - `dto` 层是全系统唯一允许被 `handler` 与 `service` 共同引用的传输契约层，**严禁**在 `dto` 中 import `handler`、`service` 或 `route`；
-   - 每层目录**不建模块文件夹**：一个模块一个文件直接落在层根（`internal/<layer>/<module>.go`）；管理端专属内容统一收纳进各层的 `admin/` 子目录（`internal/<layer>/admin/<module>.go`），并共用 `admindto` / `adminhandler` / `adminservice` / `adminroute` 包名。
-2. **跨 Feature 数据共享统一沉淀至 `internal/` 内核**：跨切片复用的用户视图、字段约束、角色策略与基础 Repository 已收敛在 [internal/user/](file:///Users/seaside/Projects/backend/go/gin-sqlc/internal/user/)，独立媒体处理基础设施已收敛在 [pkg/media/](file:///Users/seaside/Projects/backend/go/gin-sqlc/pkg/media/)。`shared/` 仅保留嵌入式 OpenAPI 静态资产（`apidocs/`），**严禁承接任何业务代码**。新增跨包复用的数据投影必须先入内核再被引用，严禁在下游各自复制。
+1. **业务特性优先（Feature-First 红线）**：
+   - 应用程序业务逻辑按垂直切片收敛在 `internal/feature/` 目录下；
+   - 顶层严格区隔前台客户端接口 `internal/feature/client/` 与后台管理端接口 `internal/feature/admin/`，以及底层探针 `internal/feature/system/`；
+   - 各特性模块（如 `auth`, `profile`, `payment`, `realtime`, `user`）是自包含的业务切片。切片根目录承载业务用例（`service.go`）、领域事件与异步作业（`event.go`, `job.go`, `listener.go`）；
+   - **传输层与版本控制（v1/）**：各切片直接通过 `v1/` 子包暴露传输契约与 HTTP 控制器，包含 `dto.go`、`handler.go` 与 `router.go`（包名统一为 `v1`）；
+   - **单向依赖规约**：切片根目录服务层承载业务规则，**绝对严禁**反向 import 自身的 `v1` 传输层；`v1/` 传输层允许依赖父级切片服务与领域实体；
+   - **客户端与管理端互不依赖**：`internal/feature/client` 与 `internal/feature/admin` 之间**绝对严禁相互 import**；
+   - **禁止提前投机设计**：初始化时仅维护 `v1/` 目录，禁止预建空的 `v2/` 目录，直至业务出现真实版本迭代需求；
+   - 每个特性内部的 HTTP 路由由自身的 `v1/router.go` 自治声明，并通过切片上层的 `router.go`（如 `client/router.go`、`admin/router.go`）统一挂载至 Gin 引擎。
+2. **跨 Feature 数据共享统一沉淀至 `internal/` 内核**：跨切片复用的用户视图、字段约束、角色策略与基础 Repository 已收敛在 [internal/user/](file:///Users/seaside/Projects/backend/go/gin-sqlc/internal/user/)，媒体处理基座已沉淀在 [pkg/media/](file:///Users/seaside/Projects/backend/go/gin-sqlc/pkg/media/)。OpenAPI 规范统一收敛在 [api/](file:///Users/seaside/Projects/backend/go/gin-sqlc/api/)，原 `shared/` 彻底废除。新增跨包复用的数据投影必须先入内核再被引用，严禁在下游各自复制。
 3. **分层职责绝对隔离**：
-   - **Handler**：只负责 HTTP 参数解析绑定、入参校验调度、调用 Service、组装 `response.OK`。**严禁在 Handler 中编写核心业务逻辑或直接操作 ORM/SQL**。
-   - **Service**：承载纯业务规则与事务协调，输入输出均为强类型 DTO/Model。通过返回 `samber/oops` 结构化错误传递失败原因。
-   - **DTO**：只承载契约结构、校验标签、投影函数与查询归一化，**严禁出现 I/O、事务或任何业务副作用**。
+   - **Handler (`v1/handler.go`)**：只负责 HTTP 参数解析绑定、入参校验调度、调用 Service、组装 `response.OK`。**严禁在 Handler 中编写核心业务逻辑或直接操作 ORM/SQL**。
+   - **Service (`service.go`)**：承载纯业务规则与事务协调，输入输出均为强类型 DTO/Model。通过返回 `samber/oops` 结构化错误传递失败原因。
+   - **DTO (`v1/dto.go`)**：只承载契约结构、校验标签、投影函数与查询归一化，**严禁出现 I/O、事务或任何业务副作用**。
    - **Platform (`pkg/`)**：基础设施层必须保持纯粹独立，**严禁 Platform 反向依赖任何 `internal/` 业务包或 `shared/` 业务包**。
 4. **Middleware 传输层协议隔离与就地内聚**：
    - `internal/middleware/` 是专属于 HTTP Delivery/Transport 传输层的通用横切逻辑（认证、鉴权、限流、CORS、监控、全局错误转换），与 Web 协议强绑定。**严禁将 `middleware` 迁入协议无关的 `shared/`**，避免污染纯净的领域共享内核。
-   - 通用传输层中间件集中于 `internal/middleware/`；若未来存在仅限单一领域使用的特定业务拦截器，**直接就地内聚于对应的 `internal/handler/<module>.go` 内部**。
+   - 通用传输层中间件集中于 `internal/middleware/`；若未来存在仅限单一领域使用的特定业务拦截器，**直接就地内聚于对应的特性内部**。
 5. **统一错误与契约协议基座定位 (`pkg/errs`)**：
    - `pkg/errs` 是全系统严格对齐 [api.md](file:///Users/seaside/Projects/backend/go/gin-sqlc/api.md) 契约的**统一错误与传输协议基座**（定义机器可读错误码 `Code`、封装 `samber/oops` 堆栈追踪、PostgreSQL 驱动约束翻译及 `Render` HTTP 最终写回）。
    - **绝对严禁将 `pkg/errs` 迁入 `shared/`**：防止 `render.go` 将 `gin.Context` 与 Web 传输协议污染进纯领域共享内核，同时杜绝 `storage`、`mailer`、`queue` 等底层技术原子反向依赖业务共享包。
@@ -188,15 +186,15 @@ test/                           # 外部测试包（测试代码与业务逻辑�
 6. **常量与枚举作用域规约与就近内聚原则 (`internal/enum`)**：
    - **核心领域枚举集中于 `internal/enum`**：仅当枚举属于全系统跨垂直切片共享的**核心业务领域实体概念**（如 `Role`、`UserStatus`、`OTPType`、`ProviderID`）时，方可在 `internal/enum` 中定义，且必须使用强类型 `type X string` 并提供 `IsValid()` / `String()` 等纯粹契约。该包是不导入任何 `cgin/` 内部包的零依赖叶子包，`internal/` 各层统一引用这一唯一来源；`pkg/` 与 `shared/` 严禁依赖它。
    - **严禁「集中式常量垃圾桶」反模式 (No God Enum / No Centralized Technical Constants)**：严禁将任何特定技术实现常量、中间件键名、基础设施细节直接堆入 `internal/enum`：
-     - **Gin Context Key**：必须就近定义在对应传输层中间件或认证包内部，推荐使用非导出类型（如 `type authCtxKey struct{}`）或私有常量，通过强类型 Helper 函数（如 `auth.FromContext(c)`）对外暴露存取，严禁全局暴露原生 Context 字符串键。
+     - **Context Key**：必须就近定义在对应传输层中间件或认证包内部，推荐使用非导出类型（如 `type authCtxKey struct{}`）或私有常量，通过强类型 Helper 函数（如 `authentication.FromContext(c.Request.Context())`）对外暴露存取，严禁全局暴露原生 Context 字符串键。
      - **Cache Key / Redis 前缀**：必须就近封装在具体的 Cache Repository 或 Platform Cache 内部，外部调用方通过高阶仓储方法存取，严禁将原始键名前缀向外部全局扩散。
      - **异步任务与队列名 (Queue / Job Tasks)**：必须就近内聚在调度该任务的 Feature 切片或 `pkg/queue` 内部，各业务独立维护 Job 签名。
      - **严禁投机性死代码与 UI 徽标元数据 (YAGNI)**：严禁预先编写全系统 0 调用的投机性常量文件，严禁在后端枚举中硬编码前端展示类元数据（如 CSS 徽标颜色、选项字典映射）。
 7. **HTTP DTO 单一文件与四大后缀强类型绑定规约 (`dto.go`)**：
-   - **单一 `dto.go` 文件集中内聚**：每个领域契约文件（`internal/dto/<module>.go`）内的 HTTP 请求与响应传输对象集中内聚，彻底废除 `request.go` 与 `response.go` 物理双文件，将该领域的全部传输契约与模型投影函数（`To<Entity>Resource`）单点内聚。
+   - **单一 `dto.go` 文件集中内聚**：每个特性切片的传输对象（`internal/feature/<scope>/<module>/v1/dto.go`）集中内聚，彻底废除 `request.go` 与 `response.go` 物理双文件，将该领域的全部传输契约与模型投影函数（`To<Entity>Resource`）单点内聚。
    - **投影函数导出约定**：被 `service` 或 `handler` 跨包调用的投影函数与请求体派生方法必须导出（`ToUserResource`、`ProjectUser`、`FieldSet`、`AdminFieldSet`），禁止跨包引用未导出符号。
    - **四大后缀与 Gin 绑定映射红线**：
-     1. **`*Body`**：对应请求体载荷（JSON / Form），Handler 统一使用 `c.ShouldBindJSON(&body)` 绑定；
+     1. **`*Body`**：对应请求体载荷（JSON / Form），Handler 统一使用 `c.ShouldBindJSON(&body)`（或表单 `c.ShouldBind(&body)`）绑定；
      2. **`*PathParams`**：对应路由 URI 路径参数（必须附带 `uri:"..."` 标签与校验规则），Handler 统一使用 `c.ShouldBindUri(&pathParams)` 强类型绑定与校验。**绝对严禁在 Handler 中使用裸调 `c.Param("id")` 提取路径参数**；
      3. **`*QueryParams`**：对应 URL Query 查询参数（必须附带 `form:"..."` 与 `json:"..."` 标签），Handler 统一使用 `c.ShouldBindQuery(&queryParams)` 绑定；
      4. **`*Resource`**：对应响应数据单体视图（如 `UserResource`）；分页列表必须显式声明 `*PageResource` 结构体（内含 `items []<Entity>Resource` 与 `meta response.Meta`），确保 Swagger/OpenAPI 无歧义精准解析。
@@ -346,13 +344,13 @@ test/                           # 外部测试包（测试代码与业务逻辑�
 
 系统采用前后台严格隔离的双 OpenAPI / Scalar 文档架构：
 1. **客户端文档 (`/docs`)**：
-   - 宿主页挂载在 `/docs`，规范接口为 `/docs/openapi.json`（对应静态文件 `shared/apidocs/swagger.json`）。
+   - 宿主页挂载在 `/docs`，规范接口为 `/docs/openapi.json`（对应静态文件 `api/swagger.json`）。
    - 根信息在 `cmd/api/main.go` 中声明（Title 为 `cgin API`）。
    - **严格收录范围**：仅包含客户端自助与认证端点（`auth`、`profile`、`realtime`）。分层扁平化后同层包混装两侧端点，收录范围改由 Swagger Tag 白名单收敛（`认证中心,个人资料,实时通信`），并辅以 `--exclude internal/handler/admin,...` 降低解析开销。
 2. **管理端文档 (`/docs/admin`)**：
-   - 宿主页挂载在 `/docs/admin`，规范接口为 `/docs/admin/openapi.json`（对应静态文件 `shared/apidocs/admin_swagger.json`）。
+   - 宿主页挂载在 `/docs/admin`，规范接口为 `/docs/admin/openapi.json`（对应静态文件 `api/admin_swagger.json`）。
    - 根信息在 `cmd/api/admin_doc.go` 中声明（Title 为 `cgin Admin API`）。
-   - **严格收录范围**：仅收录管理端 API（如 `internal/route/admin`、`internal/handler/admin`），收敛手段同为 Tag 白名单（`用户管理,管理员认证`）。新增端点必须写 `@Tags`，否则会同时从两套文档消失——该约束由 `test/shared/apidocs` 的注解覆盖测试守门。
+   - **严格收录范围**：仅收录管理端 API（如 `internal/route/admin`、`internal/handler/admin`），收敛手段同为 Tag 白名单（`用户管理,管理员认证`）。新增端点必须写 `@Tags`，否则会同时从两套文档消失——该约束由 `test/api` 的注解覆盖测试守门。
    - **解除旧约束**：取消原 ADR-0005 中“管理端不添加 swag 注解”的旧约束，管理端 Handler 与 DTO 必须全量规范书写 Swag 注解。
 3. **环境与访问控制**：
    - 两份文档统一受 `ENABLE_DOCS` 配置项控制，生产环境未开启时均返回 404。

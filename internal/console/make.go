@@ -35,13 +35,13 @@ func newMakeCRUDCmd(f Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "make:crud [name]",
 		Short: "Generate a complete CRUD module across layers (or delete with -d)",
-		Long: `Generate or delete a complete production-grade CRUD feature slice following the Layer-First architecture (route → handler → service → dto).
+		Long: `Generate or delete a complete production-grade CRUD feature slice following the Feature-First architecture (service + v1: dto, handler, router).
 
-Generates / Removes (admin scope lands in each layer's admin/ subdirectory):
-  - internal/handler/<module>.go
-  - internal/routes/<module>.go
-  - internal/service/<module>.go
-  - internal/dto/<module>.go
+Generates / Removes:
+  - internal/feature/<scope>/<module>/service.go
+  - internal/feature/<scope>/<module>/v1/dto.go
+  - internal/feature/<scope>/<module>/v1/handler.go
+  - internal/feature/<scope>/<module>/v1/router.go
   - database/schemas/<plural>.sql + database/queries/<plural>.sql
 
 Deletion requires a compilable module: run 'just sqlc' after creating a module

@@ -39,9 +39,24 @@ const (
 // Claims 是编码进 JWT 的标准载荷与扩展声明。
 type Claims struct {
 	jwt.RegisteredClaims
-	Role         string         `json:"role,omitempty"`
-	Type         TokenType      `json:"type"`
-	CustomClaims map[string]any `json:"custom,omitempty"`
+	Role              string         `json:"role,omitempty"`
+	Type              TokenType      `json:"type"`
+	IssuedAtUnixMilli int64          `json:"iat_ms,omitempty"`
+	CustomClaims      map[string]any `json:"custom,omitempty"`
+}
+
+// IssuedAtTime 返回令牌签发时间，优先采用毫秒级精度 IssuedAtUnixMilli，缺省时回退至 RegisteredClaims.IssuedAt。
+func (c *Claims) IssuedAtTime() time.Time {
+	if c == nil {
+		return time.Time{}
+	}
+	if c.IssuedAtUnixMilli > 0 {
+		return time.UnixMilli(c.IssuedAtUnixMilli)
+	}
+	if c.IssuedAt != nil {
+		return c.IssuedAt.Time
+	}
+	return time.Time{}
 }
 
 // GetClaim 从自定义声明中提取指定键的值。
@@ -267,7 +282,7 @@ func (t *TokenIssuer) RevokeUser(ctx context.Context, userID string) error {
 	if t == nil || t.blacklist == nil || userID == "" {
 		return nil
 	}
-	epoch := strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
+	epoch := strconv.FormatInt(time.Now().UTC().UnixMilli(), 10)
 	if err := t.blacklist.Set(ctx, userRevokeKeyPrefix+userID, epoch, t.userRevokeTTL); err != nil {
 		return oops.In("authentication").With("user_id", userID).Wrapf(err, "revoke user epoch")
 	}
@@ -289,11 +304,11 @@ func (t *TokenIssuer) IsUserRevoked(ctx context.Context, userID string, issuedAt
 	if val == "" {
 		return false, nil
 	}
-	revokedAtNano, err := strconv.ParseInt(val, 10, 64)
+	revokedAtMilli, err := strconv.ParseInt(val, 10, 64)
 	if err != nil {
 		return false, oops.In("authentication").With("user_id", userID).Wrapf(err, "parse user revocation epoch")
 	}
-	return issuedAt.UnixNano() <= revokedAtNano, nil
+	return issuedAt.UnixMilli() <= revokedAtMilli, nil
 }
 
 // IsTokenRevoked 综合检查单枚令牌 JTI 黑名单与所属用户的全局注销纪元。
@@ -305,8 +320,8 @@ func (t *TokenIssuer) IsTokenRevoked(ctx context.Context, claims *Claims) (bool,
 	if err != nil || revoked {
 		return revoked, err
 	}
-	if claims.Subject != "" && claims.IssuedAt != nil {
-		return t.IsUserRevoked(ctx, claims.Subject, claims.IssuedAt.Time)
+	if claims.Subject != "" {
+		return t.IsUserRevoked(ctx, claims.Subject, claims.IssuedAtTime())
 	}
 	return false, nil
 }
@@ -330,9 +345,10 @@ func (t *TokenIssuer) sign(
 			IssuedAt:  jwt.NewNumericDate(issuedAt),
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 		},
-		Role:         role,
-		Type:         typ,
-		CustomClaims: customClaims,
+		Role:              role,
+		Type:              typ,
+		IssuedAtUnixMilli: issuedAt.UnixMilli(),
+		CustomClaims:      customClaims,
 	}
 
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

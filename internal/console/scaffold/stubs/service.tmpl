@@ -6,21 +6,41 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/samber/lo"
 
 	"cgin/internal/database"
 	"cgin/internal/database/sqlc"
-	"{{ .DTOImportPath }}"
 	"cgin/pkg/errs"
 	"cgin/pkg/response"
 )
 
-// Service 定义 {{ .ChineseName }} 业务用例契约。
+// List{{ .PascalName }}Filter 查询过滤参数。
+type List{{ .PascalName }}Filter struct {
+	Page     int
+	PageSize int
+	Search   string
+	Status   string
+}
+
+// Create{{ .PascalName }}Params 创建入参。
+type Create{{ .PascalName }}Params struct {
+	Name        string
+	Description string
+	Status      string
+}
+
+// Update{{ .PascalName }}Params 更新入参。
+type Update{{ .PascalName }}Params struct {
+	Name        *string
+	Description *string
+	Status      *string
+}
+
+// {{ .PascalName }}Service 定义 {{ .ChineseName }} 业务用例契约。
 type {{ .PascalName }}Service interface {
-	List(ctx context.Context, query {{ .DTOPackage }}.List{{ .PascalName }}QueryParams) ([]{{ .DTOPackage }}.{{ .PascalName }}Resource, response.Meta, error)
-	GetByID(ctx context.Context, id string) (*{{ .DTOPackage }}.{{ .PascalName }}Resource, error)
-	Create(ctx context.Context, req {{ .DTOPackage }}.Create{{ .PascalName }}Body) (*{{ .DTOPackage }}.{{ .PascalName }}Resource, error)
-	Update(ctx context.Context, id string, req {{ .DTOPackage }}.Update{{ .PascalName }}Body) (*{{ .DTOPackage }}.{{ .PascalName }}Resource, error)
+	List(ctx context.Context, filter List{{ .PascalName }}Filter) ([]sqlc.{{ .PascalName }}, response.Meta, error)
+	GetByID(ctx context.Context, id string) (*sqlc.{{ .PascalName }}, error)
+	Create(ctx context.Context, params Create{{ .PascalName }}Params) (*sqlc.{{ .PascalName }}, error)
+	Update(ctx context.Context, id string, params Update{{ .PascalName }}Params) (*sqlc.{{ .PascalName }}, error)
 	Delete(ctx context.Context, id string) error
 }
 
@@ -28,25 +48,25 @@ type {{ .CamelName }}Service struct {
 	db *database.DB
 }
 
-// NewService 构造 {{ .ChineseName }} 业务服务实例。
+// New{{ .PascalName }}Service 构造 {{ .ChineseName }} 业务服务实例。
 func New{{ .PascalName }}Service(db *database.DB) {{ .PascalName }}Service {
 	return &{{ .CamelName }}Service{db: db}
 }
 
-// List 分页查询{{ .ChineseName }}，总数由 count(*) OVER () 单查询返回。
-func (s *{{ .CamelName }}Service) List(ctx context.Context, query {{ .DTOPackage }}.List{{ .PascalName }}QueryParams) ([]{{ .DTOPackage }}.{{ .PascalName }}Resource, response.Meta, error) {
-	page := max(query.Page, 1)
-	pageSize := min(max(query.PageSize, 1), 100)
+// List 分页查询{{ .ChineseName }}。
+func (s *{{ .CamelName }}Service) List(ctx context.Context, filter List{{ .PascalName }}Filter) ([]sqlc.{{ .PascalName }}, response.Meta, error) {
+	page := max(filter.Page, 1)
+	pageSize := min(max(filter.PageSize, 1), 100)
 
 	params := sqlc.List{{ .PluralPascal }}Params{
 		PageOffset: int64((page - 1) * pageSize),
 		PageLimit:  int64(pageSize),
 	}
-	if search := strings.TrimSpace(query.Search); search != "" {
+	if search := strings.TrimSpace(filter.Search); search != "" {
 		pattern := "%" + search + "%"
 		params.Search = &pattern
 	}
-	if status := strings.TrimSpace(query.Status); status != "" {
+	if status := strings.TrimSpace(filter.Status); status != "" {
 		params.Status = &status
 	}
 
@@ -59,14 +79,15 @@ func (s *{{ .CamelName }}Service) List(ctx context.Context, query {{ .DTOPackage
 	if len(rows) > 0 {
 		total = int(rows[0].TotalCount)
 	}
-	items := lo.Map(rows, func(row sqlc.List{{ .PluralPascal }}Row, _ int) {{ .DTOPackage }}.{{ .PascalName }}Resource {
-		return {{ .DTOPackage }}.To{{ .PascalName }}Resource(&row.{{ .PascalName }})
-	})
+	items := make([]sqlc.{{ .PascalName }}, len(rows))
+	for i, r := range rows {
+		items[i] = r.{{ .PascalName }}
+	}
 	return items, response.NewMeta(page, pageSize, total), nil
 }
 
 // GetByID 按主键查询{{ .ChineseName }}详情。
-func (s *{{ .CamelName }}Service) GetByID(ctx context.Context, id string) (*{{ .DTOPackage }}.{{ .PascalName }}Resource, error) {
+func (s *{{ .CamelName }}Service) GetByID(ctx context.Context, id string) (*sqlc.{{ .PascalName }}, error) {
 	entity, err := s.db.Queries(ctx).Get{{ .PascalName }}ByID(ctx, sqlc.Get{{ .PascalName }}ByIDParams{ID: id})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -74,57 +95,45 @@ func (s *{{ .CamelName }}Service) GetByID(ctx context.Context, id string) (*{{ .
 		}
 		return nil, errs.Internal(err)
 	}
-
-	res := {{ .DTOPackage }}.To{{ .PascalName }}Resource(&entity)
-	return &res, nil
+	return &entity, nil
 }
 
 // Create 创建{{ .ChineseName }}。
-func (s *{{ .CamelName }}Service) Create(ctx context.Context, req {{ .DTOPackage }}.Create{{ .PascalName }}Body) (*{{ .DTOPackage }}.{{ .PascalName }}Resource, error) {
+func (s *{{ .CamelName }}Service) Create(ctx context.Context, params Create{{ .PascalName }}Params) (*sqlc.{{ .PascalName }}, error) {
 	entity, err := s.db.Queries(ctx).Create{{ .PascalName }}(ctx, sqlc.Create{{ .PascalName }}Params{
-		Name:        strings.TrimSpace(req.Name),
-		Description: &req.Description,
-		Status:      req.Status,
+		Name:        strings.TrimSpace(params.Name),
+		Description: &params.Description,
+		Status:      params.Status,
 	})
 	if err != nil {
 		return nil, errs.Internal(err)
 	}
-
-	res := {{ .DTOPackage }}.To{{ .PascalName }}Resource(&entity)
-	return &res, nil
+	return &entity, nil
 }
 
 // Update 单语句局部更新{{ .ChineseName }}。
-func (s *{{ .CamelName }}Service) Update(ctx context.Context, id string, req {{ .DTOPackage }}.Update{{ .PascalName }}Body) (*{{ .DTOPackage }}.{{ .PascalName }}Resource, error) {
-	params := sqlc.Update{{ .PascalName }}Params{ID: id, Name: req.Name, Status: req.Status}
-	if req.Description != nil {
-		trimmed := strings.TrimSpace(*req.Description)
-		if trimmed == "" {
-			params.ClearDescription = true
-		} else {
-			params.Description = &trimmed
-		}
+func (s *{{ .CamelName }}Service) Update(ctx context.Context, id string, params Update{{ .PascalName }}Params) (*sqlc.{{ .PascalName }}, error) {
+	updateParams := sqlc.Update{{ .PascalName }}Params{ID: id, Name: params.Name, Status: params.Status}
+	if params.Description != nil {
+		updateParams.Description = params.Description
 	}
-
-	entity, err := s.db.Queries(ctx).Update{{ .PascalName }}(ctx, params)
+	entity, err := s.db.Queries(ctx).Update{{ .PascalName }}(ctx, updateParams)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, errs.NotFound("{{ .KebabName }} not found")
 		}
 		return nil, errs.Internal(err)
 	}
-
-	res := {{ .DTOPackage }}.To{{ .PascalName }}Resource(&entity)
-	return &res, nil
+	return &entity, nil
 }
 
-// Delete 软删除{{ .ChineseName }}。
+// Delete 按主键删除{{ .ChineseName }}。
 func (s *{{ .CamelName }}Service) Delete(ctx context.Context, id string) error {
-	affected, err := s.db.Queries(ctx).SoftDelete{{ .PascalName }}(ctx, sqlc.SoftDelete{{ .PascalName }}Params{ID: id})
+	rowsAffected, err := s.db.Queries(ctx).Delete{{ .PascalName }}(ctx, sqlc.Delete{{ .PascalName }}Params{ID: id})
 	if err != nil {
 		return errs.Internal(err)
 	}
-	if affected == 0 {
+	if rowsAffected == 0 {
 		return errs.NotFound("{{ .KebabName }} not found")
 	}
 	return nil

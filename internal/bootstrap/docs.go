@@ -8,7 +8,7 @@ import (
 	"github.com/gin-contrib/cache/persistence"
 	"github.com/gin-gonic/gin"
 
-	"cgin/shared/apidocs"
+	"cgin/api"
 )
 
 // 文档页面与 OpenAPI 规范路由路径常量。
@@ -168,7 +168,7 @@ func serveClientReference(c *gin.Context) {
 
 // serveClientReferenceSpec 原样返回编进二进制的客户端规范。
 func serveClientReferenceSpec(c *gin.Context) {
-	c.Data(http.StatusOK, "application/json; charset=utf-8", apidocs.Spec)
+	c.Data(http.StatusOK, "application/json; charset=utf-8", api.Spec)
 }
 
 // serveAdminReference 返回管理端 Scalar 的宿主页。
@@ -178,5 +178,5 @@ func serveAdminReference(c *gin.Context) {
 
 // serveAdminReferenceSpec 原样返回编进二进制的管理端规范。
 func serveAdminReferenceSpec(c *gin.Context) {
-	c.Data(http.StatusOK, "application/json; charset=utf-8", apidocs.AdminSpec)
+	c.Data(http.StatusOK, "application/json; charset=utf-8", api.AdminSpec)
 }

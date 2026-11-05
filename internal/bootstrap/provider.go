@@ -7,6 +7,9 @@ import (
 	"github.com/samber/do/v2"
 
 	"cgin/internal/config"
+	"cgin/internal/feature/admin"
+	"cgin/internal/feature/client"
+	"cgin/internal/feature/system"
 	"cgin/pkg/eventbus"
 	"cgin/pkg/logger"
 )
@@ -22,7 +25,9 @@ func NewInjector(options ...func(*do.InjectorOpts)) *do.RootScope {
 		InfraPackage,
 		SubsystemPackage,
 		SecurityPackage,
-		ServicesPackage,
+		system.Package,
+		client.Package,
+		admin.Package,
 		HandlersPackage,
 	)
 }

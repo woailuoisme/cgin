@@ -12,7 +12,7 @@ import (
 
 	"cgin/internal/config"
 	"cgin/internal/database"
-	admindto "cgin/internal/dto/admin"
+	useradminv1 "cgin/internal/feature/admin/user/v1"
 	"cgin/internal/user"
 	"cgin/pkg/authorization"
 	"cgin/pkg/cache"
@@ -141,7 +141,7 @@ var InfraPackage = do.Package(
 
 	// 10. 国际化参数校验器
 	do.Lazy(func(i do.Injector) (*validator.Validator, error) {
-		val, err := validator.New(slices.Concat(user.ValidationOptions(), admindto.ValidationOptions())...)
+		val, err := validator.New(slices.Concat(user.ValidationOptions(), useradminv1.ValidationOptions())...)
 		if err != nil {
 			return nil, err
 		}

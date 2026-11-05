@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"cgin/internal/database/sqlc"
+	{{ .ServicePackage }} "{{ .ServiceImportPath }}"
 	"cgin/pkg/response"
 )
 
@@ -41,22 +42,32 @@ func (q *List{{ .PascalName }}QueryParams) Normalize() {
 	q.Sort = strings.TrimSpace(q.Sort)
 }
 
+// ToFilter 转换为领域查询过滤参数。
+func (q *List{{ .PascalName }}QueryParams) ToFilter() {{ .ServicePackage }}.List{{ .PascalName }}Filter {
+	return {{ .ServicePackage }}.List{{ .PascalName }}Filter{
+		Page:     q.Page,
+		PageSize: q.PageSize,
+		Search:   q.Search,
+		Status:   q.Status,
+	}
+}
+
 // Create{{ .PascalName }}Body 创建{{ .ChineseName }}请求载荷。
 type Create{{ .PascalName }}Body struct {
 	// 业务名称
 	Name string `json:"name" example:"示例名称" validate:"required,min=1,max=100"`
 	// 详细描述
 	Description string `json:"description" example:"这是详细的业务描述" validate:"omitempty,max=500"`
-	// 状态 (active: 正常, inactive: 停用)
-	Status string `json:"status" example:"active" enums:"active,inactive" validate:"omitempty,oneof=active inactive"`
+	// 业务状态 (active: 正常, inactive: 停用)
+	Status string `json:"status" example:"active" enums:"active,inactive" validate:"required,oneof=active inactive"`
 }
 
-// Normalize 规范化创建入参。
-func (b *Create{{ .PascalName }}Body) Normalize() {
-	b.Name = strings.TrimSpace(b.Name)
-	b.Description = strings.TrimSpace(b.Description)
-	if b.Status == "" {
-		b.Status = "active"
+// ToParams 转换为领域创建入参。
+func (b *Create{{ .PascalName }}Body) ToParams() {{ .ServicePackage }}.Create{{ .PascalName }}Params {
+	return {{ .ServicePackage }}.Create{{ .PascalName }}Params{
+		Name:        b.Name,
+		Description: b.Description,
+		Status:      b.Status,
 	}
 }
 
@@ -66,71 +77,54 @@ type Update{{ .PascalName }}Body struct {
 	Name *string `json:"name" example:"更新后的名称" validate:"omitempty,min=1,max=100"`
 	// 详细描述
 	Description *string `json:"description" example:"更新后的业务描述" validate:"omitempty,max=500"`
-	// 状态 (active: 正常, inactive: 停用)
+	// 业务状态 (active: 正常, inactive: 停用)
 	Status *string `json:"status" example:"inactive" enums:"active,inactive" validate:"omitempty,oneof=active inactive"`
 }
 
-// Normalize 规范化更新入参。
-func (b *Update{{ .PascalName }}Body) Normalize() {
-	if b.Name != nil {
-		trimmed := strings.TrimSpace(*b.Name)
-		b.Name = &trimmed
-	}
-	if b.Description != nil {
-		trimmed := strings.TrimSpace(*b.Description)
-		b.Description = &trimmed
-	}
-	if b.Status != nil {
-		trimmed := strings.TrimSpace(*b.Status)
-		b.Status = &trimmed
+// ToParams 转换为领域更新入参。
+func (b *Update{{ .PascalName }}Body) ToParams() {{ .ServicePackage }}.Update{{ .PascalName }}Params {
+	return {{ .ServicePackage }}.Update{{ .PascalName }}Params{
+		Name:        b.Name,
+		Description: b.Description,
+		Status:      b.Status,
 	}
 }
 
-// {{ .PascalName }}Resource {{ .ChineseName }}对外暴露的视图响应资源。
+// {{ .PascalName }}Resource 描述单个 {{ .ChineseName }} 的视图模型。
 type {{ .PascalName }}Resource struct {
-	// 唯一标识符 (UUID)
+	// 唯一标识符
 	ID string `json:"id" example:"019550b7-3b2d-7041-8c43-26154388e36e"`
 	// 业务名称
 	Name string `json:"name" example:"示例名称"`
 	// 详细描述
-	Description *string `json:"description,omitempty" example:"业务描述说明"`
-	// 状态 (active: 正常, inactive: 停用)
-	Status string `json:"status" example:"active" enums:"active,inactive"`
-	// 创建时间 (RFC3339 UTC)
-	CreatedAt time.Time `json:"createdAt" example:"2026-01-01T00:00:00Z"`
-	// 更新时间 (RFC3339 UTC)
-	UpdatedAt time.Time `json:"updatedAt" example:"2026-01-01T00:00:00Z"`
+	Description *string `json:"description" example:"这是详细的业务描述"`
+	// 业务状态 (active/inactive)
+	Status string `json:"status" example:"active"`
+	// 创建时间 (ISO 8601 UTC)
+	CreatedAt time.Time `json:"createdAt" example:"2026-03-01T12:00:00Z"`
+	// 更新时间 (ISO 8601 UTC)
+	UpdatedAt time.Time `json:"updatedAt" example:"2026-03-01T12:00:00Z"`
 }
 
-// {{ .PascalName }}PageResource {{ .ChineseName }}分页列表响应结构。
+// {{ .PascalName }}PageResource 描述 {{ .ChineseName }} 的分页列表响应载荷。
 type {{ .PascalName }}PageResource struct {
-	// 数据项列表
+	// 列表数据项
 	Items []{{ .PascalName }}Resource `json:"items"`
-	// 分页元数据
+	// 分页元信息
 	Meta response.Meta `json:"meta"`
 }
 
-// To{{ .PascalName }}Resource 将数据库实体转换为外部响应资源。
+// To{{ .PascalName }}Resource 将持久化数据实体转换为对外传输模型。
 func To{{ .PascalName }}Resource(entity *sqlc.{{ .PascalName }}) {{ .PascalName }}Resource {
 	if entity == nil {
 		return {{ .PascalName }}Resource{}
 	}
-
 	return {{ .PascalName }}Resource{
 		ID:          entity.ID,
 		Name:        entity.Name,
 		Description: entity.Description,
 		Status:      entity.Status,
-		CreatedAt:   entity.CreatedAt.UTC(),
-		UpdatedAt:   entity.UpdatedAt.UTC(),
+		CreatedAt:   entity.CreatedAt,
+		UpdatedAt:   entity.UpdatedAt,
 	}
 }
-
-type (
-	IDURI                      = {{ .PascalName }}PathParams
-	List{{ .PascalName }}Query    = List{{ .PascalName }}QueryParams
-	Create{{ .PascalName }}Request = Create{{ .PascalName }}Body
-	Update{{ .PascalName }}Request = Update{{ .PascalName }}Body
-	{{ .PascalName }}Response    = {{ .PascalName }}Resource
-	{{ .PascalName }}Page        = {{ .PascalName }}PageResource
-)

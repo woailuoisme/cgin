@@ -27,8 +27,8 @@ import (
 	"golang.org/x/net/websocket"
 
 	"cgin/internal/config"
-	"cgin/internal/handler"
-	"cgin/internal/service"
+	clientrealtime "cgin/internal/feature/client/realtime"
+	realtimev1 "cgin/internal/feature/client/realtime/v1"
 	platformRealtime "cgin/pkg/realtime"
 )
 
@@ -283,12 +283,12 @@ func TestRealtime_ProxySubscribeCallbackContract(t *testing.T) {
 
 	appCfg := &config.Config{Realtime: cfg}
 	gw := platformRealtime.NewManager(&cfg, reg)
-	svc := service.NewRealtimeService(service.RealtimeDeps{
+	svc := clientrealtime.NewRealtimeService(clientrealtime.RealtimeDeps{
 		Gateway: gw,
 		Cfg:     appCfg,
 		Secret:  appCfg.Realtime.Secret,
 	})
-	handler := handler.NewRealtimeHandler(svc)
+	handler := realtimev1.NewHandler(svc)
 
 	router := gin.New()
 	router.POST("/v1/realtime/proxy/subscribe", handler.ProxySubscribe)

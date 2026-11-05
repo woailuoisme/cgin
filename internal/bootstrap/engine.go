@@ -8,50 +8,50 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"cgin/internal/config"
-	"cgin/internal/handler"
-	adminhandler "cgin/internal/handler/admin"
+	"cgin/internal/feature/admin"
+	authadminv1 "cgin/internal/feature/admin/auth/v1"
+	useradminv1 "cgin/internal/feature/admin/user/v1"
+	"cgin/internal/feature/client"
+	authclientv1 "cgin/internal/feature/client/auth/v1"
+	mediaclientv1 "cgin/internal/feature/client/media/v1"
+	paymentclientv1 "cgin/internal/feature/client/payment/v1"
+	profileclientv1 "cgin/internal/feature/client/profile/v1"
+	realtimeclientv1 "cgin/internal/feature/client/realtime/v1"
+	"cgin/internal/feature/system"
 	"cgin/internal/middleware"
 	"cgin/internal/middleware/global"
-	"cgin/internal/route"
-	adminroute "cgin/internal/route/admin"
 	"cgin/pkg/errs"
 )
 
 // routeHandlers 汇总各模块的 HTTP 处理器，由装配方填充。
 type routeHandlers struct {
-	system    *handler.SystemHandler
-	auth      *handler.AuthHandler
-	profile   *handler.ProfileHandler
-	media     *handler.MediaHandler
-	admin     *adminhandler.UserHandler
-	adminAuth *adminhandler.AuthHandler
-	realtime  *handler.RealtimeHandler
-	payment   *handler.PaymentHandler
+	system *system.SystemHandler
+	client client.Handlers
+	admin  admin.Handlers
 }
 
-// mount 把全部模块挂载到 /v1 分组下；各 RegisterRoutes 的签名差异统一在这里抹平。
+// mount 把全部模块挂载到 /v1 分组下。
 func (h routeHandlers) mount(v1 *gin.RouterGroup, mw *middleware.Middleware) {
-	route.RegisterAuthRoutes(v1, h.auth, mw)
-	route.RegisterProfileRoutes(v1, h.profile, mw)
-	route.RegisterMediaRoutes(v1, h.media, mw)
-	adminroute.RegisterAdminAuthRoutes(v1, h.adminAuth, mw)
-	adminroute.RegisterAdminUserRoutes(v1, h.admin, mw)
-	route.RegisterRealtimeRoutes(v1, h.realtime, mw)
-	route.RegisterPaymentRoutes(v1, h.payment, mw)
+	client.RegisterRoutes(v1, h.client, mw)
+	admin.RegisterRoutes(v1, h.admin, mw)
 }
 
 // zeroHandlers 提供仅用于撑起路由表的零值处理器。
 // 探测只登记端点不执行处理器，但指针须非 nil 且类型正确，因为 RegisterRoutes 会保存它们。
 func zeroHandlers() routeHandlers {
 	return routeHandlers{
-		system:    &handler.SystemHandler{},
-		auth:      &handler.AuthHandler{},
-		profile:   &handler.ProfileHandler{},
-		media:     &handler.MediaHandler{},
-		admin:     &adminhandler.UserHandler{},
-		adminAuth: &adminhandler.AuthHandler{},
-		realtime:  &handler.RealtimeHandler{},
-		payment:   &handler.PaymentHandler{},
+		system: &system.SystemHandler{},
+		client: client.Handlers{
+			Auth:     &authclientv1.Handler{},
+			Profile:  &profileclientv1.Handler{},
+			Media:    &mediaclientv1.Handler{},
+			Payment:  &paymentclientv1.Handler{},
+			Realtime: &realtimeclientv1.Handler{},
+		},
+		admin: admin.Handlers{
+			Auth: &authadminv1.Handler{},
+			User: &useradminv1.Handler{},
+		},
 	}
 }
 
@@ -89,10 +89,10 @@ func buildEngine(
 		globalMW.CORS(),
 		globalMW.I18n(),
 
-		// 异常治理
-		globalMW.ErrorHandler(),
+		// 异常治理与超时控制（ErrorHandler 在 Timeout 内部执行，确保错误状态码写入 Timeout 缓冲）
 		globalMW.Recovery(),
 		globalMW.Timeout(),
+		globalMW.ErrorHandler(),
 
 		// 载荷控制
 		globalMW.BodyLimit(),
@@ -111,7 +111,7 @@ func buildEngine(
 	engine.NoMethod(abortWithError(errs.MethodNotAllowed("")))
 
 	// 注册根路径与系统探针路由（/、/livez、/readyz）
-	route.RegisterSystemRoutes(engine, handlers.system)
+	system.RegisterRoutes(engine, handlers.system)
 
 	// 仅在开启 ENABLE_DOCS 时注册 API 文档路由
 	if cfg.App.EnableDocs {

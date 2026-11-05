@@ -65,6 +65,7 @@ func newEngine(t *testing.T) *gin.Engine {
 	t.Setenv("APP_ENV", "test")
 	// 本地存储驱动默认写到工作目录下的 ./storage/app/uploads；测试改到进程级临时目录，
 	// 免得在仓库里留下运行时产物（详见 appStorageRoot 的说明）。
+	t.Setenv("FILESYSTEM_DISK", "local")
 	t.Setenv("STORAGE_LOCAL_ROOT", appStorageRoot)
 
 	if reusedApp == nil {

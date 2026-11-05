@@ -40,7 +40,8 @@ type GeneratorOptions struct {
 // TemplateData 注入到模板渲染上下文的元数据对象。
 type TemplateData struct {
 	ModuleFile        string
-	LayerDir          string
+	FeatureDir        string
+	V1Dir             string
 	DTOImportPath     string
 	HandlerImportPath string
 	ServiceImportPath string
@@ -100,20 +101,23 @@ func BuildTemplateData(opts GeneratorOptions) TemplateData {
 
 	basePkg := strings.ReplaceAll(singularSnake, "_", "")
 	moduleFile := basePkg + ".go"
-	scopePrefix := ""
-	dtoPackage := "dto"
-	handlerPackage := "handler"
-	servicePackage := "service"
-	routesPackage := "route"
-	routesPath := filepath.Join("internal", "route", moduleFile)
+
+	scopePrefix := "client"
+	scopePascal := "Client"
 	if opts.IsAdmin {
 		scopePrefix = "admin"
-		dtoPackage = "admindto"
-		handlerPackage = "adminhandler"
-		servicePackage = "adminservice"
-		routesPackage = "adminroute"
-		routesPath = filepath.Join("internal", "route", "admin", moduleFile)
+		scopePascal = "Admin"
 	}
+
+	featureDir := filepath.Join("internal", "feature", scopePrefix, singularSnake)
+	v1Dir := filepath.Join(featureDir, "v1")
+	servicePackage := scopePrefix + basePkg
+	serviceImportPath := filepath.ToSlash(filepath.Join("cgin", featureDir))
+
+	dtoPackage := "v1"
+	handlerPackage := "v1"
+	routesPackage := "v1"
+	routesPath := filepath.Join(v1Dir, "router.go")
 
 	chinese := opts.ChineseName
 	if chinese == "" {
@@ -139,17 +143,13 @@ func BuildTemplateData(opts GeneratorOptions) TemplateData {
 		tableAlias = singularSnake[:1]
 	}
 
-	scopePascal := "Client"
-	if opts.IsAdmin {
-		scopePascal = "Admin"
-	}
-
 	return TemplateData{
 		ModuleFile:        moduleFile,
-		LayerDir:          scopePrefix,
-		DTOImportPath:     filepath.Join("cgin", "internal", "dto", scopePrefix),
-		HandlerImportPath: filepath.Join("cgin", "internal", "handler", scopePrefix),
-		ServiceImportPath: filepath.Join("cgin", "internal", "service", scopePrefix),
+		FeatureDir:        featureDir,
+		V1Dir:             v1Dir,
+		DTOImportPath:     serviceImportPath,
+		HandlerImportPath: serviceImportPath,
+		ServiceImportPath: serviceImportPath,
 		RoutesPath:        routesPath,
 		DTOPackage:        dtoPackage,
 		HandlerPackage:    handlerPackage,
@@ -207,29 +207,27 @@ func (p *CRUDPlan) Name() string { return p.opts.Name }
 // Data 返回模板上下文数据。
 func (p *CRUDPlan) Data() TemplateData { return p.data }
 
-func (p *CRUDPlan) moduleDirs() (dtoDir, handlerDir, serviceDir string) {
-	return filepath.Join("internal", "dto", p.data.LayerDir),
-		filepath.Join("internal", "handler", p.data.LayerDir),
-		filepath.Join("internal", "service", p.data.LayerDir)
+func (p *CRUDPlan) moduleDirs() (featureDir, v1Dir string) {
+	return p.data.FeatureDir, p.data.V1Dir
 }
 
 // Files 返回 CRUD 规划中全部目标文件及渲染模板。
 func (p *CRUDPlan) Files() ([]PlannedFile, error) {
-	dtoDir, handlerDir, serviceDir := p.moduleDirs()
+	featureDir, v1Dir := p.moduleDirs()
 	return []PlannedFile{
 		{RelPath: filepath.Join("database", "queries", p.data.PluralSnake+".sql"), Template: "queries.tmpl", Data: p.data},
 		{RelPath: filepath.Join("database", "schemas", p.data.PluralSnake+".sql"), Template: "schema.tmpl", Data: p.data},
-		{RelPath: filepath.Join(dtoDir, p.data.ModuleFile), Template: "dto.tmpl", Data: p.data},
-		{RelPath: filepath.Join(serviceDir, p.data.ModuleFile), Template: "service.tmpl", Data: p.data},
-		{RelPath: filepath.Join(handlerDir, p.data.ModuleFile), Template: "handler.tmpl", Data: p.data},
-		{RelPath: p.data.RoutesPath, Template: "route.tmpl", Data: p.data},
+		{RelPath: filepath.Join(featureDir, "service.go"), Template: "service.tmpl", Data: p.data},
+		{RelPath: filepath.Join(v1Dir, "dto.go"), Template: "dto.tmpl", Data: p.data},
+		{RelPath: filepath.Join(v1Dir, "handler.go"), Template: "handler.tmpl", Data: p.data},
+		{RelPath: filepath.Join(v1Dir, "router.go"), Template: "route.tmpl", Data: p.data},
 	}, nil
 }
 
 // CleanupDirs 返回该模块在销毁回退时需要尝试清理的目录列表。
 func (p *CRUDPlan) CleanupDirs() []string {
-	dtoDir, handlerDir, serviceDir := p.moduleDirs()
-	return []string{dtoDir, handlerDir, serviceDir}
+	featureDir, v1Dir := p.moduleDirs()
+	return []string{v1Dir, featureDir}
 }
 
 // Pipeline 提供可插拔的代码生成与回退执行管线引擎。

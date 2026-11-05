@@ -3,15 +3,16 @@ package {{ .RoutesPackage }}
 import (
 	"github.com/gin-gonic/gin"
 
-	"{{ .HandlerImportPath }}"
 	"cgin/internal/middleware"
+{{- if .IsAdmin }}
 	"cgin/pkg/authorization"
+{{- end }}
 )
 
 {{ if .IsAdmin }}
-// {{ .RoutesFunc }} 注册管理端点 ({{ .RoutePath }})。
-func {{ .RoutesFunc }}(router *gin.RouterGroup, handler *{{ .HandlerPackage }}.Handler, mw *middleware.Middleware) {
-	group := router.Group("{{ .RoutePath }}", mw.Throttle(middleware.TierAuthenticated), mw.Auth())
+// RegisterRoutes 注册管理端点 ({{ .RoutePath }})。
+func RegisterRoutes(router *gin.RouterGroup, handler *Handler, mw *middleware.Middleware) {
+	group := router.Group("{{ .RoutePath }}", mw.Auth("admin"), mw.Throttle(middleware.TierAuthenticated))
 
 	group.GET("", mw.Can(authorization.Resource("{{ .PluralSnake }}"), authorization.ActionList), handler.List)
 	group.POST("", mw.Can(authorization.Resource("{{ .PluralSnake }}"), authorization.ActionCreate), handler.Create)
@@ -20,9 +21,9 @@ func {{ .RoutesFunc }}(router *gin.RouterGroup, handler *{{ .HandlerPackage }}.H
 	group.DELETE("/:id", mw.Can(authorization.Resource("{{ .PluralSnake }}"), authorization.ActionDelete), handler.Delete)
 }
 {{ else }}
-// {{ .RoutesFunc }} 注册业务路由端点 ({{ .RoutePath }})。
-func {{ .RoutesFunc }}(router *gin.RouterGroup, handler *{{ .HandlerPackage }}.Handler, mw *middleware.Middleware) {
-	group := router.Group("{{ .RoutePath }}", mw.Throttle(middleware.TierAuthenticated), mw.Auth())
+// RegisterRoutes 注册业务路由端点 ({{ .RoutePath }})。
+func RegisterRoutes(router *gin.RouterGroup, handler *Handler, mw *middleware.Middleware) {
+	group := router.Group("{{ .RoutePath }}", mw.Auth("client"), mw.Throttle(middleware.TierAuthenticated))
 
 	group.GET("", handler.List)
 	group.POST("", handler.Create)

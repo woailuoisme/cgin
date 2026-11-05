@@ -60,6 +60,16 @@ var SecurityPackage = do.Package(
 		}, nil
 	}),
 
+	do.LazyNamed("client_guard", func(i do.Injector) (*platformauth.Guard[*sqlc.User], error) {
+		guards := do.MustInvoke[AuthGuards](i)
+		return guards.Client, nil
+	}),
+
+	do.LazyNamed("admin_guard", func(i do.Injector) (*platformauth.Guard[*sqlc.User], error) {
+		guards := do.MustInvoke[AuthGuards](i)
+		return guards.Admin, nil
+	}),
+
 	// 5. 认证管理器
 	do.Lazy(func(i do.Injector) (*platformauth.Manager, error) {
 		guards := do.MustInvoke[AuthGuards](i)
