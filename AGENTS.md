@@ -34,7 +34,7 @@
 
 | 命令分类 | 执行指令 | 功能说明与关键约束 |
 | :--- | :--- | :--- |
-| **开发与运行** | `just dev` | 多进程并发热重载（基于 `concurrently` 同时启动 API 与 Worker 双 Air 实例）。 |
+| **开发与运行** | `just dev` | 多进程并发热重载（基于 `process-compose` 统一编排并启动 API 与 Worker 双 Air 实例，支持交互式 TUI 与 `-t=false` 流式模式）。 |
 | | `just dev-api` | 仅启动 API 服务的 Air 热重载（自动释放端口占用）。 |
 | | `just dev-worker` | 仅启动 Worker 服务的 Air 热重载（基于 `.air.worker.toml`）。 |
 | | `just run [ARGS]` | 直接运行 API 服务（如 `just run --port 3400`）。 |

@@ -15,10 +15,7 @@ atlas = "latest"                                   # 声明式 schema 迁移管�
 # 质量门禁与任务编排
 lefthook = "latest"                                # Git Hooks 管理器（驱动 pre-commit / pre-push）
 actionlint = "latest"                              # GitHub Actions 流程校验
-"npm:concurrently" = "latest"                      # 多任务并发执行（just dev）
-
-[settings]
-npm.package_manager = "bun"
+process-compose = "latest"                         # 现代多进程编排管理器（just dev）
 
 [env]
 _.file = ".env"

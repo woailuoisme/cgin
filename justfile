@@ -7,11 +7,9 @@ set dotenv-load := true
 default:
     @just --list
 
-# 并行热重载启动 API 与 Worker
-dev: free-port
-    concurrently -n "api,worker" -c "bgCyan.black.bold,bgYellow.black.bold" --kill-others \
-        "just dev-api" \
-        "just dev-worker"
+# 并行热重载启动 API 与 Worker（基于 process-compose，默认 TUI 交互面板；传参 -t=false 可启用纯控制台流式日志）
+dev *ARGS: free-port
+    process-compose up {{ARGS}}
 
 # 仅热重载 API（Air）
 dev-api: free-port

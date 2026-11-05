@@ -1,0 +1,20 @@
+version: "0.5"
+
+processes:
+  api:
+    command: "just dev-api"
+    availability:
+      restart: "always"
+    readiness_probe:
+      http_get:
+        host: "127.0.0.1"
+        port: 3300
+        path: "/healthz"
+      initial_delay_seconds: 2
+      period_seconds: 5
+      timeout_seconds: 2
+
+  worker:
+    command: "just dev-worker"
+    availability:
+      restart: "always"
