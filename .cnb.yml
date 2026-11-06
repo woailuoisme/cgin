@@ -41,26 +41,7 @@ main:
             helm package deploy/helm/cgin --version "${CHART_VERSION}" --app-version "${APP_VERSION}" -d .
             helm push "cgin-${CHART_VERSION}.tgz" "oci://${HELM_REGISTRY}/${TARGET_NAMESPACE}"
 
-# ── 独立 Chart 标签发布 (chart-v*)：仅发布 Helm Chart ────────────────
-chart-v*:
-  tag_push:
-    - docker:
-        image: alpine/helm:4
-      stages:
-        - name: Package and push Helm chart to CNB
-          script: |
-            set -euo pipefail
-            TAG_NAME="${CNB_BRANCH##*/}"
-            CHART_VERSION="${TAG_NAME#chart-v}"
-            APP_VERSION=$(grep '^appVersion:' deploy/helm/cgin/Chart.yaml | awk '{print $2}' | tr -d '"')
-            HELM_REGISTRY="${CNB_HELM_REGISTRY:-helm.cnb.cool}"
-            TARGET_NAMESPACE="${CNB_GROUP_SLUG_LOWERCASE:-${CNB_REPO_SLUG_LOWERCASE}}"
-
-            echo "${CNB_TOKEN}" | helm registry login "${HELM_REGISTRY}" -u "${CNB_TOKEN_USER_NAME:-cnb}" --password-stdin
-            helm package deploy/helm/cgin --version "${CHART_VERSION}" --app-version "${APP_VERSION}" -d .
-            helm push "cgin-${CHART_VERSION}.tgz" "oci://${HELM_REGISTRY}/${TARGET_NAMESPACE}"
-
-# ── 正式全量发版 (v*)：镜像与 Chart 原子化联动自动发布 ───────────────
+# ── 正式全量发版 (v*)：仅自动构建并推送 Release 镜像 ───────────────
 v*:
   tag_push:
     - services:
@@ -78,18 +59,3 @@ v*:
               -t "${REGISTRY}:${VERSION}" \
               -t "${REGISTRY}:latest" \
               --push .
-
-    - docker:
-        image: alpine/helm:4
-      stages:
-        - name: Package and push Helm chart to CNB
-          script: |
-            set -euo pipefail
-            VERSION="${CNB_BRANCH##*/}"
-            CHART_VERSION="${VERSION#v}"
-            HELM_REGISTRY="${CNB_HELM_REGISTRY:-helm.cnb.cool}"
-            TARGET_NAMESPACE="${CNB_GROUP_SLUG_LOWERCASE:-${CNB_REPO_SLUG_LOWERCASE}}"
-
-            echo "${CNB_TOKEN}" | helm registry login "${HELM_REGISTRY}" -u "${CNB_TOKEN_USER_NAME:-cnb}" --password-stdin
-            helm package deploy/helm/cgin --version "${CHART_VERSION}" --app-version "${VERSION}" -d .
-            helm push "cgin-${CHART_VERSION}.tgz" "oci://${HELM_REGISTRY}/${TARGET_NAMESPACE}"
