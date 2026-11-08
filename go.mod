@@ -12,9 +12,9 @@ require (
 	github.com/brianvoe/gofakeit/v7 v7.18.1
 	github.com/caarlos0/env/v11 v11.4.2
 	github.com/casbin/casbin/v2 v2.135.0
-	github.com/centrifugal/gocent/v3 v3.4.0
+	github.com/centrifugal/gocent/v4 v4.0.0
 	github.com/charmbracelet/x/term v0.2.2
-	github.com/dromara/carbon/v2 v2.7.0
+	github.com/dromara/carbon/v2 v2.7.1
 	github.com/dustin/go-humanize v1.1.0
 	github.com/exaring/otelpgx v0.13.0
 	github.com/failsafe-go/failsafe-go v0.9.8

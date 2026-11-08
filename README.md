@@ -13,7 +13,7 @@
 | **缓存体系** | Valkey + rueidis (`v1.0.79`) | 高性能 Redis 协议兼容缓存与分布式锁 |
 | **鉴权授权** | JWT (`golang-jwt/v5`) + Casbin (`casbin/v2`) | 无状态双令牌 + RBAC 静态访问控制矩阵 |
 | **异步与事件** | Watermill (`v1.5.3`) + Asynq (`v0.26.0`) | 内存事件总线/CQRS 路由与 Redis 分布式延迟队列 |
-| **实时通信** | Centrifugo (`gocent/v3`) | 连接凭据签发与私有频道鉴权代理 |
+| **实时通信** | Centrifugo (`gocent/v4`) | 连接凭据签发与私有频道鉴权代理 |
 | **依赖注入** | samber/do/v2 (`v2.1.0`) | 类型安全 IoC 容器与生命周期管理 |
 | **命令行** | spf13/cobra (`v1.10.2`) | Artisan 风格分层 CLI 系统 |
 | **结构化日志** | log/slog + slog-zerolog/v2 | 官方门面与 Zerolog 引擎，支持全链路脱敏 |

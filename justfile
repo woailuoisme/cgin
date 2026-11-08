@@ -2,6 +2,7 @@
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 set dotenv-load := true
+app_port := env("APP_PORT", "3300")
 
 # 列出全部任务
 default:
@@ -106,10 +107,12 @@ sqlc-diff:
     sqlc diff
 
 # 压测（wrk）
-bench path="/livez" *args="":
-    wrk -t4 -c200 -d30s --latency {{args}} "http://localhost:${APP_PORT:-3300}{{path}}"
+wrk path="/livez" *args="":
+    wrk -t4 -c200 -d30s --latency {{args}} "http://127.0.0.1:{{app_port}}{{path}}"
 
-alias wrk := bench
+oha:
+	oha -z 30s -c 200 --latency-correction http://127.0.0.1:{{app_port}}/livez
+
 
 # 应用未执行的 Atlas 迁移
 migrate:

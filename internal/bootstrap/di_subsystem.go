@@ -98,7 +98,7 @@ var SubsystemPackage = do.Package(
 	do.Lazy(func(i do.Injector) (platformRealtime.Gateway, error) {
 		cfg := do.MustInvoke[*config.Config](i)
 		reg := do.MustInvoke[*platformRealtime.Registry](i)
-		return platformRealtime.NewManager(&cfg.Realtime, reg), nil
+		return platformRealtime.NewManager(&cfg.Realtime, reg)
 	}),
 
 	// 8. 跨通道统一通知分发引擎

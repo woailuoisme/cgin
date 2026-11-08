@@ -2,7 +2,6 @@
 package realtime_test
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -115,14 +114,11 @@ func TestRegistryChannelAuthorization(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// publishCommand 是 Centrifugo HTTP API 单条管道命令（NDJSON，一行一条）的最小投影。
-type publishCommand struct {
-	Method string `json:"method"`
-	Params struct {
-		Channel        string          `json:"channel"`
-		Data           json.RawMessage `json:"data"`
-		IdempotencyKey string          `json:"idempotency_key"`
-	} `json:"params"`
+// publishRequest 是 Centrifugo HTTP API publish 请求体的最小投影。
+type publishRequest struct {
+	Channel        string          `json:"channel"`
+	Data           json.RawMessage `json:"data"`
+	IdempotencyKey string          `json:"idempotency_key"`
 }
 
 // TestManagerPublish 针对 Centrifugo HTTP 模拟服务验证发布动作与幂等键。
@@ -150,25 +146,24 @@ func TestManagerPublish(t *testing.T) {
 		Secret:  testSecret,
 	}
 
-	gw := realtime.NewManager(cfg, nil)
+	gw, err := realtime.NewManager(cfg, nil)
+	require.NoError(t, err)
 	require.NotNil(t, gw.Registry())
 	assert.True(t, gw.Enabled())
 	assert.Equal(t, "centrifugo", gw.Driver())
 
 	// 1. 发布必须打到 Centrifugo HTTP API 端点
-	err := gw.DispatchContext(t.Context(), "chat.room1", "message", map[string]string{"text": "hi"})
+	err = gw.DispatchContext(t.Context(), "chat.room1", "message", map[string]string{"text": "hi"})
 	require.NoError(t, err)
 	assert.Equal(t, http.MethodPost, receivedMethod)
-	assert.Equal(t, "/api", receivedPath)
+	assert.Equal(t, "/api/publish", receivedPath)
 
 	// 2. 必须携带幂等键，否则重试会让订阅端收到重复事件
-	var cmd publishCommand
-	firstLine, _, _ := bytes.Cut(receivedBody, []byte("\n"))
-	require.NoError(t, json.Unmarshal(firstLine, &cmd))
-	assert.Equal(t, "publish", cmd.Method)
-	assert.Equal(t, "chat.room1", cmd.Params.Channel)
-	assert.NotEmpty(t, cmd.Params.IdempotencyKey)
-	assert.JSONEq(t, `{"event":"message","data":{"text":"hi"}}`, string(cmd.Params.Data))
+	var cmd publishRequest
+	require.NoError(t, json.Unmarshal(receivedBody, &cmd))
+	assert.Equal(t, "chat.room1", cmd.Channel)
+	assert.NotEmpty(t, cmd.IdempotencyKey)
+	assert.JSONEq(t, `{"event":"message","data":{"text":"hi"}}`, string(cmd.Data))
 
 	// 3. 空频道或空事件属于调用方错误
 	require.Error(t, gw.DispatchContext(t.Context(), "", "message", nil))
@@ -180,20 +175,22 @@ func TestManagerPublish(t *testing.T) {
 
 // TestManagerDisabled 验证未启用时的降级行为：发布静默跳过、探针显式报错。
 func TestManagerDisabled(t *testing.T) {
-	gw := realtime.NewManager(&config.RealtimeConfig{Enabled: false}, nil)
+	gw, err := realtime.NewManager(&config.RealtimeConfig{Enabled: false}, nil)
+	require.NoError(t, err)
 
 	assert.False(t, gw.Enabled())
 	require.NoError(t, gw.DispatchContext(t.Context(), "ch", "event", nil))
 	require.Error(t, gw.Ping(t.Context()))
 
 	// 未配置 Secret 时无法签发凭据
-	_, err := gw.GenerateConnectionToken("u1", time.Now().Add(time.Hour), nil, nil)
+	_, err = gw.GenerateConnectionToken("u1", time.Now().Add(time.Hour), nil, nil)
 	require.Error(t, err)
 }
 
 // TestNewManagerNilConfig 验证零配置构造不得 panic。
 func TestNewManagerNilConfig(t *testing.T) {
-	gw := realtime.NewManager(nil, nil)
+	gw, err := realtime.NewManager(nil, nil)
+	require.NoError(t, err)
 
 	require.NotNil(t, gw)
 	assert.False(t, gw.Enabled())

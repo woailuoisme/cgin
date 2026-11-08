@@ -42,7 +42,8 @@ func TestServiceIssueToken(t *testing.T) {
 				Enabled: false,
 			},
 		}
-		gw := platformRealtime.NewManager(&cfg.Realtime, nil)
+		gw, gwErr := platformRealtime.NewManager(&cfg.Realtime, nil)
+		require.NoError(t, gwErr)
 		svc := clientrealtime.NewRealtimeService(clientrealtime.RealtimeDeps{Gateway: gw, Cfg: cfg, Secret: cfg.Realtime.Secret})
 
 		_, err := svc.IssueToken(t.Context(), "u101", "user")
@@ -58,7 +59,8 @@ func TestServiceIssueToken(t *testing.T) {
 				Secret:  "test-secret-key-12345",
 			},
 		}
-		gw := platformRealtime.NewManager(&cfg.Realtime, nil)
+		gw, err := platformRealtime.NewManager(&cfg.Realtime, nil)
+		require.NoError(t, err)
 		svc := clientrealtime.NewRealtimeService(clientrealtime.RealtimeDeps{Gateway: gw, Cfg: cfg, Secret: cfg.Realtime.Secret})
 
 		res, err := svc.IssueToken(t.Context(), "u101", "admin")
@@ -86,7 +88,8 @@ func TestServiceAuthorizeSubscribe(t *testing.T) {
 		return nil
 	})
 
-	gw := platformRealtime.NewManager(&cfg.Realtime, reg)
+	gw, err := platformRealtime.NewManager(&cfg.Realtime, reg)
+	require.NoError(t, err)
 	svc := clientrealtime.NewRealtimeService(clientrealtime.RealtimeDeps{Gateway: gw, Cfg: cfg, Secret: cfg.Realtime.Secret})
 
 	t.Run("无权限时拒绝订阅", func(t *testing.T) {
@@ -138,7 +141,8 @@ func TestHandlerHTTP(t *testing.T) {
 		return nil
 	})
 
-	gw := platformRealtime.NewManager(&cfg.Realtime, reg)
+	gw, err := platformRealtime.NewManager(&cfg.Realtime, reg)
+	require.NoError(t, err)
 	svc := clientrealtime.NewRealtimeService(clientrealtime.RealtimeDeps{Gateway: gw, Cfg: cfg, Secret: cfg.Realtime.Secret})
 	handler := realtimev1.NewHandler(svc)
 

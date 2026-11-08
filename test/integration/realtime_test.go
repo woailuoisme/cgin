@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/centrifugal/gocent/v3"
+	"github.com/centrifugal/gocent/v4"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -90,12 +90,14 @@ func TestRealtime_CentrifugoHealthAndInfo(t *testing.T) {
 	ensureCentrifugoReachable(t, cfg)
 
 	ctx := t.Context()
-	mgr := platformRealtime.NewManager(&cfg, nil)
+	mgr, err := platformRealtime.NewManager(&cfg, nil)
+	require.NoError(t, err)
 	require.NotNil(t, mgr)
 
 	// 管理面（Info/History/Presence）直接走 gocent：网关只承担发布、签发与订阅鉴权。
-	client := gocent.New(gocent.Config{Addr: cfg.URL, Key: cfg.APIKey})
-	info, err := client.Info(ctx)
+	client, err := gocent.New(gocent.Config{APIEndpoint: cfg.URL, APIKey: cfg.APIKey})
+	require.NoError(t, err)
+	info, err := client.Info(ctx, gocent.InfoRequest{})
 	require.NoError(t, err, "调用 Centrifugo HTTP API Info 失败")
 	require.NotEmpty(t, info.Nodes, "应当返回至少一个 Centrifugo 节点信息")
 
@@ -111,7 +113,8 @@ func TestRealtime_PublishBroadcastAndHistory(t *testing.T) {
 	ensureCentrifugoReachable(t, cfg)
 
 	ctx := t.Context()
-	mgr := platformRealtime.NewManager(&cfg, nil)
+	mgr, err := platformRealtime.NewManager(&cfg, nil)
+	require.NoError(t, err)
 
 	// 使用 public 命名空间下的动态隔离频道（具有 history 存储与客户端读取权限）
 	channelA := fmt.Sprintf("public:test-room-%d", time.Now().UnixNano())
@@ -122,14 +125,15 @@ func TestRealtime_PublishBroadcastAndHistory(t *testing.T) {
 		"text":      "hello real world centrifugo",
 		"timestamp": time.Now().Unix(),
 	}
-	err := mgr.DispatchContext(ctx, channelA, eventA, dataA)
+	err = mgr.DispatchContext(ctx, channelA, eventA, dataA)
 	require.NoError(t, err, "向单频道推送消息失败")
 
 	// 2. 回读历史：管理面直接走 gocent，不经过网关。
 	// 历史入库是异步的：轮询到条件成立为止，避免慢环境下的固定时长盲等造成偶发失败。
-	client := gocent.New(gocent.Config{Addr: cfg.URL, Key: cfg.APIKey})
+	client, err := gocent.New(gocent.Config{APIEndpoint: cfg.URL, APIKey: cfg.APIKey})
+	require.NoError(t, err)
 	require.Eventually(t, func() bool {
-		history, historyErr := client.History(ctx, channelA, gocent.WithLimit(10))
+		history, historyErr := client.History(ctx, gocent.HistoryRequest{Channel: channelA, Limit: 10})
 		if historyErr != nil || len(history.Publications) < 1 {
 			return false
 		}
@@ -142,7 +146,7 @@ func TestRealtime_PublishBroadcastAndHistory(t *testing.T) {
 	}, 5*time.Second, 100*time.Millisecond, "历史记录中应能回溯到刚推送的实时内容")
 
 	// 3. 在线统计同样由 gocent 直连查询
-	_, err = client.PresenceStats(ctx, channelA)
+	_, err = client.PresenceStats(ctx, gocent.PresenceStatsRequest{Channel: channelA})
 	require.NoError(t, err, "查询频道在线统计失败")
 }
 
@@ -220,7 +224,8 @@ func TestRealtime_SSEClientStreamingVerification(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 
 	// 服务端派发实时事件
-	mgr := platformRealtime.NewManager(&cfg, nil)
+	mgr, mgrErr := platformRealtime.NewManager(&cfg, nil)
+	require.NoError(t, mgrErr)
 	expectedMsg := fmt.Sprintf("unique-token-%d", time.Now().UnixNano())
 	dispatchErr := mgr.DispatchContext(ctx, channel, "chat.realtime", map[string]any{
 		"greeting": "welcome to real-time centrifugo",
@@ -282,7 +287,8 @@ func TestRealtime_ProxySubscribeCallbackContract(t *testing.T) {
 	})
 
 	appCfg := &config.Config{Realtime: cfg}
-	gw := platformRealtime.NewManager(&cfg, reg)
+	gw, err := platformRealtime.NewManager(&cfg, reg)
+	require.NoError(t, err)
 	svc := clientrealtime.NewRealtimeService(clientrealtime.RealtimeDeps{
 		Gateway: gw,
 		Cfg:     appCfg,
@@ -388,7 +394,8 @@ func TestRealtime_WebSocketClientStreamingVerification(t *testing.T) {
 	assert.Contains(t, string(subResp[:n]), `"subscribe"`)
 
 	// 3. 服务端派发实时事件
-	mgr := platformRealtime.NewManager(&cfg, nil)
+	mgr, mgrErr := platformRealtime.NewManager(&cfg, nil)
+	require.NoError(t, mgrErr)
 	expectedWSMsg := fmt.Sprintf("ws-payload-%d", time.Now().UnixNano())
 	err = mgr.DispatchContext(t.Context(), channel, "chat.ws_event", map[string]any{
 		"token": expectedWSMsg,

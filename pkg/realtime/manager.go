@@ -7,10 +7,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"time"
 
-	"github.com/centrifugal/gocent/v3"
+	"github.com/centrifugal/gocent/v4"
 	"github.com/samber/oops"
 
 	"cgin/internal/config"
@@ -29,20 +30,25 @@ var _ Gateway = (*manager)(nil)
 
 // NewManager 创建 Centrifugo 实时通信网关。
 // reg 为 nil 时退化为空注册表 —— 所有频道订阅都会被拒，符合 Fail-Closed 默认。
-func NewManager(cfg *config.RealtimeConfig, reg *Registry) Gateway {
+// 未启用时返回禁用态网关；API 端点非法时返回错误，避免静默降级。
+func NewManager(cfg *config.RealtimeConfig, reg *Registry) (Gateway, error) {
 	m := &manager{
 		cfg:      cfg,
 		registry: cmp.Or(reg, NewRegistry()),
 	}
 
 	if cfg != nil && cfg.Enabled && cfg.URL != "" {
-		m.client = gocent.New(gocent.Config{
-			Addr: cfg.URL,
-			Key:  cfg.APIKey,
+		client, err := gocent.New(gocent.Config{
+			APIEndpoint: cfg.URL,
+			APIKey:      cfg.APIKey,
 		})
+		if err != nil {
+			return nil, oops.Code(errs.CodeInternal).In("realtime.NewManager").Wrap(err)
+		}
+		m.client = client
 	}
 
-	return m
+	return m, nil
 }
 
 // Registry 返回频道订阅策略注册表。
@@ -70,7 +76,7 @@ func (m *manager) Ping(ctx context.Context) error {
 	if m.disabled() {
 		return errors.New("realtime: centrifugo client is disabled or not configured")
 	}
-	if _, err := m.client.Info(ctx); err != nil {
+	if _, err := m.client.Info(ctx, gocent.InfoRequest{}); err != nil {
 		return oops.Code(errs.CodeInternal).In("manager.Ping").Wrap(err)
 	}
 	return nil
@@ -105,7 +111,11 @@ func (m *manager) DispatchContext(ctx context.Context, channel, event string, da
 	}
 
 	publishErr := resilience.Run(ctx, publishExecutor, func() error {
-		_, pErr := m.client.Publish(ctx, channel, payload, gocent.WithIdempotencyKey(key))
+		_, pErr := m.client.Publish(ctx, gocent.PublishRequest{
+			Channel:        channel,
+			Data:           jsontext.Value(payload),
+			IdempotencyKey: key,
+		})
 		return pErr
 	})
 	if publishErr != nil {

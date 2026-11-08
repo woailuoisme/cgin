@@ -32,13 +32,13 @@ main:
         - name: Package and push Helm chart to CNB
           script: |
             set -euo pipefail
-            CHART_VERSION=$(grep '^version:' deploy/helm/cgin/Chart.yaml | awk '{print $2}')
-            APP_VERSION=$(grep '^appVersion:' deploy/helm/cgin/Chart.yaml | awk '{print $2}' | tr -d '"')
+            CHART_VERSION=$(grep '^version:' deployment/helm/cgin/Chart.yaml | awk '{print $2}')
+            APP_VERSION=$(grep '^appVersion:' deployment/helm/cgin/Chart.yaml | awk '{print $2}' | tr -d '"')
             HELM_REGISTRY="${CNB_HELM_REGISTRY:-helm.cnb.cool}"
             TARGET_NAMESPACE="${CNB_GROUP_SLUG_LOWERCASE:-${CNB_REPO_SLUG_LOWERCASE}}"
 
             echo "${CNB_TOKEN}" | helm registry login "${HELM_REGISTRY}" -u "${CNB_TOKEN_USER_NAME:-cnb}" --password-stdin
-            helm package deploy/helm/cgin --version "${CHART_VERSION}" --app-version "${APP_VERSION}" -d .
+            helm package deployment/helm/cgin --version "${CHART_VERSION}" --app-version "${APP_VERSION}" -d .
             helm push "cgin-${CHART_VERSION}.tgz" "oci://${HELM_REGISTRY}/${TARGET_NAMESPACE}"
 
 # ── 正式全量发版 (v*)：仅自动构建并推送 Release 镜像 ───────────────
