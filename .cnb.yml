@@ -61,3 +61,19 @@ v*:
             echo "${CNB_TOKEN}" | helm registry login "${HELM_REGISTRY}" -u "${CNB_TOKEN_USER_NAME:-cnb}" --password-stdin
             helm package helm/cgin --version "${CHART_VERSION}" --app-version "${VERSION}" -d .
             helm push "cgin-${CHART_VERSION}.tgz" "oci://${HELM_REGISTRY}/${TARGET_NAMESPACE}"
+
+    - docker:
+        image: orhunp/git-cliff:latest
+      stages:
+        - name: Generate Changelog with git-cliff
+          script: |
+            set -eu
+            git-cliff --latest --strip header -o CHANGELOG.md
+
+        - name: Create CNB Release
+          type: git:release
+          options:
+            tag: ${CNB_BRANCH}
+            title: "Release ${CNB_BRANCH}"
+            descriptionFromFile: CHANGELOG.md
+            latest: true

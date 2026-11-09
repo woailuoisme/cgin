@@ -128,6 +128,7 @@ coverage.xml
 *.kubeconfig
 helm/dist/
 helm/**/charts/*.tgz
+*.tgz
 
 # ------------------------------------------
 # Local Development
@@ -135,6 +136,7 @@ helm/**/charts/*.tgz
 .local/
 /scratch/
 .mise.local.toml
+dekit*.yaml
 
 # ------------------------------------------
 # AI & Agent Tools

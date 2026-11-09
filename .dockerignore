@@ -23,7 +23,7 @@ specs
 # ------------------------------------------------------------------------------
 # 构建、辅助工具与发布脚本 (Build, Tooling & Scripts)
 # ------------------------------------------------------------------------------
-.air.toml
+.air*.toml
 .editorconfig
 .golangci.yml
 .rumdl.toml
@@ -31,9 +31,14 @@ specs
 atlas.hcl
 justfile
 lefthook.yml
+process-compose*.yaml
+process-compose*.yml
+dekit*.yaml
 docker-compose*.yml
 Dockerfile*
 script
+helm
+*.tgz
 
 # ------------------------------------------------------------------------------
 # SQL 事实源与迁移资产 (SQL Sources & Migrations)
@@ -44,6 +49,7 @@ database
 # ------------------------------------------------------------------------------
 # 测试套件与测试产物 (Tests, Fixtures & Coverage)
 # ------------------------------------------------------------------------------
+test
 tests
 test-results
 .test-results
