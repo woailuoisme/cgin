@@ -5,7 +5,7 @@
 
 # ── main 分支：网页手动触发（常规 push 不触发构建）──────────────────
 main:
-  # 网页按钮 1：手动构建并推送 Docker 镜像（对齐 .cnb/web_trigger.yml 中的 web_trigger_amd64）
+  # 网页按钮：手动构建并推送 Docker 镜像（对齐 .cnb/web_trigger.yml 中的 web_trigger_amd64）
   web_trigger_amd64: &docker_build
     - services:
         - docker
@@ -24,24 +24,7 @@ main:
   # 兼容默认网页触发
   web_trigger: *docker_build
 
-  # 网页按钮 2：一键独立发布 Helm Chart（对齐 .cnb/web_trigger.yml 中的 web_trigger_helm）
-  web_trigger_helm:
-    - docker:
-        image: alpine/helm:4
-      stages:
-        - name: Package and push Helm chart to CNB
-          script: |
-            set -euo pipefail
-            CHART_VERSION=$(grep '^version:' deployment/helm/cgin/Chart.yaml | awk '{print $2}')
-            APP_VERSION=$(grep '^appVersion:' deployment/helm/cgin/Chart.yaml | awk '{print $2}' | tr -d '"')
-            HELM_REGISTRY="${CNB_HELM_REGISTRY:-helm.cnb.cool}"
-            TARGET_NAMESPACE="${CNB_GROUP_SLUG_LOWERCASE:-${CNB_REPO_SLUG_LOWERCASE}}"
-
-            echo "${CNB_TOKEN}" | helm registry login "${HELM_REGISTRY}" -u "${CNB_TOKEN_USER_NAME:-cnb}" --password-stdin
-            helm package deployment/helm/cgin --version "${CHART_VERSION}" --app-version "${APP_VERSION}" -d .
-            helm push "cgin-${CHART_VERSION}.tgz" "oci://${HELM_REGISTRY}/${TARGET_NAMESPACE}"
-
-# ── 正式全量发版 (v*)：仅自动构建并推送 Release 镜像 ───────────────
+# ── 正式全量发版 (v*)：镜像与 Chart 原子化联动自动发布 ───────────────
 v*:
   tag_push:
     - services:
@@ -52,10 +35,29 @@ v*:
             set -euo pipefail
             REGISTRY="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"
             VERSION="${CNB_BRANCH##*/}"
+
             docker buildx build \
               --platform linux/amd64 \
               --cache-from type=registry,ref=${REGISTRY}:cache \
               --cache-to type=registry,ref=${REGISTRY}:cache,mode=max,image-manifest=true,oci-mediatypes=true \
-              -t "${REGISTRY}:${VERSION}" \
               -t "${REGISTRY}:latest" \
+              -t "${REGISTRY}:${VERSION}" \
+              --build-arg VERSION="${VERSION}" \
+              --build-arg COMMIT="${CNB_COMMIT:-none}" \
+              --build-arg DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
               --push .
+
+    - docker:
+        image: alpine/helm:4
+      stages:
+        - name: Package and push Helm chart to CNB
+          script: |
+            set -euo pipefail
+            VERSION="${CNB_BRANCH##*/}"
+            CHART_VERSION="${VERSION#v}"
+            HELM_REGISTRY="${CNB_HELM_REGISTRY:-helm.cnb.cool}"
+            TARGET_NAMESPACE="${CNB_GROUP_SLUG_LOWERCASE:-${CNB_REPO_SLUG_LOWERCASE}}"
+
+            echo "${CNB_TOKEN}" | helm registry login "${HELM_REGISTRY}" -u "${CNB_TOKEN_USER_NAME:-cnb}" --password-stdin
+            helm package helm/cgin --version "${CHART_VERSION}" --app-version "${VERSION}" -d .
+            helm push "cgin-${CHART_VERSION}.tgz" "oci://${HELM_REGISTRY}/${TARGET_NAMESPACE}"
