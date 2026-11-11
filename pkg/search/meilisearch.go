@@ -80,7 +80,7 @@ func (c *meilisearchClient) Driver() string {
 }
 
 func (c *meilisearchClient) Ping(ctx context.Context) error {
-	resp, err := c.manager.HealthWithContext(ctx)
+	resp, err := c.manager.Health(ctx)
 	if err != nil {
 		return oops.Code(errs.CodeInternal).In("search.Meilisearch.Ping").Wrap(err)
 	}
@@ -92,7 +92,7 @@ func (c *meilisearchClient) Ping(ctx context.Context) error {
 
 func (c *meilisearchClient) DeleteIndex(ctx context.Context, name string) error {
 	prefixed := c.prefix + name
-	_, err := c.manager.DeleteIndexWithContext(ctx, prefixed)
+	_, err := c.manager.DeleteIndex(ctx, prefixed)
 	if err != nil {
 		return oops.Code(errs.CodeInternal).In("search.Meilisearch.DeleteIndex").Wrap(err)
 	}
@@ -126,7 +126,7 @@ func (i *meilisearchIndex) wrapError(op string, err error) error {
 		return nil
 	}
 	if meiliErr, ok := errors.AsType[*meilisearch.Error](err); ok {
-		if meiliErr.MeilisearchApiError.Code == "index_not_found" || meiliErr.StatusCode == http.StatusNotFound {
+		if meiliErr.HasCode(meilisearch.APIErrCodeIndexNotFound) || meiliErr.StatusCode == http.StatusNotFound {
 			return oops.Code(errs.CodeNotFound).In("search.Meilisearch." + op).Wrap(err)
 		}
 	}
@@ -139,7 +139,7 @@ func (i *meilisearchIndex) AddDocuments(ctx context.Context, documents any, prim
 		opts = &meilisearch.DocumentOptions{PrimaryKey: &pk}
 	}
 
-	_, err := i.manager.AddDocumentsWithContext(ctx, documents, opts)
+	_, err := i.manager.AddDocuments(ctx, documents, opts)
 	if err != nil {
 		return i.wrapError("AddDocuments", err)
 	}
@@ -150,7 +150,7 @@ func (i *meilisearchIndex) DeleteDocuments(ctx context.Context, ids []string) er
 	if len(ids) == 0 {
 		return nil
 	}
-	_, err := i.manager.DeleteDocumentsWithContext(ctx, ids, nil)
+	_, err := i.manager.DeleteDocuments(ctx, ids, nil)
 	if err != nil {
 		return i.wrapError("DeleteDocuments", err)
 	}
@@ -158,7 +158,7 @@ func (i *meilisearchIndex) DeleteDocuments(ctx context.Context, ids []string) er
 }
 
 func (i *meilisearchIndex) DeleteAllDocuments(ctx context.Context) error {
-	_, err := i.manager.DeleteAllDocumentsWithContext(ctx, nil)
+	_, err := i.manager.DeleteAllDocuments(ctx, nil)
 	if err != nil {
 		return i.wrapError("DeleteAllDocuments", err)
 	}
@@ -192,7 +192,7 @@ func (i *meilisearchIndex) SearchDirect(ctx context.Context, query string, targe
 		Sort:   req.Sort,
 	}
 
-	resp, err := i.manager.SearchWithContext(ctx, query, meiliReq)
+	resp, err := i.manager.Search(ctx, query, meiliReq)
 	if err != nil {
 		return nil, i.wrapError("Search", err)
 	}

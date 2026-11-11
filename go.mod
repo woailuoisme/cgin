@@ -1,6 +1,6 @@
 module cgin
 
-go 1.27.3
+go 1.27.4
 
 require (
 	charm.land/bubbles/v2 v2.2.1
@@ -9,7 +9,7 @@ require (
 	charm.land/lipgloss/v2 v2.1.0
 	github.com/ThreeDotsLabs/watermill v1.5.3
 	github.com/alexliesenfeld/health v0.8.1
-	github.com/brianvoe/gofakeit/v7 v7.18.1
+	github.com/brianvoe/gofakeit/v7 v7.18.2
 	github.com/caarlos0/env/v11 v11.4.2
 	github.com/casbin/casbin/v2 v2.135.0
 	github.com/centrifugal/gocent/v4 v4.0.0
@@ -33,13 +33,13 @@ require (
 	github.com/hibiken/asynq v0.26.0
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/johnfercher/maroto/v2 v2.4.4
-	github.com/lionsoul2014/ip2region/binding/golang v0.0.0-20261109085535-d003e9ea1cbc
-	github.com/meilisearch/meilisearch-go v0.36.3
+	github.com/lionsoul2014/ip2region/binding/golang v0.0.0-20261110072001-92e6a788d17c
+	github.com/meilisearch/meilisearch-go v0.37.0
 	github.com/minio/minio-go/v7 v7.4.1
 	github.com/nicksnyder/go-i18n/v2 v2.7.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/redis/rueidis v1.0.79
-	github.com/resend/resend-go/v4 v4.12.0
+	github.com/resend/resend-go/v4 v4.12.1
 	github.com/rs/zerolog v1.35.1
 	github.com/samber/do/v2 v2.1.0
 	github.com/samber/hot v0.13.1
@@ -64,11 +64,11 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
 	go.uber.org/goleak v1.3.0
-	golang.org/x/crypto v0.58.0
-	golang.org/x/image v0.47.0
+	golang.org/x/crypto v0.59.0
+	golang.org/x/image v0.48.0
 	golang.org/x/net v0.62.0
 	golang.org/x/sync v0.25.0
-	golang.org/x/text v0.43.0
+	golang.org/x/text v0.44.0
 )
 
 require (
@@ -135,7 +135,6 @@ require (
 	github.com/memcachier/mc/v3 v3.0.3 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
-	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
@@ -183,7 +182,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/arch v0.29.0 // indirect
 	golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8 // indirect
-	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260928230214-8a89bd6388cc // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260928230214-8a89bd6388cc // indirect

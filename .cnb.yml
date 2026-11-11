@@ -1,6 +1,6 @@
 # ── 全局：手动触发 & 标签发布 ────────────────────────────────────────
 # 项目: cgin (Go Gin RESTful Web API)
-# Go 版本: 1.27.3 | 入口: ./cmd/api | 二进制: cgin
+# Go 版本: 1.27.4 | 入口: ./cmd/api | 二进制: cgin
 # Dockerfile 位于仓库根，基于 Alpine 极简镜像构建与运行
 
 # ── main 分支：网页手动触发（常规 push 不触发构建）──────────────────
@@ -18,6 +18,7 @@ main:
               --platform linux/amd64 \
               --cache-from type=registry,ref=${REGISTRY}:cache \
               --cache-to type=registry,ref=${REGISTRY}:cache,mode=max,image-manifest=true,oci-mediatypes=true \
+              -f Dockerfile \
               -t "${REGISTRY}:latest" \
               --push .
 
@@ -40,6 +41,7 @@ v*:
               --platform linux/amd64 \
               --cache-from type=registry,ref=${REGISTRY}:cache \
               --cache-to type=registry,ref=${REGISTRY}:cache,mode=max,image-manifest=true,oci-mediatypes=true \
+              -f Dockerfile \
               -t "${REGISTRY}:latest" \
               -t "${REGISTRY}:${VERSION}" \
               --build-arg VERSION="${VERSION}" \
@@ -47,10 +49,11 @@ v*:
               --build-arg DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
               --push .
 
-    - docker:
-        image: alpine/helm:4
-      stages:
-        - name: Package and push Helm chart to CNB
+        # 注意：stages 下的元素是 Job（不是嵌套的 Pipeline）。
+        # 容器镜像写在 job 的 `image:` 上；写 `docker:` + 内层 `stages:` 会被静默忽略，
+        # 该 job 变成空阶段（构建仍显示 success，但什么都没执行）。
+        - name: Helm chart package & push
+          image: alpine/helm:4
           script: |
             set -euo pipefail
             VERSION="${CNB_BRANCH##*/}"
@@ -62,10 +65,8 @@ v*:
             helm package helm/cgin --version "${CHART_VERSION}" --app-version "${VERSION}" -d .
             helm push "cgin-${CHART_VERSION}.tgz" "oci://${HELM_REGISTRY}/${TARGET_NAMESPACE}"
 
-    - docker:
-        image: orhunp/git-cliff:latest
-      stages:
-        - name: Generate Changelog with git-cliff
+        - name: Generate CHANGELOG
+          image: orhunp/git-cliff:latest
           script: |
             set -eu
             git-cliff --latest --strip header -o CHANGELOG.md
@@ -73,7 +74,7 @@ v*:
         - name: Create CNB Release
           type: git:release
           options:
-            tag: ${CNB_BRANCH}
+            # tag_push 事件下无需传 tag（官方：自动取触发的 Tag 名）
             title: "Release ${CNB_BRANCH}"
             descriptionFromFile: CHANGELOG.md
             latest: true
